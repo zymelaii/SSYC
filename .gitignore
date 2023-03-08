@@ -1,0 +1,13 @@
+build/
+BUILD_*/
+debug/
+release/
+
+*.o
+*.obj
+*.a
+*.dll
+*.so
+*.exe
+
+*.log
