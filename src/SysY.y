@@ -50,75 +50,6 @@ int yylex();
 
 %%
 
-/*! 文法单元测试
- * [TODO] %start CompUnit;
- * [TODO] %start Decl;
- * [PASS] %start ConstDecl;
- * - [PASS] CONST_KEYWORD BType ConstDefList SEMICOLON
- * [PASS] %start BType;
- * - [PASS] VOID_TYPE
- * - [PASS] INT_TYPE
- * - [PASS] FLOAT_TYPE
- * [PASS] %start ConstDef;
- * - [PASS] IDENT ASSIGN_OP ConstInitVal
- * - [PASS] IDENT SubscriptChainConst ASSIGN_OP ConstInitVal
- * [TODO] %start ConstInitVal;
- * [TODO] %start VarDecl;
- * [TODO] %start VarDef;
- * [TODO] %start InitVal;
- * [TODO] %start FuncDef;
- * [TODO] %start FuncFParams;
- * [TODO] %start FuncFParam;
- * [TODO] %start Block;
- * [TODO] %start BlockItem;
- * [TODO] %start Stmt;
- * [TODO] %start StmtBeforeElseStmt;
- * [TODO] %start Exp;
- * [TODO] %start Cond;
- * [PASS] %start LVal;
- * - [PASS] IDENT SubscriptChain
- * [PASS] %start PrimaryExp;
- * - [PASS] LPAREN Exp RPAREN
- * - [PASS] LVal
- * - [PASS] Number
- * [PASS] %start Number;
- * - [PASS] INT_LITERAL
- * - [PASS] FLOAT_LITERAL
- * [PASS] %start UnaryExp;
- * - [PASS] PrimaryExp
- * - [PASS] IDENT LPAREN RPAREN
- * - [PASS] IDENT LPAREN FuncRParams RPAREN
- * - [PASS] UnaryOp UnaryExp
- * [PASS] %start UnaryOp;
- * - [PASS] ADD_OP
- * - [PASS] SUB_OP
- * - [PASS] LNOT_OP
- * [TODO] %start FuncRParams;
- * [PASS] %start MulExp;
- * - [PASS] UnaryExp
- * - [PASS] MulExp MUL_OP UnaryExp
- * - [PASS] MulExp DIV_OP UnaryExp
- * - [PASS] MulExp MOD_OP UnaryExp
- * [PASS] %start AddExp;
- * - [PASS] MulExp
- * - [PASS] AddExp ADD_OP MulExp
- * - [PASS] AddExp SUB_OP MulExp
- * [TODO] %start RelExp;
- * [TODO] %start EqExp;
- * [TODO] %start LAndExp;
- * [TODO] %start LOrExp;
- * [TODO] %start ConstExp;
- * [TODO] %start ConstDefList;
- * [TODO] %start SubscriptChainConst;
- * [TODO] %start ConstInitValList;
- * [TODO] %start VarDefList;
- * [TODO] %start InitValList;
- * [PASS] %start SubscriptChain;
- * - [PASS] LBRACKET Exp RBRACKET
- * - [PASS] SubscriptChain LBRACKET Exp RBRACKET
- * [TODO] %start BlockItemSequence;
- */
-
 //! #-- SysY 2022 文法 BEGIN ---
 
 %start CompUnit;
@@ -187,7 +118,9 @@ VarDecl
 
 //! 变量定义
 VarDef
-: IDENT SubscriptChainConst                                                         { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst"); }
+: IDENT                                                                             { SSYC_PRINT_REDUCE(VarDef, "IDENT"); }
+| IDENT ASSIGN_OP InitVal                                                           { SSYC_PRINT_REDUCE(VarDef, "IDENT ASSIGN_OP InitVal"); }
+| IDENT SubscriptChainConst                                                         { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst"); }
 | IDENT SubscriptChainConst ASSIGN_OP InitVal                                       { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst ASSIGN_OP InitVal"); }
 ;
 

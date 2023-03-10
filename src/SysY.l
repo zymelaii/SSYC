@@ -9,7 +9,12 @@ EOL (\r\n)|\r|\n
 LWSP ({WSP}|{EOL}{WSP})*
 
 LINE_COMMENT \/\/[^\n]*
-BLOCK_COMMENT \/\*[\n\s\S]*\*\/
+
+BLOCK_COMMENT_BEGIN \/\*
+BLOCK_COMMENT_ELE .
+BLOCK_COMMENT_LINE {EOL}
+BLOCK_COMMENT_END \*\/
+%x BLOCK_COMMENT
 
 OCT_LITERAL 0[0-7]+
 DEC_LITERAL 0|([1-9][0-9]*)
@@ -33,7 +38,14 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 {LWSP} { /* IGNORE */ }
 
 {LINE_COMMENT}  { SSYC_PRINT_TOKEN("skip LINE_COMMENT"); }
-{BLOCK_COMMENT} { printf("skip BLOCK_COMMENT: /* ... */ Content-Length=%d", yyleng - 4); }
+
+{BLOCK_COMMENT_BEGIN} { BEGIN BLOCK_COMMENT; }
+<BLOCK_COMMENT>{BLOCK_COMMENT_ELE}  { /* IGNORE */ }
+<BLOCK_COMMENT>{BLOCK_COMMENT_LINE} { /* IGNORE */ }
+<BLOCK_COMMENT>{BLOCK_COMMENT_END} {
+    LOG(INFO) << "skip BLOCK_COMMENT: /* ... */";
+    BEGIN INITIAL;
+}
 
 "const" { SSYC_PRINT_TOKEN("found qualifier"); return CONST_KEYWORD; }
 
