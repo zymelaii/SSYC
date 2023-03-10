@@ -41,50 +41,87 @@ int yylex();
 
 //! #-- TOKEN 声明 END ---
 
+%left ADD_OP SUB_OP MUL_OP DIV_OP 
+%left LT_OP LE_OP GT_OP GE_OP EQ_OP NE_OP
+%left LAND_OP LOR_OP
+%left COMMA
+%right LNOT_OP
+%right ASSIGN_OP
+
 %%
 
 /*! 文法单元测试
- * [TODO] %start CompUnit; 
- * [TODO] %start Decl; 
- * [TODO] %start ConstDecl; 
- * [TODO] %start BType; 
- * [TODO] %start ConstDef; 
- * [TODO] %start ConstInitVal; 
- * [TODO] %start VarDecl; 
- * [TODO] %start VarDef; 
- * [TODO] %start InitVal; 
- * [TODO] %start FuncDef; 
- * [TODO] %start FuncFParams; 
- * [TODO] %start FuncFParam; 
- * [TODO] %start Block; 
- * [TODO] %start BlockItem; 
- * [TODO] %start Stmt; 
- * [TODO] %start StmtBeforeElseStmt; 
- * [TODO] %start Exp; 
- * [TODO] %start Cond; 
- * [TODO] %start LVal; 
- * [TODO] %start PrimaryExp; 
- * [TODO] %start Number; 
- * [TODO] %start UnaryExp; 
- * [TODO] %start UnaryOp; 
- * [TODO] %start FuncRParams; 
- * [TODO] %start MulExp; 
- * [TODO] %start AddExp; 
- * [TODO] %start RelExp; 
- * [TODO] %start EqExp; 
- * [TODO] %start LAndExp; 
- * [TODO] %start LOrExp; 
- * [TODO] %start ConstExp; 
- * [TODO] %start ConstDefList; 
- * [TODO] %start SubscriptChainConst; 
- * [TODO] %start ConstInitValList; 
- * [TODO] %start VarDefList; 
- * [TODO] %start InitValList; 
- * [TODO] %start SubscriptChain; 
- * [TODO] %start BlockItemSequence; 
+ * [TODO] %start CompUnit;
+ * [TODO] %start Decl;
+ * [PASS] %start ConstDecl;
+ * - [PASS] CONST_KEYWORD BType ConstDefList SEMICOLON
+ * [PASS] %start BType;
+ * - [PASS] VOID_TYPE
+ * - [PASS] INT_TYPE
+ * - [PASS] FLOAT_TYPE
+ * [PASS] %start ConstDef;
+ * - [PASS] IDENT ASSIGN_OP ConstInitVal
+ * - [PASS] IDENT SubscriptChainConst ASSIGN_OP ConstInitVal
+ * [TODO] %start ConstInitVal;
+ * [TODO] %start VarDecl;
+ * [TODO] %start VarDef;
+ * [TODO] %start InitVal;
+ * [TODO] %start FuncDef;
+ * [TODO] %start FuncFParams;
+ * [TODO] %start FuncFParam;
+ * [TODO] %start Block;
+ * [TODO] %start BlockItem;
+ * [TODO] %start Stmt;
+ * [TODO] %start StmtBeforeElseStmt;
+ * [TODO] %start Exp;
+ * [TODO] %start Cond;
+ * [PASS] %start LVal;
+ * - [PASS] IDENT SubscriptChain
+ * [PASS] %start PrimaryExp;
+ * - [PASS] LPAREN Exp RPAREN
+ * - [PASS] LVal
+ * - [PASS] Number
+ * [PASS] %start Number;
+ * - [PASS] INT_LITERAL
+ * - [PASS] FLOAT_LITERAL
+ * [PASS] %start UnaryExp;
+ * - [PASS] PrimaryExp
+ * - [PASS] IDENT LPAREN RPAREN
+ * - [PASS] IDENT LPAREN FuncRParams RPAREN
+ * - [PASS] UnaryOp UnaryExp
+ * [PASS] %start UnaryOp;
+ * - [PASS] ADD_OP
+ * - [PASS] SUB_OP
+ * - [PASS] LNOT_OP
+ * [TODO] %start FuncRParams;
+ * [PASS] %start MulExp;
+ * - [PASS] UnaryExp
+ * - [PASS] MulExp MUL_OP UnaryExp
+ * - [PASS] MulExp DIV_OP UnaryExp
+ * - [PASS] MulExp MOD_OP UnaryExp
+ * [PASS] %start AddExp;
+ * - [PASS] MulExp
+ * - [PASS] AddExp ADD_OP MulExp
+ * - [PASS] AddExp SUB_OP MulExp
+ * [TODO] %start RelExp;
+ * [TODO] %start EqExp;
+ * [TODO] %start LAndExp;
+ * [TODO] %start LOrExp;
+ * [TODO] %start ConstExp;
+ * [TODO] %start ConstDefList;
+ * [TODO] %start SubscriptChainConst;
+ * [TODO] %start ConstInitValList;
+ * [TODO] %start VarDefList;
+ * [TODO] %start InitValList;
+ * [PASS] %start SubscriptChain;
+ * - [PASS] LBRACKET Exp RBRACKET
+ * - [PASS] SubscriptChain LBRACKET Exp RBRACKET
+ * [TODO] %start BlockItemSequence;
  */
 
 //! #-- SysY 2022 文法 BEGIN ---
+
+%start CompUnit;
 
 //! 编译单元
 CompUnit
@@ -103,8 +140,7 @@ Decl
 //! 常量声明
 //! NOTE: ConstDefList := ConstDef { COMMA ConstDef }
 ConstDecl
-: CONST_KEYWORD BType SEMICOLON                                                     { SSYC_PRINT_REDUCE(ConstDecl, "CONST_KEYWORD BType SEMICOLON"); }
-| CONST_KEYWORD BType ConstDefList SEMICOLON                                        { SSYC_PRINT_REDUCE(ConstDecl, "CONST_KEYWORD BType SEMICOLON"); }
+: CONST_KEYWORD BType ConstDefList SEMICOLON                                        { SSYC_PRINT_REDUCE(ConstDecl, "CONST_KEYWORD BType SEMICOLON"); }
 ;
 
 //! 基本类型
@@ -203,7 +239,8 @@ FuncFParam
 //! 语句块
 //! NOTE: BlockItemSequence := { BlockItem }
 Block
-: LBRACE BlockItemSequence RBRACE                                                   { SSYC_PRINT_REDUCE(Block, "LBRACE BlockItemSequence RBRACE"); }
+: LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(Block, "LBRACE BlockItemSequence RBRACE"); }
+| LBRACE BlockItemSequence RBRACE                                                   { SSYC_PRINT_REDUCE(Block, "LBRACE BlockItemSequence RBRACE"); }
 ;
 
 //! 语句块项
@@ -269,7 +306,8 @@ Cond
 
 //! 左值表达式
 LVal
-: IDENT SubscriptChain                                                              { SSYC_PRINT_REDUCE(LVal, "IDENT SubscriptChain"); }
+: IDENT                                                                             { SSYC_PRINT_REDUCE(LVal, "IDENT"); }
+| IDENT SubscriptChain                                                              { SSYC_PRINT_REDUCE(LVal, "IDENT SubscriptChain"); }
 ;
 
 //! 基本表达式
