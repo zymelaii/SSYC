@@ -1,0 +1,3 @@
+[submodule "deps/compiler2022"]
+	path = deps/compiler2022
+	url = https://gitlab.eduxiji.net/nscscc/compiler2022.git
