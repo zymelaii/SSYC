@@ -10,31 +10,25 @@ def main [SSYC_EXECUTABLE: string] {
 	mut failed = 0
 
 	echo $'[============] Running ($total) test from 1 test case'
-	echo
-	
+
 	for test_in in $SAMPLES {
-		echo '[------------]'
 		echo $'[ RUN        ] ($test_in)'
 
 		let resp = (do { ^$SSYC_EXECUTABLE --input $test_in } | complete)
-		# echo $resp.stderr
-
-		echo '[         OK ]'
 		
 		if $resp.exit_code != 0 {
 			$failed = $failed + 1
-			echo '[------------] failed'
+			echo '[         OK ] failed'
 		} else {
-			echo '[------------] passed'
+			echo '[         OK ] passed'
 		}
-
-		echo
 	}
 
-	echo $'[============] ($total) test from 1 test case ran'
+	echo $'[------------] ($total) test from 1 test case ran'
 	if $failed == 0 {
 		echo $'[   PASSED   ] ($total) test'
 	} else {
 		echo $'[   FAILED   ] ($failed) test'
 	}
+	echo '[============]'
 }
