@@ -1,7 +1,5 @@
 %{
 #include "utils.h"
-#include <iostream>
-#include <string.h>
 
 void yyerror(char* message);
 extern "C" int yywrap();
