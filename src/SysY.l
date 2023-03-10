@@ -95,6 +95,7 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 
 void yyerror(char* message) {
     LOG(ERROR) << "parse error: " << message;
+    exit(-1);
 }
 
 int yywrap() {

@@ -1,5 +1,8 @@
 %{
+#include "pch.h"
 #include "utils.h"
+
+extern FILE *yyin, *yyout;
 
 void yyerror(char* message);
 extern "C" int yywrap();
@@ -189,6 +192,8 @@ BlockItem
  *
  * Stmt
  * : LVal OP_ASS Exp SEMICOLON
+ * | SEMICOLON
+ * | Exp SEMICOLON
  * | Block
  * | KW_IF LPAREN Cond RPAREN Stmt KW_ELSE Stmt
  * | KW_IF LPAREN Cond RPAREN Stmt
@@ -202,6 +207,8 @@ BlockItem
 
 Stmt
 : LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(Stmt, "LVal OP_ASS Exp SEMICOLON"); }
+| SEMICOLON                                                                         { SSYC_PRINT_REDUCE(Stmt, "SEMICOLON"); }
+| Exp SEMICOLON                                                                     { SSYC_PRINT_REDUCE(Stmt, "Exp SEMICOLON"); }
 | Block                                                                             { SSYC_PRINT_REDUCE(Stmt, "Block"); }
 | KW_IF LPAREN Cond RPAREN Stmt                                                     { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN Stmt"); }
 | KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt                          { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt"); }
@@ -214,6 +221,8 @@ Stmt
 
 StmtBeforeElseStmt
 : LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "LVal OP_ASS Exp SEMICOLON"); }
+| SEMICOLON                                                                         { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "SEMICOLON"); }
+| Exp SEMICOLON                                                                     { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Exp SEMICOLON"); }
 | Block                                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Block"); }
 | KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt            { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt"); }
 | KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt                                    { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt"); }
@@ -378,13 +387,49 @@ BlockItemSequence
 
 %%
 
+DEFINE_string(input, "\xff", "input files");
+
+DEFINE_validator(input, [](const char* flag, const std::string& value) -> bool {
+    if (value.empty()) {
+        return false;
+    }
+
+    if (value[0] == '\xff') {
+        return true;
+    }
+
+    if (!fs::exists(value)) {
+        LOG(ERROR) << "SSYC: error: no such file: '" << value << "'";
+        return false;
+    }
+
+    return true;
+});
+
 int main(int argc, char* argv[]) {
     FLAGS_colorlogtostderr = true;
-	FLAGS_logtostderr	   = true;
-	google::SetStderrLogging(google::GLOG_INFO);
-	google::InitGoogleLogging(argv[0]);
+    FLAGS_logtostderr	   = true;
+    google::SetStderrLogging(google::GLOG_INFO);
+    google::InitGoogleLogging(argv[0]);
 
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+    FILE* fin = nullptr;
+
+    gflags::CommandLineFlagInfo info;
+    if (gflags::GetCommandLineFlagInfo("input", &info); info.is_default) {
+        fin = stdin;
+    } else {
+        fin = fopen(FLAGS_input.c_str(), "r");
+    }
+
+    yyin = fin;
     yyparse();
-    
+
+    if (fin != nullptr) {
+        fclose(fin);
+    }
+    fin = nullptr;
+
     return 0;
 }

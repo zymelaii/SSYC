@@ -3,6 +3,7 @@ find_package(FLEX REQUIRED)
 
 find_package(fmt REQUIRED)
 find_package(glog REQUIRED)
+find_package(gflags REQUIRED COMPONENTS static)
 
 aux_source_directory(. SOURCE_FILES)
 set(YACC_SOURCE_FILES lex.yy.cpp y.tab.hpp y.tab.cpp)
@@ -30,7 +31,7 @@ target_compile_options(
 
 target_link_libraries(
 	${CMAKE_PROJECT_NAME}
-	PRIVATE glog::glog fmt::fmt-header-only
+	PRIVATE fmt::fmt-header-only glog::glog gflags_static
 )
 
 target_include_directories(
