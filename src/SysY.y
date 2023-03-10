@@ -13,25 +13,25 @@ int yylex();
 %token IDENT
 
 //! 常量
-%token INT_LITERAL FLOAT_LITERAL
+%token CONST_INT CONST_FLOAT
 
 //! 基本类型
-%token VOID_TYPE INT_TYPE FLOAT_TYPE
+%token T_VOID T_INT T_FLOAT
 
 //! 类型限定符
-%token CONST_KEYWORD
+%token KW_CONST
 
 //! 控制关键字
-%token IF_KEYWORD ELSE_KEYWORD
-%token WHILE_KEYWORD BREAK_KEYWORD CONTINUE_KEYWORD
-%token RETURN_KEYWORD
+%token KW_IF KW_ELSE
+%token KW_WHILE KW_BREAK KW_CONTINUE
+%token KW_RETURN
 
 //! 操作符
-%token ASSIGN_OP
-%token ADD_OP SUB_OP
-%token MUL_OP DIV_OP MOD_OP
-%token LT_OP GT_OP LE_OP GE_OP EQ_OP NE_OP
-%token LNOT_OP LAND_OP LOR_OP
+%token OP_ASS
+%token OP_ADD OP_SUB
+%token OP_MUL OP_DIV OP_MOD
+%token OP_LT OP_GT OP_LE OP_GE OP_EQ OP_NE
+%token OP_LNOT OP_LAND OP_LOR
 
 //! 杂项
 %token LPAREN RPAREN
@@ -41,12 +41,12 @@ int yylex();
 
 //! #-- TOKEN 声明 END ---
 
-%left ADD_OP SUB_OP MUL_OP DIV_OP 
-%left LT_OP LE_OP GT_OP GE_OP EQ_OP NE_OP
-%left LAND_OP LOR_OP
+%left OP_ADD OP_SUB OP_MUL OP_DIV 
+%left OP_LT OP_LE OP_GT OP_GE OP_EQ OP_NE
+%left OP_LAND OP_LOR
 %left COMMA
-%right LNOT_OP
-%right ASSIGN_OP
+%right OP_LNOT
+%right OP_ASS
 
 %%
 
@@ -71,7 +71,7 @@ Decl
 //! 常量声明
 //! NOTE: ConstDefList := ConstDef { COMMA ConstDef }
 ConstDecl
-: CONST_KEYWORD BType ConstDefList SEMICOLON                                        { SSYC_PRINT_REDUCE(ConstDecl, "CONST_KEYWORD BType SEMICOLON"); }
+: KW_CONST BType ConstDefList SEMICOLON                                             { SSYC_PRINT_REDUCE(ConstDecl, "KW_CONST BType SEMICOLON"); }
 ;
 
 //! 基本类型
@@ -82,15 +82,15 @@ ConstDecl
  * SOLUTION: 合并 BType 与 FuncType 将检查延迟到语义分析阶段
  *
  * BType
- * : INT_TYPE
- * | FLOAT_TYPE
+ * : T_INT
+ * | T_FLOAT
  * ;
  */
 
 BType
-: VOID_TYPE                                                                         { SSYC_PRINT_REDUCE(BType, "VOID_TYPE"); }
-| INT_TYPE                                                                          { SSYC_PRINT_REDUCE(BType, "INT_TYPE"); }
-| FLOAT_TYPE                                                                        { SSYC_PRINT_REDUCE(BType, "FLOAT_TYPE"); }
+: T_VOID                                                                            { SSYC_PRINT_REDUCE(BType, "T_VOID"); }
+| T_INT                                                                             { SSYC_PRINT_REDUCE(BType, "T_INT"); }
+| T_FLOAT                                                                           { SSYC_PRINT_REDUCE(BType, "T_FLOAT"); }
 ;
 
 //! #-- BType END ---
@@ -98,8 +98,8 @@ BType
 //! 常数定义
 //! NOTE: SubscriptChainConst := { LBRACKET ConstExp RBRACKET }
 ConstDef
-: IDENT ASSIGN_OP ConstInitVal                                                      { SSYC_PRINT_REDUCE(ConstDef, "IDENT ASSIGN_OP ConstInitVal"); }
-| IDENT SubscriptChainConst ASSIGN_OP ConstInitVal                                  { SSYC_PRINT_REDUCE(ConstDef, "IDENT SubscriptChainConst ASSIGN_OP ConstInitVal"); }
+: IDENT OP_ASS ConstInitVal                                                         { SSYC_PRINT_REDUCE(ConstDef, "IDENT OP_ASS ConstInitVal"); }
+| IDENT SubscriptChainConst OP_ASS ConstInitVal                                     { SSYC_PRINT_REDUCE(ConstDef, "IDENT SubscriptChainConst OP_ASS ConstInitVal"); }
 ;
 
 //! 常量初值
@@ -119,9 +119,9 @@ VarDecl
 //! 变量定义
 VarDef
 : IDENT                                                                             { SSYC_PRINT_REDUCE(VarDef, "IDENT"); }
-| IDENT ASSIGN_OP InitVal                                                           { SSYC_PRINT_REDUCE(VarDef, "IDENT ASSIGN_OP InitVal"); }
+| IDENT OP_ASS InitVal                                                              { SSYC_PRINT_REDUCE(VarDef, "IDENT OP_ASS InitVal"); }
 | IDENT SubscriptChainConst                                                         { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst"); }
-| IDENT SubscriptChainConst ASSIGN_OP InitVal                                       { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst ASSIGN_OP InitVal"); }
+| IDENT SubscriptChainConst OP_ASS InitVal                                          { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst OP_ASS InitVal"); }
 ;
 
 //! 变量初值
@@ -148,9 +148,9 @@ FuncDef
  * SOLUTION: 合并 BType 与 FuncType 将检查延迟到语义分析阶段
  *
  * FuncType
- * : VOID_TYPE
- * | INT_TYPE
- * | FLOAT_TYPE
+ * : T_VOID
+ * | T_INT
+ * | T_FLOAT
  * ;
  */
 
@@ -163,10 +163,10 @@ FuncFParams
 ;
 
 //! 函数形参
-//! NOTE: SubscriptChain := { LBRACKET Exp RBRACKET }
+//! NOTE: SubscriptChainVariant := LBRACKET RBRACKET [ { LBRACKET Exp RBRACKET } ]
 FuncFParam
 : BType IDENT                                                                       { SSYC_PRINT_REDUCE(FuncFParam, "BType IDENT"); }
-| BType IDENT LBRACKET RBRACKET SubscriptChain                                      { SSYC_PRINT_REDUCE(FuncFParam, "BType IDENT LBRACKET RBRACKET SubscriptChain"); }
+| BType IDENT SubscriptChainVariant                                                 { SSYC_PRINT_REDUCE(FuncFParam, "BType IDENT SubscriptChainVariant"); }
 ;
 
 //! 语句块
@@ -190,39 +190,39 @@ BlockItem
  * SOLUTION: 禁止 if 语句 shift 进 else 语句
  *
  * Stmt
- * : LVal ASSIGN_OP Exp SEMICOLON
+ * : LVal OP_ASS Exp SEMICOLON
  * | Block
- * | IF_KEYWORD LPAREN Cond RPAREN Stmt ELSE_KEYWORD Stmt
- * | IF_KEYWORD LPAREN Cond RPAREN Stmt
- * | WHILE_KEYWORD LPAREN Cond RPAREN Stmt
- * | BREAK_KEYWORD SEMICOLON
- * | CONTINUE_KEYWORD SEMICOLON
- * | RETURN_KEYWORD SEMICOLON
- * | RETURN_KEYWORD Exp SEMICOLON
+ * | KW_IF LPAREN Cond RPAREN Stmt KW_ELSE Stmt
+ * | KW_IF LPAREN Cond RPAREN Stmt
+ * | KW_WHILE LPAREN Cond RPAREN Stmt
+ * | KW_BREAK SEMICOLON
+ * | KW_CONTINUE SEMICOLON
+ * | KW_RETURN SEMICOLON
+ * | KW_RETURN Exp SEMICOLON
  * ;
  */
 
 Stmt
-: LVal ASSIGN_OP Exp SEMICOLON                                                      { SSYC_PRINT_REDUCE(Stmt, "LVal ASSIGN_OP Exp SEMICOLON"); }
+: LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(Stmt, "LVal OP_ASS Exp SEMICOLON"); }
 | Block                                                                             { SSYC_PRINT_REDUCE(Stmt, "Block"); }
-| IF_KEYWORD LPAREN Cond RPAREN Stmt                                                { SSYC_PRINT_REDUCE(Stmt, "IF_KEYWORD LPAREN Cond RPAREN Stmt"); }
-| IF_KEYWORD LPAREN Cond RPAREN StmtBeforeElseStmt ELSE_KEYWORD Stmt                { SSYC_PRINT_REDUCE(Stmt, "IF_KEYWORD LPAREN Cond RPAREN StmtBeforeElseStmt ELSE_KEYWORD Stmt"); }
-| WHILE_KEYWORD LPAREN Cond RPAREN Stmt                                             { SSYC_PRINT_REDUCE(Stmt, "WHILE_KEYWORD LPAREN Cond RPAREN Stmt"); }
-| BREAK_KEYWORD SEMICOLON                                                           { SSYC_PRINT_REDUCE(Stmt, "BREAK_KEYWORD SEMICOLON"); }
-| CONTINUE_KEYWORD SEMICOLON                                                        { SSYC_PRINT_REDUCE(Stmt, "CONTINUE_KEYWORD SEMICOLON"); }
-| RETURN_KEYWORD SEMICOLON                                                          { SSYC_PRINT_REDUCE(Stmt, "RETURN_KEYWORD SEMICOLON"); }
-| RETURN_KEYWORD Exp SEMICOLON                                                      { SSYC_PRINT_REDUCE(Stmt, "RETURN_KEYWORD Exp SEMICOLON"); }
+| KW_IF LPAREN Cond RPAREN Stmt                                                     { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN Stmt"); }
+| KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt                          { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt"); }
+| KW_WHILE LPAREN Cond RPAREN Stmt                                                  { SSYC_PRINT_REDUCE(Stmt, "KW_WHILE LPAREN Cond RPAREN Stmt"); }
+| KW_BREAK SEMICOLON                                                                { SSYC_PRINT_REDUCE(Stmt, "KW_BREAK SEMICOLON"); }
+| KW_CONTINUE SEMICOLON                                                             { SSYC_PRINT_REDUCE(Stmt, "KW_CONTINUE SEMICOLON"); }
+| KW_RETURN SEMICOLON                                                               { SSYC_PRINT_REDUCE(Stmt, "KW_RETURN SEMICOLON"); }
+| KW_RETURN Exp SEMICOLON                                                           { SSYC_PRINT_REDUCE(Stmt, "KW_RETURN Exp SEMICOLON"); }
 ;
 
 StmtBeforeElseStmt
-: LVal ASSIGN_OP Exp SEMICOLON                                                      { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "LVal ASSIGN_OP Exp SEMICOLON"); }
+: LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "LVal OP_ASS Exp SEMICOLON"); }
 | Block                                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Block"); }
-| IF_KEYWORD LPAREN Cond RPAREN StmtBeforeElseStmt ELSE_KEYWORD StmtBeforeElseStmt  { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "IF_KEYWORD LPAREN Cond RPAREN StmtBeforeElseStmt ELSE_KEYWORD StmtBeforeElseStmt"); }
-| WHILE_KEYWORD LPAREN Cond RPAREN StmtBeforeElseStmt                               { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "WHILE_KEYWORD LPAREN Cond RPAREN StmtBeforeElseStmt"); }
-| BREAK_KEYWORD SEMICOLON                                                           { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "BREAK_KEYWORD SEMICOLON"); }
-| CONTINUE_KEYWORD SEMICOLON                                                        { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "CONTINUE_KEYWORD SEMICOLON"); }
-| RETURN_KEYWORD SEMICOLON                                                          { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "RETURN_KEYWORD SEMICOLON"); }
-| RETURN_KEYWORD Exp SEMICOLON                                                      { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "RETURN_KEYWORD Exp SEMICOLON"); }
+| KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt            { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt"); }
+| KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt                                    { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt"); }
+| KW_BREAK SEMICOLON                                                                { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_BREAK SEMICOLON"); }
+| KW_CONTINUE SEMICOLON                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_CONTINUE SEMICOLON"); }
+| KW_RETURN SEMICOLON                                                               { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_RETURN SEMICOLON"); }
+| KW_RETURN Exp SEMICOLON                                                           { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_RETURN Exp SEMICOLON"); }
 ;
 
 //! #-- Stmt END ---
@@ -238,6 +238,7 @@ Cond
 ;
 
 //! 左值表达式
+//! NOTE: SubscriptChain := { LBRACKET Exp RBRACKET }
 LVal
 : IDENT                                                                             { SSYC_PRINT_REDUCE(LVal, "IDENT"); }
 | IDENT SubscriptChain                                                              { SSYC_PRINT_REDUCE(LVal, "IDENT SubscriptChain"); }
@@ -252,8 +253,8 @@ PrimaryExp
 
 //! 数值
 Number
-: INT_LITERAL                                                                       { SSYC_PRINT_REDUCE(Number, "INT_LITERAL"); }
-| FLOAT_LITERAL                                                                     { SSYC_PRINT_REDUCE(Number, "FLOAT_LITERAL"); }
+: CONST_INT                                                                         { SSYC_PRINT_REDUCE(Number, "CONST_INT"); }
+| CONST_FLOAT                                                                       { SSYC_PRINT_REDUCE(Number, "CONST_FLOAT"); }
 ;
 
 //! 一元表达式
@@ -266,9 +267,9 @@ UnaryExp
 
 //! 单目运算符
 UnaryOp
-: ADD_OP                                                                            { SSYC_PRINT_REDUCE(UnaryOp, "ADD_OP"); }
-| SUB_OP                                                                            { SSYC_PRINT_REDUCE(UnaryOp, "SUB_OP"); }
-| LNOT_OP                                                                           { SSYC_PRINT_REDUCE(UnaryOp, "LNOT_OP"); }
+: OP_ADD                                                                            { SSYC_PRINT_REDUCE(UnaryOp, "OP_ADD"); }
+| OP_SUB                                                                            { SSYC_PRINT_REDUCE(UnaryOp, "OP_SUB"); }
+| OP_LNOT                                                                           { SSYC_PRINT_REDUCE(UnaryOp, "OP_LNOT"); }
 ;
 
 //! 函数实参表
@@ -280,44 +281,44 @@ FuncRParams
 //! 乘除模表达式
 MulExp
 : UnaryExp                                                                          { SSYC_PRINT_REDUCE(MulExp, "UnaryExp"); }
-| MulExp MUL_OP UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp MUL_OP UnaryExp"); }
-| MulExp DIV_OP UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp DIV_OP UnaryExp"); }
-| MulExp MOD_OP UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp MOD_OP UnaryExp"); }
+| MulExp OP_MUL UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_MUL UnaryExp"); }
+| MulExp OP_DIV UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_DIV UnaryExp"); }
+| MulExp OP_MOD UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_MOD UnaryExp"); }
 ;
 
 //! 加减表达式
 AddExp
 : MulExp                                                                            { SSYC_PRINT_REDUCE(AddExp, "MulExp"); }
-| AddExp ADD_OP MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp ADD_OP MulExp"); }
-| AddExp SUB_OP MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp SUB_OP MulExp"); }
+| AddExp OP_ADD MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp OP_ADD MulExp"); }
+| AddExp OP_SUB MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp OP_SUB MulExp"); }
 ;
 
 //! 关系表达式
 RelExp
 : AddExp                                                                            { SSYC_PRINT_REDUCE(RelExp, "AddExp"); }
-| RelExp LT_OP AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp LT_OP AddExp"); }
-| RelExp GT_OP AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp GT_OP AddExp"); }
-| RelExp LE_OP AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp LE_OP AddExp"); }
-| RelExp GE_OP AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp GE_OP AddExp"); }
+| RelExp OP_LT AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_LT AddExp"); }
+| RelExp OP_GT AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_GT AddExp"); }
+| RelExp OP_LE AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_LE AddExp"); }
+| RelExp OP_GE AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_GE AddExp"); }
 ;
 
 //! 相等性表达式
 EqExp
 : RelExp                                                                            { SSYC_PRINT_REDUCE(EqExp, "RelExp"); }
-| EqExp EQ_OP RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp EQ_OP RelExp"); }
-| EqExp NE_OP RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp NE_OP RelExp"); }
+| EqExp OP_EQ RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp OP_EQ RelExp"); }
+| EqExp OP_NE RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp OP_NE RelExp"); }
 ;
 
 //! 逻辑与表达式
 LAndExp
 : EqExp                                                                             { SSYC_PRINT_REDUCE(LAndExp, "EqExp"); }
-| LAndExp LAND_OP EqExp                                                             { SSYC_PRINT_REDUCE(LAndExp, "LAndExp LAND_OP EqExp"); }
+| LAndExp OP_LAND EqExp                                                             { SSYC_PRINT_REDUCE(LAndExp, "LAndExp OP_LAND EqExp"); }
 ;
 
 //! 逻辑或表达式
 LOrExp
 : LAndExp                                                                           { SSYC_PRINT_REDUCE(LOrExp, "LAndExp"); }
-| LOrExp LOR_OP LAndExp                                                             { SSYC_PRINT_REDUCE(LOrExp, "LOrExp LOR_OP LAndExp"); }
+| LOrExp OP_LOR LAndExp                                                             { SSYC_PRINT_REDUCE(LOrExp, "LOrExp OP_LOR LAndExp"); }
 ;
 
 //! 常量表达式
@@ -343,6 +344,12 @@ SubscriptChainConst
 ConstInitValList
 : ConstInitVal                                                                      { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitVal"); }
 | ConstInitValList COMMA ConstInitVal                                               { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitValList COMMA ConstInitVal"); }
+;
+
+//! 缺省下标索引链
+SubscriptChainVariant
+: LBRACKET RBRACKET                                                                 { SSYC_PRINT_REDUCE(SubscriptChainVariant, "LBRACKET RBRACKET"); }
+| LBRACKET RBRACKET SubscriptChain                                                  { SSYC_PRINT_REDUCE(SubscriptChainVariant, "LBRACKET RBRACKET SubscriptChain"); }
 ;
 
 //! 变量定义列表

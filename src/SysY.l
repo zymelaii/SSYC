@@ -16,18 +16,18 @@ BLOCK_COMMENT_LINE {EOL}
 BLOCK_COMMENT_END \*\/
 %x BLOCK_COMMENT
 
-OCT_LITERAL 0[0-7]+
-DEC_LITERAL 0|([1-9][0-9]*)
-HEX_LITERAL 0[xX][0-9a-fA-F]+
-INT_LITERAL {OCT_LITERAL}|{DEC_LITERAL}|{HEX_LITERAL}
+CONST_OCT 0[0-7]+
+CONST_DEC 0|([1-9][0-9]*)
+CONST_HEX 0[xX][0-9a-fA-F]+
+CONST_INT {CONST_OCT}|{CONST_DEC}|{CONST_HEX}
 
-FLOAT_EXP [eE][+-]?{DEC_LITERAL}
-FLOAT_EXP_BIN [pP][+-]?{DEC_LITERAL}
-FLOAT_FRACTIONAL ({DEC_LITERAL}?\.{DEC_LITERAL})|({DEC_LITERAL}\.)
-FLOAT_FRACTIONAL_HEX ({HEX_LITERAL}?\.[0-9a-fA-F]+)|({HEX_LITERAL}\.)
-FLOAT_DEC_LITERAL ({DEC_LITERAL}{FLOAT_EXP})|({FLOAT_FRACTIONAL}{FLOAT_EXP}?)
-FLOAT_HEX_LITERAL ({HEX_LITERAL}|{FLOAT_FRACTIONAL_HEX}){FLOAT_EXP_BIN}
-FLOAT_LITERAL {FLOAT_DEC_LITERAL}|{FLOAT_HEX_LITERAL}
+FLOAT_EXP [eE][+-]?{CONST_DEC}
+FLOAT_EXP_BIN [pP][+-]?{CONST_DEC}
+FLOAT_FRACTIONAL ({CONST_DEC}?\.{CONST_DEC})|({CONST_DEC}\.)
+FLOAT_FRACTIONAL_HEX ({CONST_HEX}?\.[0-9a-fA-F]+)|({CONST_HEX}\.)
+CONST_FLOAT_DEC ({CONST_DEC}{FLOAT_EXP})|({FLOAT_FRACTIONAL}{FLOAT_EXP}?)
+CONST_FLOAT_HEX ({CONST_HEX}|{FLOAT_FRACTIONAL_HEX}){FLOAT_EXP_BIN}
+CONST_FLOAT {CONST_FLOAT_DEC}|{CONST_FLOAT_HEX}
 
 IDENT [a-zA-Z_][0-9a-zA-Z_]*
 
@@ -47,34 +47,34 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
     BEGIN INITIAL;
 }
 
-"const" { SSYC_PRINT_TOKEN("found qualifier"); return CONST_KEYWORD; }
+"const" { SSYC_PRINT_TOKEN("found qualifier"); return KW_CONST; }
 
-"void" 	{ SSYC_PRINT_TOKEN("found type keyword"); return VOID_TYPE;  }
-"int" 	{ SSYC_PRINT_TOKEN("found type keyword"); return INT_TYPE;   }
-"float" { SSYC_PRINT_TOKEN("found type keyword"); return FLOAT_TYPE; }
+"void" 	{ SSYC_PRINT_TOKEN("found type keyword"); return T_VOID;  }
+"int" 	{ SSYC_PRINT_TOKEN("found type keyword"); return T_INT;   }
+"float" { SSYC_PRINT_TOKEN("found type keyword"); return T_FLOAT; }
 
-"if"       { SSYC_PRINT_TOKEN("found control keyword"); return IF_KEYWORD;       }
-"else"     { SSYC_PRINT_TOKEN("found control keyword"); return ELSE_KEYWORD;     }
-"while"    { SSYC_PRINT_TOKEN("found control keyword"); return WHILE_KEYWORD;    }
-"break"    { SSYC_PRINT_TOKEN("found control keyword"); return BREAK_KEYWORD;    }
-"continue" { SSYC_PRINT_TOKEN("found control keyword"); return CONTINUE_KEYWORD; }
-"return"   { SSYC_PRINT_TOKEN("found control keyword"); return RETURN_KEYWORD;   }
+"if"       { SSYC_PRINT_TOKEN("found control keyword"); return KW_IF;       }
+"else"     { SSYC_PRINT_TOKEN("found control keyword"); return KW_ELSE;     }
+"while"    { SSYC_PRINT_TOKEN("found control keyword"); return KW_WHILE;    }
+"break"    { SSYC_PRINT_TOKEN("found control keyword"); return KW_BREAK;    }
+"continue" { SSYC_PRINT_TOKEN("found control keyword"); return KW_CONTINUE; }
+"return"   { SSYC_PRINT_TOKEN("found control keyword"); return KW_RETURN;   }
 
-"="   { SSYC_PRINT_TOKEN("found operator ASSIGN_OP"); return ASSIGN_OP; }
-"+"   { SSYC_PRINT_TOKEN("found operator ADD_OP"); return ADD_OP;       }
-"-"   { SSYC_PRINT_TOKEN("found operator SUB_OP"); return SUB_OP;       }
-"*"   { SSYC_PRINT_TOKEN("found operator MUL_OP"); return MUL_OP;       }
-"/"   { SSYC_PRINT_TOKEN("found operator DIV_OP"); return DIV_OP;       }
-"%"   { SSYC_PRINT_TOKEN("found operator MOD_OP"); return MOD_OP;       }
-"<"   { SSYC_PRINT_TOKEN("found operator LT_OP"); return LT_OP;         }
-">"   { SSYC_PRINT_TOKEN("found operator GT_OP"); return GT_OP;         }
-"<="  { SSYC_PRINT_TOKEN("found operator LE_OP"); return LE_OP;         }
-">="  { SSYC_PRINT_TOKEN("found operator GE_OP"); return GE_OP;         }
-"=="  { SSYC_PRINT_TOKEN("found operator EQ_OP"); return EQ_OP;         }
-"!="  { SSYC_PRINT_TOKEN("found operator NE_OP"); return NE_OP;         }
-"!"   { SSYC_PRINT_TOKEN("found operator LNOT_OP"); return LNOT_OP;     }
-"&&"  { SSYC_PRINT_TOKEN("found operator LAND_OP"); return LAND_OP;     }
-"||"  { SSYC_PRINT_TOKEN("found operator LOR_OP"); return LOR_OP;       }
+"="   { SSYC_PRINT_TOKEN("found operator OP_ASS"); return OP_ASS;   }
+"+"   { SSYC_PRINT_TOKEN("found operator OP_ADD"); return OP_ADD;   }
+"-"   { SSYC_PRINT_TOKEN("found operator OP_SUB"); return OP_SUB;   }
+"*"   { SSYC_PRINT_TOKEN("found operator OP_MUL"); return OP_MUL;   }
+"/"   { SSYC_PRINT_TOKEN("found operator OP_DIV"); return OP_DIV;   }
+"%"   { SSYC_PRINT_TOKEN("found operator OP_MOD"); return OP_MOD;   }
+"<"   { SSYC_PRINT_TOKEN("found operator OP_LT"); return OP_LT;     }
+">"   { SSYC_PRINT_TOKEN("found operator OP_GT"); return OP_GT;     }
+"<="  { SSYC_PRINT_TOKEN("found operator OP_LE"); return OP_LE;     }
+">="  { SSYC_PRINT_TOKEN("found operator OP_GE"); return OP_GE;     }
+"=="  { SSYC_PRINT_TOKEN("found operator OP_EQ"); return OP_EQ;     }
+"!="  { SSYC_PRINT_TOKEN("found operator OP_NE"); return OP_NE;     }
+"!"   { SSYC_PRINT_TOKEN("found operator OP_LNOT"); return OP_LNOT; }
+"&&"  { SSYC_PRINT_TOKEN("found operator OP_LAND"); return OP_LAND; }
+"||"  { SSYC_PRINT_TOKEN("found operator OP_LOR"); return OP_LOR;   }
 
 "(" { SSYC_PRINT_TOKEN("found LPAREN"); return LPAREN;       }
 ")" { SSYC_PRINT_TOKEN("found RPAREN"); return RPAREN;       }
@@ -85,8 +85,8 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 "," { SSYC_PRINT_TOKEN("found COMMA"); return COMMA;         }
 ";" { SSYC_PRINT_TOKEN("found SEMICOLON"); return SEMICOLON; }
 
-{INT_LITERAL}   { SSYC_PRINT_TOKEN("found integer literal"); return INT_LITERAL; }
-{FLOAT_LITERAL} { SSYC_PRINT_TOKEN("found float literal"); return FLOAT_LITERAL; }
+{CONST_INT}   { SSYC_PRINT_TOKEN("found integer literal"); return CONST_INT; }
+{CONST_FLOAT} { SSYC_PRINT_TOKEN("found float literal"); return CONST_FLOAT; }
 
 {IDENT} { SSYC_PRINT_TOKEN("found identifier"); return IDENT; }
 
