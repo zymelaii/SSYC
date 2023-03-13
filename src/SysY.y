@@ -2,8 +2,6 @@
 #include "pch.h"
 #include "utils.h"
 
-extern FILE *yyin, *yyout;
-
 void yyerror(char* message);
 extern "C" int yywrap();
 int yylex();
@@ -386,50 +384,3 @@ BlockItemSequence
 //! #-- SysY 2022 文法 END ---
 
 %%
-
-DEFINE_string(input, "\xff", "input files");
-
-DEFINE_validator(input, [](const char* flag, const std::string& value) -> bool {
-    if (value.empty()) {
-        return false;
-    }
-
-    if (value[0] == '\xff') {
-        return true;
-    }
-
-    if (!fs::exists(value)) {
-        LOG(ERROR) << "SSYC: error: no such file: '" << value << "'";
-        return false;
-    }
-
-    return true;
-});
-
-int main(int argc, char* argv[]) {
-    FLAGS_colorlogtostderr = true;
-    FLAGS_logtostderr	   = true;
-    google::SetStderrLogging(google::GLOG_INFO);
-    google::InitGoogleLogging(argv[0]);
-
-    gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-    FILE* fin = nullptr;
-
-    gflags::CommandLineFlagInfo info;
-    if (gflags::GetCommandLineFlagInfo("input", &info); info.is_default) {
-        fin = stdin;
-    } else {
-        fin = fopen(FLAGS_input.c_str(), "r");
-    }
-
-    yyin = fin;
-    yyparse();
-
-    if (fin != nullptr) {
-        fclose(fin);
-    }
-    fin = nullptr;
-
-    return 0;
-}
