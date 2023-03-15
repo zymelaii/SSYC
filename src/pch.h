@@ -5,5 +5,6 @@
 #include <filesystem>
 #include <iostream>
 #include <stdlib.h>
+#include <assert.h>
 
 namespace fs = std::filesystem;
