@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
     gflags::CommandLineFlagInfo info{};
     if (gflags::GetCommandLineFlagInfo("input", &info); !info.is_default) {
         const auto resp = parser.setSource(FLAGS_input);
-        LOG_IF(WARNING, resp) << "unexpected source redirection failure";
+        LOG_IF(WARNING, !resp) << "unexpected source redirection failure";
     }
 
     parser.execute();
