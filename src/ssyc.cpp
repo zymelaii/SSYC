@@ -1,8 +1,10 @@
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <filesystem>
+#include <iostream>
 
 #include "parser.h"
+#include "utils.h"
 
 using ssyc::Parser;
 
@@ -40,6 +42,49 @@ int main(int argc, char* argv[]) {
     }
 
     parser.execute();
+
+    auto context = parser.context();
+    auto node    = context->program;
+    auto visit   = [](auto node) {
+        auto self = [](auto&& self, auto node) {
+            if (!node) return;
+            if (!node->left && !node->right && !node->FLAGS_Nested) {
+                std::cout << "{token: " << tokenEnumToString(node->token);
+                if (!std::holds_alternative<std::monostate>(node->value)) {
+                    if (std::holds_alternative<std::string>(node->value)) {
+                        std::cout << " `" << std::get<std::string>(node->value)
+                                  << "'";
+                    } else if (std::holds_alternative<int>(node->value)) {
+                        std::cout << " `" << std::get<int>(node->value) << "'";
+                    } else if (std::holds_alternative<float>(node->value)) {
+                        std::cout << " `" << std::get<float>(node->value)
+                                  << "'";
+                    }
+                }
+                std::cout << "} ";
+            } else {
+                std::cout << "{syntax: " << syntaxEnumToString(node->syntax);
+
+                if (!std::holds_alternative<std::monostate>(node->value)) {
+                    if (std::holds_alternative<std::string>(node->value)) {
+                        std::cout << " `" << std::get<std::string>(node->value)
+                                  << "'";
+                    } else if (std::holds_alternative<int>(node->value)) {
+                        std::cout << " `" << std::get<int>(node->value) << "'";
+                    } else if (std::holds_alternative<float>(node->value)) {
+                        std::cout << " `" << std::get<float>(node->value)
+                                  << "'";
+                    }
+                }
+                std::cout << "} ";
+                self(self, node->left);
+                self(self, node->right);
+            }
+        };
+        return self(self, node);
+    };
+
+    visit(node);
 
     return 0;
 }

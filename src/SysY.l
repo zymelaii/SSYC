@@ -1,7 +1,16 @@
 %{
 #include "pch.h"
 #include "utils.h"
+#include "ast.h"
+
+#include <stdint.h>
+
+#define YYSTYPE ssyc::AstNode*
 #include "y.tab.hpp"
+
+using ssyc::AstNode;
+using ssyc::SyntaxType;
+using ssyc::TokenType;
 %}
 
 WSP  [[:blank:]]
@@ -84,20 +93,38 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 "," { SSYC_PRINT_TOKEN("found COMMA"); return COMMA;         }
 ";" { SSYC_PRINT_TOKEN("found SEMICOLON"); return SEMICOLON; }
 
-{CONST_INT}   { SSYC_PRINT_TOKEN("found integer literal"); return CONST_INT; }
-{CONST_FLOAT} { SSYC_PRINT_TOKEN("found float literal"); return CONST_FLOAT; }
+{CONST_INT}   { SSYC_PRINT_TOKEN("found integer literal");
+    yylval = new AstNode;
+    yylval->token = TokenType::TT_CONST_INT;
+    yylval->FLAGS_ConstEval = true;
+    yylval->FLAGS_Constant = true;
+    yylval->FLAGS_Arithmetical = true;
 
-{IDENT} { SSYC_PRINT_TOKEN("found identifier"); return IDENT; }
+    //! TODO: 检查合法性
+    yylval->value = static_cast<int32_t>(std::stoi(yytext));
+
+    return CONST_INT;
+}
+{CONST_FLOAT} { SSYC_PRINT_TOKEN("found float literal");
+    yylval = new AstNode;
+    yylval->token = TokenType::TT_CONST_FLOAT;
+    yylval->FLAGS_ConstEval = true;
+    yylval->FLAGS_Constant = true;
+    yylval->FLAGS_Arithmetical = true;
+
+    //! TODO: 检查合法性
+    yylval->value = static_cast<float>(std::stof(yytext));
+
+    return CONST_FLOAT;
+}
+
+{IDENT} { SSYC_PRINT_TOKEN("found identifier");
+    yylval = new AstNode;
+    yylval->token = TokenType::TT_IDENT;
+    yylval->value = yytext;
+    return IDENT;
+}
 
 . { SSYC_PRINT_TOKEN("caught unexpected char"); }
 
 %%
-
-void yyerror(char* message) {
-    LOG(ERROR) << "parse error: " << message;
-    exit(-1);
-}
-
-int yywrap() {
-    return 1;
-}
