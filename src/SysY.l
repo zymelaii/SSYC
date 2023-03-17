@@ -4,13 +4,10 @@
 #include "ast.h"
 
 #include <stdint.h>
+#include <string.h>
 
-#define YYSTYPE ssyc::AstNode*
 #include "y.tab.hpp"
 
-using ssyc::AstNode;
-using ssyc::SyntaxType;
-using ssyc::TokenType;
 %}
 
 WSP  [[:blank:]]
@@ -57,9 +54,18 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 
 "const" { SSYC_PRINT_TOKEN("found qualifier"); return KW_CONST; }
 
-"void" 	{ SSYC_PRINT_TOKEN("found type keyword"); return T_VOID;  }
-"int" 	{ SSYC_PRINT_TOKEN("found type keyword"); return T_INT;   }
-"float" { SSYC_PRINT_TOKEN("found type keyword"); return T_FLOAT; }
+"void" 	{ SSYC_PRINT_TOKEN("found type keyword");
+    yylval.type = T_VOID;
+    return T_VOID; 
+}
+"int" 	{ SSYC_PRINT_TOKEN("found type keyword");
+    yylval.type = T_INT;;
+    return T_INT;  
+}
+"float" { SSYC_PRINT_TOKEN("found type keyword");
+    yylval.type = T_FLOAT;
+    return T_FLOAT;
+}
 
 "if"       { SSYC_PRINT_TOKEN("found control keyword"); return KW_IF;       }
 "else"     { SSYC_PRINT_TOKEN("found control keyword"); return KW_ELSE;     }
@@ -68,21 +74,66 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 "continue" { SSYC_PRINT_TOKEN("found control keyword"); return KW_CONTINUE; }
 "return"   { SSYC_PRINT_TOKEN("found control keyword"); return KW_RETURN;   }
 
-"="  { SSYC_PRINT_TOKEN("found operator OP_ASS"); return OP_ASS;   }
-"+"  { SSYC_PRINT_TOKEN("found operator OP_ADD"); return OP_ADD;   }
-"-"  { SSYC_PRINT_TOKEN("found operator OP_SUB"); return OP_SUB;   }
-"*"  { SSYC_PRINT_TOKEN("found operator OP_MUL"); return OP_MUL;   }
-"/"  { SSYC_PRINT_TOKEN("found operator OP_DIV"); return OP_DIV;   }
-"%"  { SSYC_PRINT_TOKEN("found operator OP_MOD"); return OP_MOD;   }
-"<"  { SSYC_PRINT_TOKEN("found operator OP_LT"); return OP_LT;     }
-">"  { SSYC_PRINT_TOKEN("found operator OP_GT"); return OP_GT;     }
-"<=" { SSYC_PRINT_TOKEN("found operator OP_LE"); return OP_LE;     }
-">=" { SSYC_PRINT_TOKEN("found operator OP_GE"); return OP_GE;     }
-"==" { SSYC_PRINT_TOKEN("found operator OP_EQ"); return OP_EQ;     }
-"!=" { SSYC_PRINT_TOKEN("found operator OP_NE"); return OP_NE;     }
-"!"  { SSYC_PRINT_TOKEN("found operator OP_LNOT"); return OP_LNOT; }
-"&&" { SSYC_PRINT_TOKEN("found operator OP_LAND"); return OP_LAND; }
-"||" { SSYC_PRINT_TOKEN("found operator OP_LOR"); return OP_LOR;   }
+"="  { SSYC_PRINT_TOKEN("found operator OP_ASS");
+    yylval.type = OP_ASS;
+    return OP_ASS;
+}
+"+"  { SSYC_PRINT_TOKEN("found operator OP_ADD");
+    yylval.type = OP_ADD;
+    return OP_ADD;
+}
+"-"  { SSYC_PRINT_TOKEN("found operator OP_SUB");
+    yylval.type = OP_SUB;
+    return OP_SUB;
+}
+"*"  { SSYC_PRINT_TOKEN("found operator OP_MUL");
+    yylval.type = OP_MUL;
+    return OP_MUL;
+}
+"/"  { SSYC_PRINT_TOKEN("found operator OP_DIV");
+    yylval.type = OP_DIV;
+    return OP_DIV;
+}
+"%"  { SSYC_PRINT_TOKEN("found operator OP_MOD");
+    yylval.type = OP_MOD;
+    return OP_MOD;
+}
+"<"  { SSYC_PRINT_TOKEN("found operator OP_LT");
+    yylval.type = OP_LT;
+    return OP_LT;
+}
+">"  { SSYC_PRINT_TOKEN("found operator OP_GT");
+    yylval.type = OP_GT;
+    return OP_GT;
+}
+"<=" { SSYC_PRINT_TOKEN("found operator OP_LE");
+    yylval.type = OP_LE;
+    return OP_LE;
+}
+">=" { SSYC_PRINT_TOKEN("found operator OP_GE");
+    yylval.type = OP_GE;
+    return OP_GE;
+}
+"==" { SSYC_PRINT_TOKEN("found operator OP_EQ");
+    yylval.type = OP_EQ;
+    return OP_EQ;
+}
+"!=" { SSYC_PRINT_TOKEN("found operator OP_NE");
+    yylval.type = OP_NE;
+    return OP_NE;
+}
+"!"  { SSYC_PRINT_TOKEN("found operator OP_LNOT");
+    yylval.type = OP_LNOT;
+    return OP_LNOT;
+}
+"&&" { SSYC_PRINT_TOKEN("found operator OP_LAND");
+    yylval.type = OP_LAND;
+    return OP_LAND;
+}
+"||" { SSYC_PRINT_TOKEN("found operator OP_LOR");
+    yylval.type = OP_LOR;
+    return OP_LOR;
+}
 
 "(" { SSYC_PRINT_TOKEN("found LPAREN"); return LPAREN;       }
 ")" { SSYC_PRINT_TOKEN("found RPAREN"); return RPAREN;       }
@@ -94,34 +145,16 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 ";" { SSYC_PRINT_TOKEN("found SEMICOLON"); return SEMICOLON; }
 
 {CONST_INT}   { SSYC_PRINT_TOKEN("found integer literal");
-    yylval = new AstNode;
-    yylval->token = TokenType::TT_CONST_INT;
-    yylval->FLAGS_ConstEval = true;
-    yylval->FLAGS_Constant = true;
-    yylval->FLAGS_Arithmetical = true;
-
-    //! TODO: 检查合法性
-    yylval->value = static_cast<int32_t>(std::stoi(yytext));
-
+    yylval.token = strdup(yytext);
     return CONST_INT;
 }
 {CONST_FLOAT} { SSYC_PRINT_TOKEN("found float literal");
-    yylval = new AstNode;
-    yylval->token = TokenType::TT_CONST_FLOAT;
-    yylval->FLAGS_ConstEval = true;
-    yylval->FLAGS_Constant = true;
-    yylval->FLAGS_Arithmetical = true;
-
-    //! TODO: 检查合法性
-    yylval->value = static_cast<float>(std::stof(yytext));
-
+    yylval.token = strdup(yytext);
     return CONST_FLOAT;
 }
 
 {IDENT} { SSYC_PRINT_TOKEN("found identifier");
-    yylval = new AstNode;
-    yylval->token = TokenType::TT_IDENT;
-    yylval->value = yytext;
+    yylval.token = strdup(yytext);
     return IDENT;
 }
 

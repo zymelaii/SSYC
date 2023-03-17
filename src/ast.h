@@ -1,7 +1,5 @@
 #pragma once
 
-#include "token.h"  // IWYU pragma: export
-#include "syntax.h" // IWYU pragma: export
 #include <stdint.h>
 #include <concepts>
 #include <string>
@@ -14,14 +12,24 @@ struct ProgramUnit {
     virtual std::string id() const = 0;
 };
 
+struct TypeDecl;
+struct InitializeList;
+
 struct Program;
 struct FuncDef;
 struct Block;
+
 struct Statement;
 struct DeclStatement;
+struct NestStatement;
+struct ExprStatement;
+struct IfElseStatement;
+struct WhileStatement;
+struct BreakStatement;
+struct ContinueStatement;
+struct ReturnStatement;
+
 struct Expr;
-struct TypeDecl;
-struct InitializeList;
 struct UnaryExpr;
 struct BinaryExpr;
 struct FnCallExpr;
@@ -198,6 +206,7 @@ struct Statement : public ProgramUnit {
 
     enum class Type : uint8_t {
         Decl,
+        Nested,
         Expr,
         IfElse,
         While,
@@ -219,6 +228,89 @@ struct DeclStatement final : public Statement {
     }
 
     std::vector<std::pair<TypeDecl *, Expr *>> declList; //!< 声明列表
+};
+
+struct NestedStatement final : public Statement {
+    std::string id() const override {
+        return "nested-statement";
+    }
+
+    NestedStatement() {
+        Statement::type = Statement::Type::Expr;
+    }
+
+    Block *block;
+};
+
+struct ExprStatement final : public Statement {
+    std::string id() const override {
+        return "expr-statement";
+    }
+
+    ExprStatement() {
+        Statement::type = Statement::Type::Expr;
+    }
+
+    Expr *expr;
+};
+
+struct IfElseStatement final : public Statement {
+    std::string id() const override {
+        return "if-else-statement";
+    }
+
+    IfElseStatement() {
+        Statement::type = Statement::Type::IfElse;
+    }
+
+    Expr *condition;
+    Statement* trueRoute;
+    Statement* falseRoute;
+};
+
+struct WhileStatement final : public Statement {
+    std::string id() const override {
+        return "while-statement";
+    }
+
+    WhileStatement() {
+        Statement::type = Statement::Type::While;
+    }
+
+    Expr *condition;
+    Statement *body;
+};
+
+struct BreakStatement final : public Statement {
+    std::string id() const override {
+        return "break-statement";
+    }
+
+    BreakStatement() {
+        Statement::type = Statement::Type::Break;
+    }
+};
+
+struct ContinueStatement final : public Statement {
+    std::string id() const override {
+        return "continue-statement";
+    }
+
+    ContinueStatement() {
+        Statement::type = Statement::Type::Continue;
+    }
+};
+
+struct ReturnStatement final : public Statement {
+    std::string id() const override {
+        return "return-statement";
+    }
+
+    ReturnStatement() {
+        Statement::type = Statement::Type::Return;
+    }
+
+    Expr *retval;
 };
 
 struct Block final : public ProgramUnit {

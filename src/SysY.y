@@ -4,13 +4,13 @@
 #include "ast.h"
 #include "parser_context.h"
 
-#define YYSTYPE ssyc::AstNode*
+#include <string_view>
 
-using ssyc::AstNode;
+#define YYDEBUG 1
+
 using ssyc::ParserContext;
-using ssyc::SyntaxType;
-using ssyc::TokenType;
 using ContextFlag = ssyc::ParserContext::ContextFlag;
+using namespace ssyc::ast;
 
 void yyerror(ssyc::ParserContext &context, char* message);
 extern "C" int yywrap();
@@ -20,15 +20,41 @@ int yylex();
 //! 指定解析器参数
 %parse-param {ssyc::ParserContext &context}
 
+%union {
+	const char *token;
+	int type;
+	ssyc::ast::Program *program;
+	ssyc::ast::DeclStatement *decl;
+	ssyc::ast::FuncDef *func;
+	ssyc::ast::Block *block;
+	ssyc::ast::Statement *statement;
+	ssyc::ast::Expr *expr;
+	std::vector<ssyc::ast::Expr*> *elist;
+}
+
+%type <type> BType UnaryOp
+%type <program> CompUnit
+%type <decl> Decl ConstDecl VarDecl
+%type <decl> ConstDefList ConstDef VarDefList VarDef
+%type <func> FuncDef FuncFParams FuncFParam
+%type <expr> FuncRParams
+%type <block> Block BlockItemSequence
+%type <statement> BlockItem
+%type <statement> Stmt StmtBeforeElseStmt
+%type <expr> Exp Cond LVal PrimaryExp Number ConstExp
+%type <expr> UnaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
+%type <expr> ConstInitVal ConstInitValList InitVal InitValList
+%type <elist> SubscriptChain SubscriptChainConst SubscriptChainVariant
+
 //! #-- TOKEN 声明 BEGIN ---
 //! 标识符
-%token IDENT
+%token <token> IDENT
 
 //! 常量
-%token CONST_INT CONST_FLOAT
+%token <token> CONST_INT CONST_FLOAT
 
 //! 基本类型
-%token T_VOID T_INT T_FLOAT
+%token <type> T_VOID T_INT T_FLOAT
 
 //! 类型限定符
 %token KW_CONST
@@ -39,11 +65,12 @@ int yylex();
 %token KW_RETURN
 
 //! 操作符
-%token OP_ASS
-%token OP_ADD OP_SUB
-%token OP_MUL OP_DIV OP_MOD
-%token OP_LT OP_GT OP_LE OP_GE OP_EQ OP_NE
-%token OP_LNOT OP_LAND OP_LOR
+%token <type> OP_ASS
+%token <type> OP_POS OP_NEG
+%token <type> OP_ADD OP_SUB
+%token <type> OP_MUL OP_DIV OP_MOD
+%token <type> OP_LT OP_GT OP_LE OP_GE OP_EQ OP_NE
+%token <type> OP_LNOT OP_LAND OP_LOR
 
 //! 杂项
 %token LPAREN RPAREN
@@ -69,44 +96,22 @@ int yylex();
 //! 编译单元
 CompUnit
 : Decl                                                                              { SSYC_PRINT_REDUCE(CompUnit, "Decl");
-	$$ = context.require();
-	$$->left = $1;
-	$$->syntax = SyntaxType::Program;
-
-	const auto ok = context.testOrSetFlag(ContextFlag::SyntaxAnalysisDone);
+	const auto ok = context.testAndSetFlag(ContextFlag::SyntaxAnalysisDone);
 	LOG_IF(ERROR, !ok) << "Parser: caught one more program unit";
 
-	context.program = $$;
+	context.program->append($1);
 }
 | FuncDef                                                                           { SSYC_PRINT_REDUCE(CompUnit, "FuncDef");
-	$$ = context.require();
-	$$->left = $1;
-	$$->syntax = SyntaxType::Program;
-
-	$1->parent = $$;
-
-	const auto ok = context.testOrSetFlag(ContextFlag::SyntaxAnalysisDone);
+	const auto ok = context.testAndSetFlag(ContextFlag::SyntaxAnalysisDone);
 	LOG_IF(ERROR, !ok) << "Parser: caught one more program unit";
 
-	context.program = $$;
+	context.program->append($1);
 }
 | CompUnit Decl                                                                     { SSYC_PRINT_REDUCE(CompUnit, "CompUnit Decl");
-	$$ = context.require();
-	$$->left = $1;
-	$$->right = $2;
-	$$->syntax = SyntaxType::Program;
-
-	$1->parent = $$;
-	$2->parent = $$;
+	context.program->append($2);
 }
 | CompUnit FuncDef                                                                  { SSYC_PRINT_REDUCE(CompUnit, "CompUnit FuncDef");
-	$$ = context.require();
-	$$->left = $1;
-	$$->right = $2;
-	$$->syntax = SyntaxType::Program;
-
-	$1->parent = $$;
-	$2->parent = $$;
+	context.program->append($2);
 }
 ;
 
@@ -124,10 +129,26 @@ Decl
 //! NOTE: ConstDefList := ConstDef { COMMA ConstDef }
 ConstDecl
 : KW_CONST BType ConstDefList SEMICOLON                                             { SSYC_PRINT_REDUCE(ConstDecl, "KW_CONST BType SEMICOLON");
-	LOG_IF(ERROR, $2->token == TokenType::TT_T_VOID)
-		<< "Parser: declaration cannot be of type `void'";
+	$$ = $3;
 
-	//! TODO: 待补全
+	TypeDecl::Type basicType{};
+	switch ($2) {
+		case T_INT: {
+			basicType = TypeDecl::Type::Integer;
+		} break;
+		case T_FLOAT: {
+			basicType = TypeDecl::Type::Float;
+		} break;
+		default: {
+			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($2) << ") of declaration";
+		} break;
+	}
+
+	for (auto &decl : $$->declList) {
+		auto &[type, expr] = decl;
+		type->constant = true;
+		type->type = basicType;
+	}
 }
 ;
 
@@ -146,16 +167,13 @@ ConstDecl
 
 BType
 : T_VOID                                                                            { SSYC_PRINT_REDUCE(BType, "T_VOID");
-	$$ = context.require();
-	$$->token = TokenType::TT_T_VOID;
+	$$ = T_VOID;
 }
 | T_INT                                                                             { SSYC_PRINT_REDUCE(BType, "T_INT");
-	$$ = context.require();
-	$$->token = TokenType::TT_T_INT;
+	$$ = T_INT;
 }
 | T_FLOAT                                                                           { SSYC_PRINT_REDUCE(BType, "T_FLOAT");
-	$$ = context.require();
-	$$->token = TokenType::TT_T_FLOAT;
+	$$ = T_FLOAT;
 }
 ;
 
@@ -165,60 +183,127 @@ BType
 //! NOTE: SubscriptChainConst := { LBRACKET ConstExp RBRACKET }
 ConstDef
 : IDENT OP_ASS ConstInitVal                                                         { SSYC_PRINT_REDUCE(ConstDef, "IDENT OP_ASS ConstInitVal");
-	LOG_IF(ERROR, $3->FLAGS_ArrayBlock)
-		<< "Parser: non-array variable cannot be initialized with array block";
+	//! TODO: 检查各种合法性
+	auto type = new TypeDecl;
+	type->ident = $1;
+	
+	$$ = new DeclStatement;
+	$$->declList.emplace_back(type, $3);
 }
 | IDENT SubscriptChainConst OP_ASS ConstInitVal                                     { SSYC_PRINT_REDUCE(ConstDef, "IDENT SubscriptChainConst OP_ASS ConstInitVal");
-	LOG_IF(ERROR, !$4->FLAGS_ArrayBlock)
-		<< "Parser: array variable cannot be initialized with single value";
+	auto type = new TypeDecl;
+	type->ident = $1;
+	//! TODO: 数组下标列表类型选取
+
+	$$ = new DeclStatement;
+	$$->declList.emplace_back(type, $4);
 }
 ;
 
 //! 常量初值
 //! NOTE: ConstInitValList := ConstInitVal { COMMA ConstInitVal }
 ConstInitVal
-: ConstExp                                                                          { SSYC_PRINT_REDUCE(ConstInitVal, "ConstExp"); }
-| LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE RBRACE"); }
-| LBRACE ConstInitValList RBRACE                                                    { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE ConstInitValList RBRACE"); }
+: ConstExp                                                                          { SSYC_PRINT_REDUCE(ConstInitVal, "ConstExp");
+	$$ = $1;
+}
+| LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE RBRACE");
+	auto list = new InitializeList;
+	auto expr = new OrphanExpr;
+	expr->ref = list;
+
+	$$ = expr;
+}
+| LBRACE ConstInitValList RBRACE                                                    { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE ConstInitValList RBRACE");
+	auto list = dynamic_cast<InitializeList*>($2);
+	auto expr = new OrphanExpr;
+	expr->ref = list;
+
+	$$ = expr;
+}
 ;
 
 //! 变量声明
 //! NOTE: VarDefList := VarDef { COMMA VarDef }
 VarDecl
 : BType VarDefList SEMICOLON                                                        { SSYC_PRINT_REDUCE(VarDecl, "BType VarDefList SEMICOLON");
-	LOG_IF(ERROR, $2->token == TokenType::TT_T_VOID)
-		<< "Parser: declaration cannot be of type `void'";
+	$$ = $2;
 
-	//! TODO: 待补全
+	TypeDecl::Type basicType{};
+	switch ($1) {
+		case T_INT: {
+			basicType = TypeDecl::Type::Integer;
+		} break;
+		case T_FLOAT: {
+			basicType = TypeDecl::Type::Float;
+		} break;
+		default: {
+			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($1) << ") of declaration";
+		} break;
+	}
+
+	for (auto &decl : $$->declList) {
+		auto &[type, expr] = decl;
+		type->type = basicType;
+	}
 }
 ;
 
 //! 变量定义
 VarDef
 : IDENT                                                                             { SSYC_PRINT_REDUCE(VarDef, "IDENT");
-	$$ = context.require();
-	//! TODO: 待补全
+	//! TODO: 检查各种合法性
+	auto type = new TypeDecl;
+	type->ident = $1;
+	
+	$$ = new DeclStatement;
+	$$->declList.emplace_back(type, nullptr);
 }
 | IDENT OP_ASS InitVal                                                              { SSYC_PRINT_REDUCE(VarDef, "IDENT OP_ASS InitVal");
-	$$ = context.require();
-	//! TODO: 待补全
+	//! TODO: 检查各种合法性
+	auto type = new TypeDecl;
+	type->ident = $1;
+	
+	$$ = new DeclStatement;
+	$$->declList.emplace_back(type, $3);
 }
 | IDENT SubscriptChainConst                                                         { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst");
-	$$ = context.require();
-	//! TODO: 待补全
+	auto type = new TypeDecl;
+	type->ident = $1;
+	//! TODO: 数组下标列表类型选取
+	
+	$$ = new DeclStatement;
+	$$->declList.emplace_back(type, nullptr);
 }
 | IDENT SubscriptChainConst OP_ASS InitVal                                          { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst OP_ASS InitVal");
-	$$ = context.require();
-	//! TODO: 待补全
+	auto type = new TypeDecl;
+	type->ident = $1;
+	//! TODO: 数组下标列表类型选取
+	
+	$$ = new DeclStatement;
+	$$->declList.emplace_back(type, $4);
 }
 ;
 
 //! 变量初值
 //! NOTE: InitValList := InitVal { COMMA InitVal }
 InitVal
-: Exp                                                                               { SSYC_PRINT_REDUCE(InitVal, "Exp"); }
-| LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(InitVal, "LBRACE RBRACE"); }
-| LBRACE InitValList RBRACE                                                         { SSYC_PRINT_REDUCE(InitVal, "LBRACE InitValList RBRACE"); }
+: Exp                                                                               { SSYC_PRINT_REDUCE(InitVal, "Exp");
+	$$ = $1;
+}
+| LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(InitVal, "LBRACE RBRACE");
+	auto list = new InitializeList;
+	auto expr = new OrphanExpr;
+	expr->ref = list;
+
+	$$ = expr;
+}
+| LBRACE InitValList RBRACE                                                         { SSYC_PRINT_REDUCE(InitVal, "LBRACE InitValList RBRACE");
+	auto list = dynamic_cast<InitializeList*>($2);
+	auto expr = new OrphanExpr;
+	expr->ref = list;
+
+	$$ = expr;
+}
 ;
 
 //! 函数定义
@@ -226,17 +311,38 @@ InitVal
 //! NOTE: replace `FuncType` with `BType`
 FuncDef
 : BType IDENT LPAREN RPAREN Block                                                   { SSYC_PRINT_REDUCE(FuncDef, "BType IDENT LPAREN RPAREN Block");
-	$$ = context.require();
-	$$->right = $5;
-	$$->syntax = SyntaxType::FuncDef;
-	$$->value = $2->value;
+	$$ = new FuncDef;
+	$$->ident = $2;
+	$$->body = $5;
 
-	$5->parent = $$;
-
-	context.deleteLater($2);
+	switch ($1) {
+		case T_VOID: {
+			$$->retType = FuncDef::Type::Void;
+		} break;
+		case T_INT: {
+			$$->retType = FuncDef::Type::Integer;
+		} break;
+		case T_FLOAT: {
+			$$->retType = FuncDef::Type::Float;
+		} break;
+	}
 }
 | BType IDENT LPAREN FuncFParams RPAREN Block                                       { SSYC_PRINT_REDUCE(FuncDef, "BType IDENT LPAREN FuncFParams RPAREN Block");
+	$$ = $4;
+	$$->ident = $2;
+	$$->body = $6;
 
+	switch ($1) {
+		case T_VOID: {
+			$$->retType = FuncDef::Type::Void;
+		} break;
+		case T_INT: {
+			$$->retType = FuncDef::Type::Integer;
+		} break;
+		case T_FLOAT: {
+			$$->retType = FuncDef::Type::Float;
+		} break;
+	}
 }
 ;
 
@@ -258,24 +364,61 @@ FuncDef
 
 //! 函数形参表
 FuncFParams
-: FuncFParam                                                                        { SSYC_PRINT_REDUCE(FuncFParams, "FuncFParam"); }
-| FuncFParams COMMA FuncFParam                                                      { SSYC_PRINT_REDUCE(FuncFParams, "FuncFParams COMMA FuncFParam"); }
+: FuncFParam                                                                        { SSYC_PRINT_REDUCE(FuncFParams, "FuncFParam");
+	$$ = $1;
+}
+| FuncFParams COMMA FuncFParam                                                      { SSYC_PRINT_REDUCE(FuncFParams, "FuncFParams COMMA FuncFParam");
+	$$ = $1;
+	$$->params.push_back($3->params[0]);
+	//! TODO: 内存清理
+}
 ;
 
 //! 函数形参
 //! NOTE: SubscriptChainVariant := LBRACKET RBRACKET [ { LBRACKET Exp RBRACKET } ]
 FuncFParam
 : BType IDENT                                                                       { SSYC_PRINT_REDUCE(FuncFParam, "BType IDENT");
-	LOG_IF(ERROR, $2->token == TokenType::TT_T_VOID)
-		<< "Parser: declaration cannot be of type `void'";
+	TypeDecl::Type basicType{};
+	switch ($1) {
+		case T_INT: {
+			basicType = TypeDecl::Type::Integer;
+		} break;
+		case T_FLOAT: {
+			basicType = TypeDecl::Type::Float;
+		} break;
+		default: {
+			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($1) << ") of declaration";
+		} break;
+	}
 
-	//! TODO: 待补全
+	auto type = new TypeDecl;
+	type->ident = $2;
+	type->type = basicType;
+
+	$$ = new FuncDef;
+	$$->params.push_back(type);
 }
 | BType IDENT SubscriptChainVariant                                                 { SSYC_PRINT_REDUCE(FuncFParam, "BType IDENT SubscriptChainVariant");
-	LOG_IF(ERROR, $2->token == TokenType::TT_T_VOID)
-		<< "Parser: declaration cannot be of type `void'";
+TypeDecl::Type basicType{};
+	switch ($1) {
+		case T_INT: {
+			basicType = TypeDecl::Type::Integer;
+		} break;
+		case T_FLOAT: {
+			basicType = TypeDecl::Type::Float;
+		} break;
+		default: {
+			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($1) << ") of declaration";
+		} break;
+	}
 
-	//! TODO: 待补全
+	auto type = new TypeDecl;
+	type->ident = $2;
+	type->type = basicType;
+	//! TODO: 数组下标列表类型选取
+
+	$$ = new FuncDef;
+	$$->params.push_back(type);
 }
 ;
 
@@ -283,28 +426,22 @@ FuncFParam
 //! NOTE: BlockItemSequence := { BlockItem }
 Block
 : LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(Block, "LBRACE BlockItemSequence RBRACE");
-	$$ = context.require();
-	$$->syntax = SyntaxType::Block;
-	$$->FLAGS_EmptyBlock = true;
-	$$->FLAGS_Nested = true;
-
-	LOG(WARNING) << "Parser: caught empty block";
+	$$ = nullptr;
 }
 | LBRACE BlockItemSequence RBRACE                                                   { SSYC_PRINT_REDUCE(Block, "LBRACE BlockItemSequence RBRACE");
-	$$ = context.require();
-	$$->syntax = SyntaxType::Block;
-
-	//! FIXME: 完成 BlockItemSequence 后去除
-	$$->FLAGS_Nested = true;
-
-	//! TODO: 待补全
+	//! TODO: 内存清理
+	$$ = $2->statementList.size() == 0 ? nullptr : $2;
 }
 ;
 
 //! 语句块项
 BlockItem
-: Decl                                                                              { SSYC_PRINT_REDUCE(BlockItem, "Decl"); }
-| Stmt                                                                              { SSYC_PRINT_REDUCE(BlockItem, "Stmt"); }
+: Decl                                                                              { SSYC_PRINT_REDUCE(BlockItem, "Decl");
+	$$ = $1;
+}
+| Stmt                                                                              { SSYC_PRINT_REDUCE(BlockItem, "Stmt");
+	$$ = $1;
+}
 ;
 
 //! 语句
@@ -331,129 +468,126 @@ BlockItem
 
 Stmt
 : LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(Stmt, "LVal OP_ASS Exp SEMICOLON");
-	$$ = context.require();
-	$$->left = $1;
-	$$->right = $3;
-	$$->syntax = SyntaxType::Assign;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::ASSIGN;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$3->parent = $$;
+	auto statement = new ExprStatement;
+	statement->expr = expr;
+
+	$$ = statement;
 }
 | SEMICOLON                                                                         { SSYC_PRINT_REDUCE(Stmt, "SEMICOLON");
 	$$ = nullptr;
 }
 | Exp SEMICOLON                                                                     { SSYC_PRINT_REDUCE(Stmt, "Exp SEMICOLON");
-	$$ = $1;
+	auto statement = new ExprStatement;
+	statement->expr = $1;
+
+	$$ = statement;
 }
 | Block                                                                             { SSYC_PRINT_REDUCE(Stmt, "Block");
-	$$ = $1;
+	auto statement = new NestedStatement;
+	statement->block = $1;
+
+	$$ = statement;
 }
 | KW_IF LPAREN Cond RPAREN Stmt                                                     { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN Stmt");
-	//! TODO: 调整 if-else 结构
-	$$ = context.require();
-	$$->left = $5;
-	$$->syntax = SyntaxType::IfElse;
+	auto statement = new IfElseStatement;
+	statement->condition = $3;
+	statement->trueRoute = $5;
 
-	$5->parent = $$;
+	$$ = statement;
 }
 | KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt                          { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt");
-	//! TODO: 调整 if-else 结构
-	$$ = context.require();
-	$$->left = $5;
-	$$->right = $7;
-	$$->syntax = SyntaxType::IfElse;
+	auto statement = new IfElseStatement;
+	statement->condition = $3;
+	statement->trueRoute = $5;
+	statement->falseRoute = $7;
 
-	$5->parent = $$;
-	$7->parent = $$;
+	$$ = statement;
 }
 | KW_WHILE LPAREN Cond RPAREN Stmt                                                  { SSYC_PRINT_REDUCE(Stmt, "KW_WHILE LPAREN Cond RPAREN Stmt");
-	$$ = context.require();
-	$$->left = $2;
-	$$->right = $5;
-	$$->syntax = SyntaxType::While;
+	auto statement = new WhileStatement;
+	statement->condition = $3;
+	statement->body = $5;
 
-	$2->parent = $$;
-	$5->parent = $$;
+	$$ = statement;
 }
 | KW_BREAK SEMICOLON                                                                { SSYC_PRINT_REDUCE(Stmt, "KW_BREAK SEMICOLON");
-	$$ = context.require();
-	$$->token = TokenType::TT_BREAK;
+	$$ = new BreakStatement;
 }
 | KW_CONTINUE SEMICOLON                                                             { SSYC_PRINT_REDUCE(Stmt, "KW_CONTINUE SEMICOLON");
-	$$ = context.require();
-	$$->token = TokenType::TT_CONTINUE;
+	$$ = new ContinueStatement;
 }
 | KW_RETURN SEMICOLON                                                               { SSYC_PRINT_REDUCE(Stmt, "KW_RETURN SEMICOLON");
-	$$ = context.require();
-	$$->syntax = SyntaxType::Return;
-	$$->FLAGS_Nested = true;
+	$$ = new ReturnStatement;
 }
 | KW_RETURN Exp SEMICOLON                                                           { SSYC_PRINT_REDUCE(Stmt, "KW_RETURN Exp SEMICOLON");
-	$$ = context.require();
-	$$->left = $1;
-	$$->syntax = SyntaxType::Return;
+	auto statement = new ReturnStatement;
+	statement->retval = $2;
 
-	$1->parent = $$;
+	$$ = statement;
 }
 ;
 
 StmtBeforeElseStmt
 : LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "LVal OP_ASS Exp SEMICOLON");
-	$$ = context.require();
-	$$->left = $1;
-	$$->right = $3;
-	$$->syntax = SyntaxType::Assign;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::ASSIGN;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$3->parent = $$;
+	auto statement = new ExprStatement;
+	statement->expr = expr;
+
+	$$ = statement;
 }
 | SEMICOLON                                                                         { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "SEMICOLON");
 	$$ = nullptr;
 }
 | Exp SEMICOLON                                                                     { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Exp SEMICOLON");
-	$$ = $1;
+	auto statement = new ExprStatement;
+	statement->expr = $1;
+
+	$$ = statement;
 }
 | Block                                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Block");
-	$$ = $1;
+	auto statement = new NestedStatement;
+	statement->block = $1;
+
+	$$ = statement;
 }
 | KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt            { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt");
-	//! TODO: 调整 if-else 结构
-	$$ = context.require();
-	$$->left = $5;
-	$$->right = $7;
-	$$->syntax = SyntaxType::IfElse;
+	auto statement = new IfElseStatement;
+	statement->condition = $3;
+	statement->trueRoute = $5;
+	statement->falseRoute = $7;
 
-	$5->parent = $$;
-	$7->parent = $$;
+	$$ = statement;
 }
 | KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt                                    { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt");
-	$$ = context.require();
-	$$->left = $2;
-	$$->right = $5;
-	$$->syntax = SyntaxType::While;
+	auto statement = new WhileStatement;
+	statement->condition = $3;
+	statement->body = $5;
 
-	$2->parent = $$;
-	$5->parent = $$;
+	$$ = statement;
 }
 | KW_BREAK SEMICOLON                                                                { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_BREAK SEMICOLON");
-	$$ = context.require();
-	$$->token = TokenType::TT_BREAK;
+	$$ = new BreakStatement;
 }
 | KW_CONTINUE SEMICOLON                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_CONTINUE SEMICOLON");
-	$$ = context.require();
-	$$->token = TokenType::TT_CONTINUE;
+	$$ = new ContinueStatement;
 }
 | KW_RETURN SEMICOLON                                                               { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_RETURN SEMICOLON");
-	$$ = context.require();
-	$$->syntax = SyntaxType::Return;
-	$$->FLAGS_Nested = true;
+	$$ = new ReturnStatement;
 }
 | KW_RETURN Exp SEMICOLON                                                           { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_RETURN Exp SEMICOLON");
-	$$ = context.require();
-	$$->left = $1;
-	$$->syntax = SyntaxType::Return;
+	auto statement = new ReturnStatement;
+	statement->retval = $2;
 
-	$1->parent = $$;
+	$$ = statement;
 }
 ;
 
@@ -477,9 +611,26 @@ Cond
 //! NOTE: SubscriptChain := { LBRACKET Exp RBRACKET }
 LVal
 : IDENT                                                                             { SSYC_PRINT_REDUCE(LVal, "IDENT");
-	$$ = $1;
+	//! FIXME: type 应该通过查找符号表获取
+	auto type = new TypeDecl;
+	type->ident = $1;
+
+	auto expr = new OrphanExpr;
+	expr->ref = type;
+
+	$$ = expr;
 }
-| IDENT SubscriptChain                                                              { SSYC_PRINT_REDUCE(LVal, "IDENT SubscriptChain"); }
+| IDENT SubscriptChain                                                              { SSYC_PRINT_REDUCE(LVal, "IDENT SubscriptChain");
+	//! FIXME: type 应该通过查找符号表获取
+	auto type = new TypeDecl;
+	type->ident = $1;
+	//! TODO: 数组下标列表类型选取
+
+	auto expr = new OrphanExpr;
+	expr->ref = type;
+
+	$$ = expr;
+}
 ;
 
 //! 基本表达式
@@ -498,10 +649,20 @@ PrimaryExp
 //! 数值
 Number
 : CONST_INT                                                                         { SSYC_PRINT_REDUCE(Number, "CONST_INT");
-	$$ = $1;
+	//! FIXME: 注意下这里的数值转换规范
+	auto expr = new ConstExprExpr;
+	expr->type = ConstExprExpr::Type::Integer;
+	expr->value = static_cast<int32_t>(std::stoi($1));
+
+	$$ = expr;
 }
 | CONST_FLOAT                                                                       { SSYC_PRINT_REDUCE(Number, "CONST_FLOAT");
-	$$ = $1;
+	//! FIXME: 注意下这里的数值转换规范
+	auto expr = new ConstExprExpr;
+	expr->type = ConstExprExpr::Type::Float;
+	expr->value = static_cast<float>(std::stof($1));
+
+	$$ = expr;
 }
 ;
 
@@ -510,35 +671,73 @@ UnaryExp
 : PrimaryExp                                                                        { SSYC_PRINT_REDUCE(UnaryExp, "PrimaryExp");
 	$$ = $1;
 }
-| IDENT LPAREN RPAREN                                                               { SSYC_PRINT_REDUCE(UnaryExp, "IDENT LPAREN RPAREN"); }
-| IDENT LPAREN FuncRParams RPAREN                                                   { SSYC_PRINT_REDUCE(UnaryExp, "IDENT LPAREN FuncRParams RPAREN"); }
+| IDENT LPAREN RPAREN                                                               { SSYC_PRINT_REDUCE(UnaryExp, "IDENT LPAREN RPAREN");
+	//! FIXME: 这里的函数引用应该通过查找符号表得到
+	auto func = new FuncDef;
+	func->ident = $1;
+
+	auto expr = new FnCallExpr;
+	expr->func = func;
+
+	$$ = expr;
+}
+| IDENT LPAREN FuncRParams RPAREN                                                   { SSYC_PRINT_REDUCE(UnaryExp, "IDENT LPAREN FuncRParams RPAREN");
+	//! FIXME: 这里的函数引用应该通过查找符号表得到
+	auto func = new FuncDef;
+	func->ident = $1;
+
+	auto expr = dynamic_cast<FnCallExpr*>($3);
+	expr->func = func;
+
+	$$ = expr;
+}
 | UnaryOp UnaryExp                                                                  { SSYC_PRINT_REDUCE(UnaryExp, "UnaryOp UnaryExp");
-	$$ = $1;
-	$1->left = $2;
-	LOG(INFO) << "Parser: caught unary expression";
+	auto expr = new UnaryExpr;
+	expr->operand = $2;
+
+	switch ($1) {
+		case OP_ADD: {
+			expr->op = UnaryExpr::Type::POS;
+		} break;
+		case OP_SUB: {
+			expr->op = UnaryExpr::Type::NEG;
+		} break;
+		case OP_LNOT: {
+			expr->op = UnaryExpr::Type::LNOT;
+		} break;
+	}
+
+	$$ = expr;
 }
 ;
 
 //! 单目运算符
 UnaryOp
 : OP_ADD                                                                            { SSYC_PRINT_REDUCE(UnaryOp, "OP_ADD");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_POS;
+	$$ = OP_POS;
 }
 | OP_SUB                                                                            { SSYC_PRINT_REDUCE(UnaryOp, "OP_SUB");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_NEG;
+	$$ = OP_NEG;
 }
 | OP_LNOT                                                                           { SSYC_PRINT_REDUCE(UnaryOp, "OP_LNOT");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_LNOT;
+	$$ = $1;
 }
 ;
 
 //! 函数实参表
 FuncRParams
-: Exp                                                                               { SSYC_PRINT_REDUCE(FuncRParams, "Exp"); }
-| FuncRParams COMMA Exp                                                             { SSYC_PRINT_REDUCE(FuncRParams, "FuncRParams COMMA Exp"); }
+: Exp                                                                               { SSYC_PRINT_REDUCE(FuncRParams, "Exp");
+	auto expr = new FnCallExpr;
+	expr->params.push_back($1);
+
+	$$ = expr;
+}
+| FuncRParams COMMA Exp                                                             { SSYC_PRINT_REDUCE(FuncRParams, "FuncRParams COMMA Exp");
+	auto expr = dynamic_cast<FnCallExpr*>($1);
+	expr->params.push_back($1);
+
+	$$ = expr;
+}
 ;
 
 //! 乘除模表达式
@@ -547,31 +746,28 @@ MulExp
 	$$ = $1;
 }
 | MulExp OP_MUL UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_MUL UnaryExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_MUL;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::MUL;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | MulExp OP_DIV UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_DIV UnaryExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_DIV;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::DIV;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | MulExp OP_MOD UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_MOD UnaryExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_MOD;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::MOD;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 ;
 
@@ -581,22 +777,20 @@ AddExp
 	$$ = $1;
 }
 | AddExp OP_ADD MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp OP_ADD MulExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_ADD;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::ADD;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | AddExp OP_SUB MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp OP_SUB MulExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_SUB;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::SUB;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 ;
 
@@ -606,40 +800,36 @@ RelExp
 	$$ = $1;
 }
 | RelExp OP_LT AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_LT AddExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_LT;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::LT;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | RelExp OP_GT AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_GT AddExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_GT;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::GT;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | RelExp OP_LE AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_LE AddExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_LE;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::LE;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | RelExp OP_GE AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_GE AddExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_GE;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::GE;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 ;
 
@@ -649,22 +839,20 @@ EqExp
 	$$ = $1;
 }
 | EqExp OP_EQ RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp OP_EQ RelExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_EQ;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::EQ;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 | EqExp OP_NE RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp OP_NE RelExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_NE;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::NE;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 ;
 
@@ -674,13 +862,12 @@ LAndExp
 	$$ = $1;
 }
 | LAndExp OP_LAND EqExp                                                             { SSYC_PRINT_REDUCE(LAndExp, "LAndExp OP_LAND EqExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_LAND;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::LAND;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 ;
 
@@ -690,21 +877,18 @@ LOrExp
 	$$ = $1;
 }
 | LOrExp OP_LOR LAndExp                                                             { SSYC_PRINT_REDUCE(LOrExp, "LOrExp OP_LOR LAndExp");
-	$$ = context.require();
-	$$->token = TokenType::TT_OP_LOR;
-	$$->left = $1;
-	$$->right = $2;
+	auto expr = new BinaryExpr;
+	expr->op = BinaryExpr::Type::LOR;
+	expr->lhs = $1;
+	expr->rhs = $3;
 
-	$1->parent = $$;
-	$2->parent = $$;
+	$$ = expr;
 }
 ;
 
 //! 常量表达式
 ConstExp
 : AddExp                                                                            { SSYC_PRINT_REDUCE(ConstExp, "AddExp");
-	//! NOTE: 在常量/变量的数组定义中，必须保证 ConstExp 是严格的常量
-	//! NOTE: FLAGS_ConstEval 表明目标可被编译期求值，不应当被直接作为判断是否为常量的依据
 	$$ = $1;
 }
 ;
@@ -713,50 +897,118 @@ ConstExp
 
 //! 常量定义列表
 ConstDefList
-: ConstDef                                                                          { SSYC_PRINT_REDUCE(ConstDefList, "ConstDef"); }
-| ConstDefList COMMA ConstDef                                                       { SSYC_PRINT_REDUCE(ConstDefList, "ConstDefList COMMA ConstDef"); }
+: ConstDef                                                                          { SSYC_PRINT_REDUCE(ConstDefList, "ConstDef");
+	$$ = $1;
+}
+| ConstDefList COMMA ConstDef                                                       { SSYC_PRINT_REDUCE(ConstDefList, "ConstDefList COMMA ConstDef");
+	//! TODO: 内存清理
+	$$ = $1;
+	$$->declList.push_back($3->declList[0]);
+}
 ;
 
 //! 常量下标索引链
 SubscriptChainConst
-: LBRACKET ConstExp RBRACKET                                                        { SSYC_PRINT_REDUCE(SubscriptChainConst, "LBRACKET ConstExp RBRACKET"); }
-| SubscriptChainConst LBRACKET ConstExp RBRACKET                                    { SSYC_PRINT_REDUCE(SubscriptChainConst, "SubscriptChainConst LBRACKET ConstExp RBRACKET"); }
+: LBRACKET ConstExp RBRACKET                                                        { SSYC_PRINT_REDUCE(SubscriptChainConst, "LBRACKET ConstExp RBRACKET");
+	$$ = new std::vector<Expr*>;
+	$$->push_back($2);
+}
+| SubscriptChainConst LBRACKET ConstExp RBRACKET                                    { SSYC_PRINT_REDUCE(SubscriptChainConst, "SubscriptChainConst LBRACKET ConstExp RBRACKET");
+	$$ = $1;
+	$$->push_back($3);
+}
 ;
 
 //! 常量初值列表
 ConstInitValList
-: ConstInitVal                                                                      { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitVal"); }
-| ConstInitValList COMMA ConstInitVal                                               { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitValList COMMA ConstInitVal"); }
+: ConstInitVal                                                                      { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitVal");
+	auto list = new InitializeList;
+	list->valueList.push_back($1);
+
+	auto expr = new OrphanExpr;
+	expr->ref = list;
+	
+	$$ = expr;
+}
+| ConstInitValList COMMA ConstInitVal                                               { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitValList COMMA ConstInitVal");
+	$$ = $1;
+
+	auto expr = dynamic_cast<OrphanExpr*>($$);
+	auto list = std::get<InitializeList*>(expr->ref);
+	list->valueList.push_back($1);
+}
 ;
 
 //! 缺省下标索引链
 SubscriptChainVariant
-: LBRACKET RBRACKET                                                                 { SSYC_PRINT_REDUCE(SubscriptChainVariant, "LBRACKET RBRACKET"); }
-| LBRACKET RBRACKET SubscriptChain                                                  { SSYC_PRINT_REDUCE(SubscriptChainVariant, "LBRACKET RBRACKET SubscriptChain"); }
+: LBRACKET RBRACKET                                                                 { SSYC_PRINT_REDUCE(SubscriptChainVariant, "LBRACKET RBRACKET");
+	$$ = new std::vector<Expr*>;
+	$$->push_back(nullptr);
+}
+| LBRACKET RBRACKET SubscriptChain                                                  { SSYC_PRINT_REDUCE(SubscriptChainVariant, "LBRACKET RBRACKET SubscriptChain");
+	$$ = $3;
+	$$->insert($$->begin(), nullptr);
+}
 ;
 
 //! 变量定义列表
 VarDefList
-: VarDef                                                                            { SSYC_PRINT_REDUCE(VarDefList, "VarDef"); }
-| VarDefList COMMA VarDef                                                           { SSYC_PRINT_REDUCE(VarDefList, "VarDefList COMMA VarDef"); }
+: VarDef                                                                            { SSYC_PRINT_REDUCE(VarDefList, "VarDef");
+	$$ = $1;
+}
+| VarDefList COMMA VarDef                                                           { SSYC_PRINT_REDUCE(VarDefList, "VarDefList COMMA VarDef");
+	//! TODO: 内存清理
+	$$ = $1;
+	$$->declList.push_back($3->declList[0]);
+}
 ;
 
 //! 变量初值列表
 InitValList
-: InitVal                                                                           { SSYC_PRINT_REDUCE(InitValList, "InitVal"); }
-| InitValList COMMA InitVal                                                         { SSYC_PRINT_REDUCE(InitValList, "InitValList COMMA InitVal"); }
+: InitVal                                                                           { SSYC_PRINT_REDUCE(InitValList, "InitVal");
+	auto list = new InitializeList;
+	list->valueList.push_back($1);
+
+	auto expr = new OrphanExpr;
+	expr->ref = list;
+	
+	$$ = expr;
+}
+| InitValList COMMA InitVal                                                         { SSYC_PRINT_REDUCE(InitValList, "InitValList COMMA InitVal");
+	$$ = $1;
+
+	auto expr = dynamic_cast<OrphanExpr*>($$);
+	auto list = std::get<InitializeList*>(expr->ref);
+	list->valueList.push_back($1);
+}
 ;
 
 //! 下标索引链
 SubscriptChain
-: LBRACKET Exp RBRACKET                                                             { SSYC_PRINT_REDUCE(SubscriptChain, "LBRACKET Exp RBRACKET"); }
-| SubscriptChain LBRACKET Exp RBRACKET                                              { SSYC_PRINT_REDUCE(SubscriptChain, "SubscriptChain LBRACKET Exp RBRACKET"); }
+: LBRACKET Exp RBRACKET                                                             { SSYC_PRINT_REDUCE(SubscriptChain, "LBRACKET Exp RBRACKET");
+	$$ = new std::vector<Expr*>;
+	$$->push_back($2);
+}
+| SubscriptChain LBRACKET Exp RBRACKET                                              { SSYC_PRINT_REDUCE(SubscriptChain, "SubscriptChain LBRACKET Exp RBRACKET");
+	$$ = $1;
+	$$->push_back($3);
+}
 ;
 
 //! 语句块项序列
 BlockItemSequence
-: BlockItem                                                                         { SSYC_PRINT_REDUCE(BlockItemSequence, "BlockItem"); }
-| BlockItemSequence BlockItem                                                       { SSYC_PRINT_REDUCE(BlockItemSequence, "BlockItemSequence BlockItem"); }
+: BlockItem                                                                         { SSYC_PRINT_REDUCE(BlockItemSequence, "BlockItem");
+	$$ = new Block;
+	if ($1 != nullptr) {
+		$$->statementList.push_back($1);
+	}
+}
+| BlockItemSequence BlockItem                                                       { SSYC_PRINT_REDUCE(BlockItemSequence, "BlockItemSequence BlockItem");
+	$$ = $1;
+	if ($2 != nullptr) {
+		$$->statementList.push_back($2);
+	}
+}
 ;
 
 //! #-- SysY 2022 文法 END ---

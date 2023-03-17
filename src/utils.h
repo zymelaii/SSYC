@@ -1,8 +1,6 @@
 #pragma once
 
 #include "pch.h"
-#include "syntax.h"
-#include "token.h"
 
 #include <string_view>
 
@@ -34,6 +32,3 @@
 #define SSYC_PRINT_REDUCE(...)
 
 #endif
-
-std::string_view tokenEnumToString(ssyc::TokenType token);
-std::string_view syntaxEnumToString(ssyc::SyntaxType syntax);
