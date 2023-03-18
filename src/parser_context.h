@@ -13,6 +13,14 @@ struct ParserContext {
     ParserContext();
     ~ParserContext();
 
+    template <typename T>
+        requires(std::derived_from<T, ast::ProgramUnit>)
+    inline auto require() {
+        auto unit = new T;
+        units.insert(unit);
+        return unit;
+    }
+
     enum class ContextFlag : uint8_t {
         SyntaxAnalysisDone = 0, //!< 完成语法分析
     };
@@ -24,8 +32,9 @@ struct ParserContext {
         return true;
     }
 
-    std::bitset<std::numeric_limits<uint8_t>::max()> flags;   //!< 标志位
-    std::unique_ptr<ast::Program>                    program; //!< 源程序
+    std::bitset<std::numeric_limits<uint8_t>::max()> flags; //!< 标志位
+    std::set<ast::ProgramUnit*>   units;   //!< 程序单元列表
+    std::unique_ptr<ast::Program> program; //!< 源程序
 };
 
 } // namespace ssyc

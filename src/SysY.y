@@ -184,18 +184,19 @@ BType
 ConstDef
 : IDENT OP_ASS ConstInitVal                                                         { SSYC_PRINT_REDUCE(ConstDef, "IDENT OP_ASS ConstInitVal");
 	//! TODO: 检查各种合法性
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
 	
-	$$ = new DeclStatement;
+	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $3);
 }
 | IDENT SubscriptChainConst OP_ASS ConstInitVal                                     { SSYC_PRINT_REDUCE(ConstDef, "IDENT SubscriptChainConst OP_ASS ConstInitVal");
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	//! TODO: 数组下标列表类型选取
+	type->optSubscriptList = std::move(*$2);
+	delete $2;
 
-	$$ = new DeclStatement;
+	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $4);
 }
 ;
@@ -207,15 +208,15 @@ ConstInitVal
 	$$ = $1;
 }
 | LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE RBRACE");
-	auto list = new InitializeList;
-	auto expr = new OrphanExpr;
+	auto list = context.require<InitializeList>();
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
 
 	$$ = expr;
 }
 | LBRACE ConstInitValList RBRACE                                                    { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE ConstInitValList RBRACE");
 	auto list = dynamic_cast<InitializeList*>($2);
-	auto expr = new OrphanExpr;
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
 
 	$$ = expr;
@@ -252,34 +253,36 @@ VarDecl
 VarDef
 : IDENT                                                                             { SSYC_PRINT_REDUCE(VarDef, "IDENT");
 	//! TODO: 检查各种合法性
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
 	
-	$$ = new DeclStatement;
+	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, nullptr);
 }
 | IDENT OP_ASS InitVal                                                              { SSYC_PRINT_REDUCE(VarDef, "IDENT OP_ASS InitVal");
 	//! TODO: 检查各种合法性
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
 	
-	$$ = new DeclStatement;
+	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $3);
 }
 | IDENT SubscriptChainConst                                                         { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst");
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	//! TODO: 数组下标列表类型选取
+	type->optSubscriptList = std::move(*$2);
+	delete $2;
 	
-	$$ = new DeclStatement;
+	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, nullptr);
 }
 | IDENT SubscriptChainConst OP_ASS InitVal                                          { SSYC_PRINT_REDUCE(VarDef, "IDENT SubscriptChainConst OP_ASS InitVal");
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	//! TODO: 数组下标列表类型选取
+	type->optSubscriptList = std::move(*$2);
+	delete $2;
 	
-	$$ = new DeclStatement;
+	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $4);
 }
 ;
@@ -291,15 +294,15 @@ InitVal
 	$$ = $1;
 }
 | LBRACE RBRACE                                                                     { SSYC_PRINT_REDUCE(InitVal, "LBRACE RBRACE");
-	auto list = new InitializeList;
-	auto expr = new OrphanExpr;
+	auto list = context.require<InitializeList>();
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
 
 	$$ = expr;
 }
 | LBRACE InitValList RBRACE                                                         { SSYC_PRINT_REDUCE(InitVal, "LBRACE InitValList RBRACE");
 	auto list = dynamic_cast<InitializeList*>($2);
-	auto expr = new OrphanExpr;
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
 
 	$$ = expr;
@@ -311,7 +314,7 @@ InitVal
 //! NOTE: replace `FuncType` with `BType`
 FuncDef
 : BType IDENT LPAREN RPAREN Block                                                   { SSYC_PRINT_REDUCE(FuncDef, "BType IDENT LPAREN RPAREN Block");
-	$$ = new FuncDef;
+	$$ = context.require<FuncDef>();
 	$$->ident = $2;
 	$$->body = $5;
 
@@ -391,11 +394,11 @@ FuncFParam
 		} break;
 	}
 
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $2;
 	type->type = basicType;
 
-	$$ = new FuncDef;
+	$$ = context.require<FuncDef>();
 	$$->params.push_back(type);
 }
 | BType IDENT SubscriptChainVariant                                                 { SSYC_PRINT_REDUCE(FuncFParam, "BType IDENT SubscriptChainVariant");
@@ -412,12 +415,13 @@ TypeDecl::Type basicType{};
 		} break;
 	}
 
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $2;
 	type->type = basicType;
-	//! TODO: 数组下标列表类型选取
+	type->optSubscriptList = std::move(*$3);
+	delete $3;
 
-	$$ = new FuncDef;
+	$$ = context.require<FuncDef>();
 	$$->params.push_back(type);
 }
 ;
@@ -468,12 +472,12 @@ BlockItem
 
 Stmt
 : LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(Stmt, "LVal OP_ASS Exp SEMICOLON");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::ASSIGN;
 	expr->lhs = $1;
 	expr->rhs = $3;
 
-	auto statement = new ExprStatement;
+	auto statement = context.require<ExprStatement>();
 	statement->expr = expr;
 
 	$$ = statement;
@@ -482,26 +486,26 @@ Stmt
 	$$ = nullptr;
 }
 | Exp SEMICOLON                                                                     { SSYC_PRINT_REDUCE(Stmt, "Exp SEMICOLON");
-	auto statement = new ExprStatement;
+	auto statement = context.require<ExprStatement>();
 	statement->expr = $1;
 
 	$$ = statement;
 }
 | Block                                                                             { SSYC_PRINT_REDUCE(Stmt, "Block");
-	auto statement = new NestedStatement;
+	auto statement = context.require<NestedStatement>();
 	statement->block = $1;
 
 	$$ = statement;
 }
 | KW_IF LPAREN Cond RPAREN Stmt                                                     { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN Stmt");
-	auto statement = new IfElseStatement;
+	auto statement = context.require<IfElseStatement>();
 	statement->condition = $3;
 	statement->trueRoute = $5;
 
 	$$ = statement;
 }
 | KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt                          { SSYC_PRINT_REDUCE(Stmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE Stmt");
-	auto statement = new IfElseStatement;
+	auto statement = context.require<IfElseStatement>();
 	statement->condition = $3;
 	statement->trueRoute = $5;
 	statement->falseRoute = $7;
@@ -509,23 +513,23 @@ Stmt
 	$$ = statement;
 }
 | KW_WHILE LPAREN Cond RPAREN Stmt                                                  { SSYC_PRINT_REDUCE(Stmt, "KW_WHILE LPAREN Cond RPAREN Stmt");
-	auto statement = new WhileStatement;
+	auto statement = context.require<WhileStatement>();
 	statement->condition = $3;
 	statement->body = $5;
 
 	$$ = statement;
 }
 | KW_BREAK SEMICOLON                                                                { SSYC_PRINT_REDUCE(Stmt, "KW_BREAK SEMICOLON");
-	$$ = new BreakStatement;
+	$$ = context.require<BreakStatement>();
 }
 | KW_CONTINUE SEMICOLON                                                             { SSYC_PRINT_REDUCE(Stmt, "KW_CONTINUE SEMICOLON");
-	$$ = new ContinueStatement;
+	$$ = context.require<ContinueStatement>();
 }
 | KW_RETURN SEMICOLON                                                               { SSYC_PRINT_REDUCE(Stmt, "KW_RETURN SEMICOLON");
-	$$ = new ReturnStatement;
+	$$ = context.require<ReturnStatement>();
 }
 | KW_RETURN Exp SEMICOLON                                                           { SSYC_PRINT_REDUCE(Stmt, "KW_RETURN Exp SEMICOLON");
-	auto statement = new ReturnStatement;
+	auto statement = context.require<ReturnStatement>();
 	statement->retval = $2;
 
 	$$ = statement;
@@ -534,12 +538,12 @@ Stmt
 
 StmtBeforeElseStmt
 : LVal OP_ASS Exp SEMICOLON                                                         { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "LVal OP_ASS Exp SEMICOLON");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::ASSIGN;
 	expr->lhs = $1;
 	expr->rhs = $3;
 
-	auto statement = new ExprStatement;
+	auto statement = context.require<ExprStatement>();
 	statement->expr = expr;
 
 	$$ = statement;
@@ -548,19 +552,19 @@ StmtBeforeElseStmt
 	$$ = nullptr;
 }
 | Exp SEMICOLON                                                                     { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Exp SEMICOLON");
-	auto statement = new ExprStatement;
+	auto statement = context.require<ExprStatement>();
 	statement->expr = $1;
 
 	$$ = statement;
 }
 | Block                                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Block");
-	auto statement = new NestedStatement;
+	auto statement = context.require<NestedStatement>();
 	statement->block = $1;
 
 	$$ = statement;
 }
 | KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt            { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_IF LPAREN Cond RPAREN StmtBeforeElseStmt KW_ELSE StmtBeforeElseStmt");
-	auto statement = new IfElseStatement;
+	auto statement = context.require<IfElseStatement>();
 	statement->condition = $3;
 	statement->trueRoute = $5;
 	statement->falseRoute = $7;
@@ -568,23 +572,23 @@ StmtBeforeElseStmt
 	$$ = statement;
 }
 | KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt                                    { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_WHILE LPAREN Cond RPAREN StmtBeforeElseStmt");
-	auto statement = new WhileStatement;
+	auto statement = context.require<WhileStatement>();
 	statement->condition = $3;
 	statement->body = $5;
 
 	$$ = statement;
 }
 | KW_BREAK SEMICOLON                                                                { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_BREAK SEMICOLON");
-	$$ = new BreakStatement;
+	$$ = context.require<BreakStatement>();
 }
 | KW_CONTINUE SEMICOLON                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_CONTINUE SEMICOLON");
-	$$ = new ContinueStatement;
+	$$ = context.require<ContinueStatement>();
 }
 | KW_RETURN SEMICOLON                                                               { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_RETURN SEMICOLON");
-	$$ = new ReturnStatement;
+	$$ = context.require<ReturnStatement>();
 }
 | KW_RETURN Exp SEMICOLON                                                           { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "KW_RETURN Exp SEMICOLON");
-	auto statement = new ReturnStatement;
+	auto statement = context.require<ReturnStatement>();
 	statement->retval = $2;
 
 	$$ = statement;
@@ -612,21 +616,22 @@ Cond
 LVal
 : IDENT                                                                             { SSYC_PRINT_REDUCE(LVal, "IDENT");
 	//! FIXME: type 应该通过查找符号表获取
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
 
-	auto expr = new OrphanExpr;
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = type;
 
 	$$ = expr;
 }
 | IDENT SubscriptChain                                                              { SSYC_PRINT_REDUCE(LVal, "IDENT SubscriptChain");
 	//! FIXME: type 应该通过查找符号表获取
-	auto type = new TypeDecl;
+	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	//! TODO: 数组下标列表类型选取
+	type->optSubscriptList = std::move(*$2);
+	delete $2;
 
-	auto expr = new OrphanExpr;
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = type;
 
 	$$ = expr;
@@ -650,7 +655,7 @@ PrimaryExp
 Number
 : CONST_INT                                                                         { SSYC_PRINT_REDUCE(Number, "CONST_INT");
 	//! FIXME: 注意下这里的数值转换规范
-	auto expr = new ConstExprExpr;
+	auto expr = context.require<ConstExprExpr>();
 	expr->type = ConstExprExpr::Type::Integer;
 	expr->value = static_cast<int32_t>(std::stoi($1));
 
@@ -658,7 +663,7 @@ Number
 }
 | CONST_FLOAT                                                                       { SSYC_PRINT_REDUCE(Number, "CONST_FLOAT");
 	//! FIXME: 注意下这里的数值转换规范
-	auto expr = new ConstExprExpr;
+	auto expr = context.require<ConstExprExpr>();
 	expr->type = ConstExprExpr::Type::Float;
 	expr->value = static_cast<float>(std::stof($1));
 
@@ -673,17 +678,17 @@ UnaryExp
 }
 | IDENT LPAREN RPAREN                                                               { SSYC_PRINT_REDUCE(UnaryExp, "IDENT LPAREN RPAREN");
 	//! FIXME: 这里的函数引用应该通过查找符号表得到
-	auto func = new FuncDef;
+	auto func = context.require<FuncDef>();
 	func->ident = $1;
 
-	auto expr = new FnCallExpr;
+	auto expr = context.require<FnCallExpr>();
 	expr->func = func;
 
 	$$ = expr;
 }
 | IDENT LPAREN FuncRParams RPAREN                                                   { SSYC_PRINT_REDUCE(UnaryExp, "IDENT LPAREN FuncRParams RPAREN");
 	//! FIXME: 这里的函数引用应该通过查找符号表得到
-	auto func = new FuncDef;
+	auto func = context.require<FuncDef>();
 	func->ident = $1;
 
 	auto expr = dynamic_cast<FnCallExpr*>($3);
@@ -692,7 +697,7 @@ UnaryExp
 	$$ = expr;
 }
 | UnaryOp UnaryExp                                                                  { SSYC_PRINT_REDUCE(UnaryExp, "UnaryOp UnaryExp");
-	auto expr = new UnaryExpr;
+	auto expr = context.require<UnaryExpr>();
 	expr->operand = $2;
 
 	switch ($1) {
@@ -727,7 +732,7 @@ UnaryOp
 //! 函数实参表
 FuncRParams
 : Exp                                                                               { SSYC_PRINT_REDUCE(FuncRParams, "Exp");
-	auto expr = new FnCallExpr;
+	auto expr = context.require<FnCallExpr>();
 	expr->params.push_back($1);
 
 	$$ = expr;
@@ -746,7 +751,7 @@ MulExp
 	$$ = $1;
 }
 | MulExp OP_MUL UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_MUL UnaryExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::MUL;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -754,7 +759,7 @@ MulExp
 	$$ = expr;
 }
 | MulExp OP_DIV UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_DIV UnaryExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::DIV;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -762,7 +767,7 @@ MulExp
 	$$ = expr;
 }
 | MulExp OP_MOD UnaryExp                                                            { SSYC_PRINT_REDUCE(MulExp, "MulExp OP_MOD UnaryExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::MOD;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -777,7 +782,7 @@ AddExp
 	$$ = $1;
 }
 | AddExp OP_ADD MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp OP_ADD MulExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::ADD;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -785,7 +790,7 @@ AddExp
 	$$ = expr;
 }
 | AddExp OP_SUB MulExp                                                              { SSYC_PRINT_REDUCE(AddExp, "AddExp OP_SUB MulExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::SUB;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -800,7 +805,7 @@ RelExp
 	$$ = $1;
 }
 | RelExp OP_LT AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_LT AddExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::LT;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -808,7 +813,7 @@ RelExp
 	$$ = expr;
 }
 | RelExp OP_GT AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_GT AddExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::GT;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -816,7 +821,7 @@ RelExp
 	$$ = expr;
 }
 | RelExp OP_LE AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_LE AddExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::LE;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -824,7 +829,7 @@ RelExp
 	$$ = expr;
 }
 | RelExp OP_GE AddExp                                                               { SSYC_PRINT_REDUCE(RelExp, "RelExp OP_GE AddExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::GE;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -839,7 +844,7 @@ EqExp
 	$$ = $1;
 }
 | EqExp OP_EQ RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp OP_EQ RelExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::EQ;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -847,7 +852,7 @@ EqExp
 	$$ = expr;
 }
 | EqExp OP_NE RelExp                                                                { SSYC_PRINT_REDUCE(EqExp, "EqExp OP_NE RelExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::NE;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -862,7 +867,7 @@ LAndExp
 	$$ = $1;
 }
 | LAndExp OP_LAND EqExp                                                             { SSYC_PRINT_REDUCE(LAndExp, "LAndExp OP_LAND EqExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::LAND;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -877,7 +882,7 @@ LOrExp
 	$$ = $1;
 }
 | LOrExp OP_LOR LAndExp                                                             { SSYC_PRINT_REDUCE(LOrExp, "LOrExp OP_LOR LAndExp");
-	auto expr = new BinaryExpr;
+	auto expr = context.require<BinaryExpr>();
 	expr->op = BinaryExpr::Type::LOR;
 	expr->lhs = $1;
 	expr->rhs = $3;
@@ -922,10 +927,10 @@ SubscriptChainConst
 //! 常量初值列表
 ConstInitValList
 : ConstInitVal                                                                      { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitVal");
-	auto list = new InitializeList;
+	auto list = context.require<InitializeList>();
 	list->valueList.push_back($1);
 
-	auto expr = new OrphanExpr;
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
 	
 	$$ = expr;
@@ -966,10 +971,10 @@ VarDefList
 //! 变量初值列表
 InitValList
 : InitVal                                                                           { SSYC_PRINT_REDUCE(InitValList, "InitVal");
-	auto list = new InitializeList;
+	auto list = context.require<InitializeList>();
 	list->valueList.push_back($1);
 
-	auto expr = new OrphanExpr;
+	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
 	
 	$$ = expr;
@@ -998,7 +1003,7 @@ SubscriptChain
 //! 语句块项序列
 BlockItemSequence
 : BlockItem                                                                         { SSYC_PRINT_REDUCE(BlockItemSequence, "BlockItem");
-	$$ = new Block;
+	$$ = context.require<Block>();
 	if ($1 != nullptr) {
 		$$->statementList.push_back($1);
 	}

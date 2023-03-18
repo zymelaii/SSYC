@@ -9,6 +9,7 @@
 namespace ssyc::ast {
 
 struct ProgramUnit {
+    virtual ~ProgramUnit()         = default;
     virtual std::string id() const = 0;
 };
 
@@ -263,9 +264,9 @@ struct IfElseStatement final : public Statement {
         Statement::type = Statement::Type::IfElse;
     }
 
-    Expr *condition;
-    Statement* trueRoute;
-    Statement* falseRoute;
+    Expr      *condition;
+    Statement *trueRoute;
+    Statement *falseRoute;
 };
 
 struct WhileStatement final : public Statement {
@@ -277,7 +278,7 @@ struct WhileStatement final : public Statement {
         Statement::type = Statement::Type::While;
     }
 
-    Expr *condition;
+    Expr      *condition;
     Statement *body;
 };
 
