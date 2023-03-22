@@ -5,6 +5,7 @@
 #include "parser_context.h"
 
 #include <string_view>
+#include <utility>
 
 #define YYDEBUG 1
 
@@ -141,6 +142,7 @@ ConstDecl
 		} break;
 		default: {
 			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($2) << ") of declaration";
+			std::unreachable();
 		} break;
 	}
 
@@ -239,6 +241,7 @@ VarDecl
 		} break;
 		default: {
 			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($1) << ") of declaration";
+			std::unreachable();
 		} break;
 	}
 
@@ -391,6 +394,7 @@ FuncFParam
 		} break;
 		default: {
 			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($1) << ") of declaration";
+			std::unreachable();
 		} break;
 	}
 
@@ -412,6 +416,7 @@ TypeDecl::Type basicType{};
 		} break;
 		default: {
 			LOG(ERROR) << "Parser: illegal type (" << static_cast<int>($1) << ") of declaration";
+			std::unreachable();
 		} break;
 	}
 
