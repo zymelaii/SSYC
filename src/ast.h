@@ -5,12 +5,51 @@
 #include <string>
 #include <variant>
 #include <optional>
+#include <utility>
 
 namespace ssyc::ast {
 
 struct ProgramUnit {
-    virtual ~ProgramUnit()         = default;
-    virtual std::string id() const = 0;
+    virtual ~ProgramUnit() = default;
+};
+
+template <typename T>
+concept AstNodeType = requires (T e) {
+                          requires std::derived_from<T, ProgramUnit>;
+                          requires std::is_same_v<
+                                       std::remove_cvref_t<std::decay_t<T>>,
+                                       ProgramUnit>
+                                       || requires {
+                                              { e.id() };
+                                          };
+                      };
+
+enum class Type : uint32_t {
+    TypeDecl,
+    InitializeList,
+
+    Program,
+    FuncDef,
+    Block,
+
+    Statement,
+    DeclStatement,
+    NestedStatement,
+    ExprStatement,
+    IfElseStatement,
+    WhileStatement,
+    BreakStatement,
+    ContinueStatement,
+    ReturnStatement,
+
+    Expr,
+    UnaryExpr,
+    BinaryExpr,
+    FnCallExpr,
+    ConstExprExpr,
+    OrphanExpr,
+
+    ProgramUnit, //!< to be the last for size indication
 };
 
 struct TypeDecl;
@@ -22,7 +61,7 @@ struct Block;
 
 struct Statement;
 struct DeclStatement;
-struct NestStatement;
+struct NestedStatement;
 struct ExprStatement;
 struct IfElseStatement;
 struct WhileStatement;
@@ -37,9 +76,62 @@ struct FnCallExpr;
 struct ConstExprExpr;
 struct OrphanExpr;
 
-struct TypeDecl final : public ProgramUnit {
-    std::string id() const override {
+constexpr std::string_view translate(const AstNodeType auto &e) {
+    using T = std::remove_cvref_t<std::decay_t<decltype(e)>>;
+    if constexpr (T::id() == Type::TypeDecl) {
         return "type-decl";
+    } else if constexpr (T::id() == Type::InitializeList) {
+        return "initialize-list";
+    } else if constexpr (T::id() == Type::Program) {
+        return "program";
+    } else if constexpr (T::id() == Type::FuncDef) {
+        return "func-def";
+    } else if constexpr (T::id() == Type::Block) {
+        return "block";
+    } else if constexpr (T::id() == Type::DeclStatement) {
+        return "general-statement";
+    } else if constexpr (T::id() == Type::DeclStatement) {
+        return "decl-statement";
+    } else if constexpr (T::id() == Type::NestedStatement) {
+        return "nested-statement";
+    } else if constexpr (T::id() == Type::ExprStatement) {
+        return "expr-statement";
+    } else if constexpr (T::id() == Type::IfElseStatement) {
+        return "if-else-statement";
+    } else if constexpr (T::id() == Type::WhileStatement) {
+        return "while-statement";
+    } else if constexpr (T::id() == Type::BreakStatement) {
+        return "break-statement";
+    } else if constexpr (T::id() == Type::ContinueStatement) {
+        return "continue-statement";
+    } else if constexpr (T::id() == Type::ReturnStatement) {
+        return "return-statement";
+    } else if constexpr (T::id() == Type::Expr) {
+        return "general-expr";
+    } else if constexpr (T::id() == Type::UnaryExpr) {
+        return "unary-expr";
+    } else if constexpr (T::id() == Type::BinaryExpr) {
+        return "binary-expr";
+    } else if constexpr (T::id() == Type::FnCallExpr) {
+        return "func-call";
+    } else if constexpr (T::id() == Type::ConstExprExpr) {
+        return "constexpr";
+    } else if constexpr (T::id() == Type::OrphanExpr) {
+        return "orphan-expr";
+    } else if (std::is_same_v<T, ProgramUnit>) {
+        return "general-unit";
+    } else {
+        std::unreachable();
+    }
+}
+
+constexpr std::string_view translate(const AstNodeType auto *e) {
+    return translate(*e);
+}
+
+struct TypeDecl final : public ProgramUnit {
+    static constexpr ast::Type id() {
+        return ast::Type::TypeDecl;
     }
 
     enum class Type : uint8_t {
@@ -61,16 +153,19 @@ struct TypeDecl final : public ProgramUnit {
 };
 
 struct InitializeList final : public ProgramUnit {
-    std::string id() const override {
-        return "initialize-list";
+    static constexpr ast::Type id() {
+        return ast::Type::InitializeList;
     }
 
     std::vector<Expr *> valueList; //!< 数值列表
 };
 
 struct Expr : public ProgramUnit {
-    virtual std::string id() const       = 0;
-    virtual bool        writable() const = 0;
+    static constexpr ast::Type id() {
+        return ast::Type::Expr;
+    }
+
+    virtual bool writable() const = 0;
 
     enum class Type : uint8_t {
         Unary,     //!< 一元表达式
@@ -85,8 +180,8 @@ struct Expr : public ProgramUnit {
 };
 
 struct UnaryExpr final : public Expr {
-    std::string id() const override {
-        return "unary-expr";
+    static constexpr ast::Type id() {
+        return ast::Type::UnaryExpr;
     }
 
     inline bool writable() const override {
@@ -108,8 +203,8 @@ struct UnaryExpr final : public Expr {
 };
 
 struct BinaryExpr final : public Expr {
-    std::string id() const override {
-        return "binary-expr";
+    static constexpr ast::Type id() {
+        return ast::Type::BinaryExpr;
     }
 
     inline bool writable() const override {
@@ -145,8 +240,8 @@ struct BinaryExpr final : public Expr {
 };
 
 struct FnCallExpr final : public Expr {
-    std::string id() const override {
-        return "func-call";
+    static constexpr ast::Type id() {
+        return ast::Type::FnCallExpr;
     }
 
     inline bool writable() const override {
@@ -162,8 +257,8 @@ struct FnCallExpr final : public Expr {
 };
 
 struct ConstExprExpr final : public Expr {
-    std::string id() const override {
-        return "constexpr";
+    static constexpr ast::Type id() {
+        return ast::Type::ConstExprExpr;
     }
 
     inline bool writable() const override {
@@ -184,8 +279,8 @@ struct ConstExprExpr final : public Expr {
 };
 
 struct OrphanExpr final : public Expr {
-    std::string id() const override {
-        return "orphan-expr";
+    static constexpr ast::Type id() {
+        return ast::Type::OrphanExpr;
     }
 
     inline bool writable() const override {
@@ -203,7 +298,9 @@ struct OrphanExpr final : public Expr {
 };
 
 struct Statement : public ProgramUnit {
-    virtual std::string id() const = 0;
+    static constexpr ast::Type id() {
+        return ast::Type::Statement;
+    }
 
     enum class Type : uint8_t {
         Decl,
@@ -220,8 +317,8 @@ struct Statement : public ProgramUnit {
 };
 
 struct DeclStatement final : public Statement {
-    std::string id() const override {
-        return "decl-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::DeclStatement;
     }
 
     DeclStatement() {
@@ -232,8 +329,8 @@ struct DeclStatement final : public Statement {
 };
 
 struct NestedStatement final : public Statement {
-    std::string id() const override {
-        return "nested-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::NestedStatement;
     }
 
     NestedStatement() {
@@ -244,8 +341,8 @@ struct NestedStatement final : public Statement {
 };
 
 struct ExprStatement final : public Statement {
-    std::string id() const override {
-        return "expr-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::ExprStatement;
     }
 
     ExprStatement() {
@@ -256,8 +353,8 @@ struct ExprStatement final : public Statement {
 };
 
 struct IfElseStatement final : public Statement {
-    std::string id() const override {
-        return "if-else-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::IfElseStatement;
     }
 
     IfElseStatement() {
@@ -270,8 +367,8 @@ struct IfElseStatement final : public Statement {
 };
 
 struct WhileStatement final : public Statement {
-    std::string id() const override {
-        return "while-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::WhileStatement;
     }
 
     WhileStatement() {
@@ -283,8 +380,8 @@ struct WhileStatement final : public Statement {
 };
 
 struct BreakStatement final : public Statement {
-    std::string id() const override {
-        return "break-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::BreakStatement;
     }
 
     BreakStatement() {
@@ -293,8 +390,8 @@ struct BreakStatement final : public Statement {
 };
 
 struct ContinueStatement final : public Statement {
-    std::string id() const override {
-        return "continue-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::ContinueStatement;
     }
 
     ContinueStatement() {
@@ -303,8 +400,8 @@ struct ContinueStatement final : public Statement {
 };
 
 struct ReturnStatement final : public Statement {
-    std::string id() const override {
-        return "return-statement";
+    static constexpr ast::Type id() {
+        return ast::Type::ReturnStatement;
     }
 
     ReturnStatement() {
@@ -315,16 +412,16 @@ struct ReturnStatement final : public Statement {
 };
 
 struct Block final : public ProgramUnit {
-    std::string id() const override {
-        return "block";
+    static constexpr ast::Type id() {
+        return ast::Type::Block;
     }
 
     std::vector<Statement *> statementList; //!< 语句列表
 };
 
 struct FuncDef final : public ProgramUnit {
-    std::string id() const override {
-        return "func-def";
+    static constexpr ast::Type id() {
+        return ast::Type::FuncDef;
     }
 
     enum class Type : uint8_t {
@@ -341,8 +438,8 @@ struct FuncDef final : public ProgramUnit {
 };
 
 struct Program final : public ProgramUnit {
-    std::string id() const override {
-        return "program";
+    static constexpr ast::Type id() {
+        return ast::Type::Program;
     }
 
     void append(auto unit)
