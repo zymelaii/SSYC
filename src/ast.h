@@ -1,5 +1,8 @@
 #pragma once
 
+#include "ast_decl.h"
+#include "ast_utils.h" // IWYU pragma: export
+
 #include <stdint.h>
 #include <concepts>
 #include <string>
@@ -8,126 +11,6 @@
 #include <utility>
 
 namespace ssyc::ast {
-
-struct ProgramUnit {
-    virtual ~ProgramUnit() = default;
-};
-
-template <typename T>
-concept AstNodeType = requires (T e) {
-                          requires std::derived_from<T, ProgramUnit>;
-                          requires std::is_same_v<
-                                       std::remove_cvref_t<std::decay_t<T>>,
-                                       ProgramUnit>
-                                       || requires {
-                                              { e.id() };
-                                          };
-                      };
-
-enum class Type : uint32_t {
-    TypeDecl,
-    InitializeList,
-
-    Program,
-    FuncDef,
-    Block,
-
-    Statement,
-    DeclStatement,
-    NestedStatement,
-    ExprStatement,
-    IfElseStatement,
-    WhileStatement,
-    BreakStatement,
-    ContinueStatement,
-    ReturnStatement,
-
-    Expr,
-    UnaryExpr,
-    BinaryExpr,
-    FnCallExpr,
-    ConstExprExpr,
-    OrphanExpr,
-
-    ProgramUnit, //!< to be the last for size indication
-};
-
-struct TypeDecl;
-struct InitializeList;
-
-struct Program;
-struct FuncDef;
-struct Block;
-
-struct Statement;
-struct DeclStatement;
-struct NestedStatement;
-struct ExprStatement;
-struct IfElseStatement;
-struct WhileStatement;
-struct BreakStatement;
-struct ContinueStatement;
-struct ReturnStatement;
-
-struct Expr;
-struct UnaryExpr;
-struct BinaryExpr;
-struct FnCallExpr;
-struct ConstExprExpr;
-struct OrphanExpr;
-
-constexpr std::string_view translate(const AstNodeType auto &e) {
-    using T = std::remove_cvref_t<std::decay_t<decltype(e)>>;
-    if constexpr (T::id() == Type::TypeDecl) {
-        return "type-decl";
-    } else if constexpr (T::id() == Type::InitializeList) {
-        return "initialize-list";
-    } else if constexpr (T::id() == Type::Program) {
-        return "program";
-    } else if constexpr (T::id() == Type::FuncDef) {
-        return "func-def";
-    } else if constexpr (T::id() == Type::Block) {
-        return "block";
-    } else if constexpr (T::id() == Type::DeclStatement) {
-        return "general-statement";
-    } else if constexpr (T::id() == Type::DeclStatement) {
-        return "decl-statement";
-    } else if constexpr (T::id() == Type::NestedStatement) {
-        return "nested-statement";
-    } else if constexpr (T::id() == Type::ExprStatement) {
-        return "expr-statement";
-    } else if constexpr (T::id() == Type::IfElseStatement) {
-        return "if-else-statement";
-    } else if constexpr (T::id() == Type::WhileStatement) {
-        return "while-statement";
-    } else if constexpr (T::id() == Type::BreakStatement) {
-        return "break-statement";
-    } else if constexpr (T::id() == Type::ContinueStatement) {
-        return "continue-statement";
-    } else if constexpr (T::id() == Type::ReturnStatement) {
-        return "return-statement";
-    } else if constexpr (T::id() == Type::Expr) {
-        return "general-expr";
-    } else if constexpr (T::id() == Type::UnaryExpr) {
-        return "unary-expr";
-    } else if constexpr (T::id() == Type::BinaryExpr) {
-        return "binary-expr";
-    } else if constexpr (T::id() == Type::FnCallExpr) {
-        return "func-call";
-    } else if constexpr (T::id() == Type::ConstExprExpr) {
-        return "constexpr";
-    } else if constexpr (T::id() == Type::OrphanExpr) {
-        return "orphan-expr";
-    } else if (std::is_same_v<T, ProgramUnit>) {
-        return "general-unit";
-    } else {
-        std::unreachable();
-    }
-}
-
-constexpr std::string_view translate(const AstNodeType auto *e) {
-    return translate(*e);
-}
 
 struct TypeDecl final : public ProgramUnit {
     static constexpr ast::Type id() {
@@ -176,7 +59,11 @@ struct Expr : public ProgramUnit {
                 //!< NOTE: Orphan 是初始化列表与非 ConstExpr 的变量值
     };
 
-    Type type; //!< 表达式类型
+    const Type type; //!< 表达式类型
+
+protected:
+    inline Expr(Type exprType)
+        : type(exprType) {}
 };
 
 struct UnaryExpr final : public Expr {
@@ -188,9 +75,8 @@ struct UnaryExpr final : public Expr {
         return false;
     }
 
-    UnaryExpr() {
-        Expr::type = Expr::Type::Unary;
-    }
+    inline UnaryExpr()
+        : Expr(Expr::Type::Unary) {}
 
     enum class Type : uint8_t {
         POS,  //!< 取正
@@ -212,9 +98,8 @@ struct BinaryExpr final : public Expr {
         return lhs->writable() && (op == Type::ASSIGN || op == Type::SUBSCRIPT);
     }
 
-    BinaryExpr() {
-        Expr::type = Expr::Type::Binary;
-    }
+    inline BinaryExpr()
+        : Expr(Expr::Type::Binary) {}
 
     enum class Type : uint8_t {
         ASSIGN,    //!< 赋值
@@ -248,9 +133,8 @@ struct FnCallExpr final : public Expr {
         return false;
     }
 
-    FnCallExpr() {
-        Expr::type = Expr::Type::FnCall;
-    }
+    inline FnCallExpr()
+        : Expr(Expr::Type::FnCall) {}
 
     FuncDef            *func;   //!< 函数目标
     std::vector<Expr *> params; //!< 参数列表
@@ -265,9 +149,8 @@ struct ConstExprExpr final : public Expr {
         return false;
     }
 
-    ConstExprExpr() {
-        Expr::type = Expr::Type::ConstExpr;
-    }
+    inline ConstExprExpr()
+        : Expr(Expr::Type::ConstExpr) {}
 
     enum class Type : uint8_t {
         Integer,
@@ -288,9 +171,8 @@ struct OrphanExpr final : public Expr {
             && !std::get<TypeDecl *>(ref)->constant;
     }
 
-    OrphanExpr() {
-        Expr::type = Expr::Type::Orphan;
-    }
+    inline OrphanExpr()
+        : Expr(Expr::Type::Orphan) {}
 
     using OrphanType =
         std::variant<std::monostate, TypeDecl *, InitializeList *>;
@@ -313,7 +195,11 @@ struct Statement : public ProgramUnit {
         Return,
     };
 
-    Type type; //!< 语句类型
+    const Type type; //!< 语句类型
+
+protected:
+    inline Statement(Type statementType)
+        : type(statementType) {}
 };
 
 struct DeclStatement final : public Statement {
@@ -321,9 +207,8 @@ struct DeclStatement final : public Statement {
         return ast::Type::DeclStatement;
     }
 
-    DeclStatement() {
-        Statement::type = Statement::Type::Decl;
-    }
+    inline DeclStatement()
+        : Statement(Statement::Type::Decl) {}
 
     std::vector<std::pair<TypeDecl *, Expr *>> declList; //!< 声明列表
 };
@@ -333,9 +218,8 @@ struct NestedStatement final : public Statement {
         return ast::Type::NestedStatement;
     }
 
-    NestedStatement() {
-        Statement::type = Statement::Type::Expr;
-    }
+    inline NestedStatement()
+        : Statement(Statement::Type::Expr) {}
 
     Block *block;
 };
@@ -345,9 +229,8 @@ struct ExprStatement final : public Statement {
         return ast::Type::ExprStatement;
     }
 
-    ExprStatement() {
-        Statement::type = Statement::Type::Expr;
-    }
+    inline ExprStatement()
+        : Statement(Statement::Type::Expr) {}
 
     Expr *expr;
 };
@@ -357,9 +240,8 @@ struct IfElseStatement final : public Statement {
         return ast::Type::IfElseStatement;
     }
 
-    IfElseStatement() {
-        Statement::type = Statement::Type::IfElse;
-    }
+    inline IfElseStatement()
+        : Statement(Statement::Type::IfElse) {}
 
     Expr      *condition;
     Statement *trueRoute;
@@ -371,9 +253,8 @@ struct WhileStatement final : public Statement {
         return ast::Type::WhileStatement;
     }
 
-    WhileStatement() {
-        Statement::type = Statement::Type::While;
-    }
+    inline WhileStatement()
+        : Statement(Statement::Type::While) {}
 
     Expr      *condition;
     Statement *body;
@@ -384,9 +265,8 @@ struct BreakStatement final : public Statement {
         return ast::Type::BreakStatement;
     }
 
-    BreakStatement() {
-        Statement::type = Statement::Type::Break;
-    }
+    inline BreakStatement()
+        : Statement(Statement::Type::Break) {}
 };
 
 struct ContinueStatement final : public Statement {
@@ -394,9 +274,8 @@ struct ContinueStatement final : public Statement {
         return ast::Type::ContinueStatement;
     }
 
-    ContinueStatement() {
-        Statement::type = Statement::Type::Continue;
-    }
+    inline ContinueStatement()
+        : Statement(Statement::Type::Continue) {}
 };
 
 struct ReturnStatement final : public Statement {
@@ -404,9 +283,8 @@ struct ReturnStatement final : public Statement {
         return ast::Type::ReturnStatement;
     }
 
-    ReturnStatement() {
-        Statement::type = Statement::Type::Return;
-    }
+    inline ReturnStatement()
+        : Statement(Statement::Type::Return) {}
 
     Expr *retval;
 };
@@ -442,7 +320,7 @@ struct Program final : public ProgramUnit {
         return ast::Type::Program;
     }
 
-    void append(auto unit)
+    inline void append(auto unit)
         requires(
             std::is_same_v<std::remove_cvref_t<decltype(*unit)>, DeclStatement>
             || std::is_same_v<std::remove_cvref_t<decltype(*unit)>, FuncDef>)
