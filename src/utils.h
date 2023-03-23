@@ -1,6 +1,8 @@
 #pragma once
 
-#include "pch.h"
+#include "pch.h"           // IWYU pragma: export
+#include "ast_decl.h"      // IWYU pragma: export
+#include "utils_conv2py.h" // IWYU pragma: export
 
 #include <string_view>
 
