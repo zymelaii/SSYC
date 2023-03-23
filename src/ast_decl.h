@@ -6,10 +6,6 @@
 
 namespace ssyc::ast {
 
-struct ProgramUnit {
-    virtual ~ProgramUnit() = default;
-};
-
 enum class Type : uint32_t {
     TypeDecl,
     InitializeList,
@@ -36,6 +32,15 @@ enum class Type : uint32_t {
     OrphanExpr,
 
     ProgramUnit, //!< to be the last for size indication
+};
+
+struct ProgramUnit {
+    virtual ~ProgramUnit() = default;
+
+    constexpr ProgramUnit()
+        : type(Type::Program) {}
+
+    const Type type;
 };
 
 template <typename T>

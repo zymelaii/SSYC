@@ -217,11 +217,7 @@ ConstInitVal
 	$$ = expr;
 }
 | LBRACE ConstInitValList RBRACE                                                    { SSYC_PRINT_REDUCE(ConstInitVal, "LBRACE ConstInitValList RBRACE");
-	auto list = dynamic_cast<InitializeList*>($2);
-	auto expr = context.require<OrphanExpr>();
-	expr->ref = list;
-
-	$$ = expr;
+	$$ = $2;
 }
 ;
 
@@ -304,11 +300,7 @@ InitVal
 	$$ = expr;
 }
 | LBRACE InitValList RBRACE                                                         { SSYC_PRINT_REDUCE(InitVal, "LBRACE InitValList RBRACE");
-	auto list = dynamic_cast<InitializeList*>($2);
-	auto expr = context.require<OrphanExpr>();
-	expr->ref = list;
-
-	$$ = expr;
+	$$ = $2;
 }
 ;
 
@@ -744,7 +736,7 @@ FuncRParams
 }
 | FuncRParams COMMA Exp                                                             { SSYC_PRINT_REDUCE(FuncRParams, "FuncRParams COMMA Exp");
 	auto expr = dynamic_cast<FnCallExpr*>($1);
-	expr->params.push_back($1);
+	expr->params.push_back($3);
 
 	$$ = expr;
 }
@@ -945,7 +937,7 @@ ConstInitValList
 
 	auto expr = dynamic_cast<OrphanExpr*>($$);
 	auto list = std::get<InitializeList*>(expr->ref);
-	list->valueList.push_back($1);
+	list->valueList.push_back($3);
 }
 ;
 
@@ -989,7 +981,7 @@ InitValList
 
 	auto expr = dynamic_cast<OrphanExpr*>($$);
 	auto list = std::get<InitializeList*>(expr->ref);
-	list->valueList.push_back($1);
+	list->valueList.push_back($3);
 }
 ;
 

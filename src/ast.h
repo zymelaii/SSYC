@@ -76,7 +76,8 @@ struct UnaryExpr final : public Expr {
     }
 
     inline UnaryExpr()
-        : Expr(Expr::Type::Unary) {}
+        : Expr(Expr::Type::Unary)
+        , operand(nullptr) {}
 
     enum class Type : uint8_t {
         POS,  //!< 取正
@@ -99,7 +100,9 @@ struct BinaryExpr final : public Expr {
     }
 
     inline BinaryExpr()
-        : Expr(Expr::Type::Binary) {}
+        : Expr(Expr::Type::Binary)
+        , lhs(nullptr)
+        , rhs(nullptr) {}
 
     enum class Type : uint8_t {
         ASSIGN,    //!< 赋值
@@ -134,7 +137,8 @@ struct FnCallExpr final : public Expr {
     }
 
     inline FnCallExpr()
-        : Expr(Expr::Type::FnCall) {}
+        : Expr(Expr::Type::FnCall)
+        , func(nullptr) {}
 
     FuncDef            *func;   //!< 函数目标
     std::vector<Expr *> params; //!< 参数列表
@@ -219,7 +223,8 @@ struct NestedStatement final : public Statement {
     }
 
     inline NestedStatement()
-        : Statement(Statement::Type::Expr) {}
+        : Statement(Statement::Type::Nested)
+        , block(nullptr) {}
 
     Block *block;
 };
@@ -230,7 +235,8 @@ struct ExprStatement final : public Statement {
     }
 
     inline ExprStatement()
-        : Statement(Statement::Type::Expr) {}
+        : Statement(Statement::Type::Expr)
+        , expr(nullptr) {}
 
     Expr *expr;
 };
@@ -241,7 +247,10 @@ struct IfElseStatement final : public Statement {
     }
 
     inline IfElseStatement()
-        : Statement(Statement::Type::IfElse) {}
+        : Statement(Statement::Type::IfElse)
+        , condition(nullptr)
+        , trueRoute(nullptr)
+        , falseRoute(nullptr) {}
 
     Expr      *condition;
     Statement *trueRoute;
@@ -254,7 +263,9 @@ struct WhileStatement final : public Statement {
     }
 
     inline WhileStatement()
-        : Statement(Statement::Type::While) {}
+        : Statement(Statement::Type::While)
+        , condition(nullptr)
+        , body(nullptr) {}
 
     Expr      *condition;
     Statement *body;
@@ -284,7 +295,8 @@ struct ReturnStatement final : public Statement {
     }
 
     inline ReturnStatement()
-        : Statement(Statement::Type::Return) {}
+        : Statement(Statement::Type::Return)
+        , retval(nullptr) {}
 
     Expr *retval;
 };
@@ -307,6 +319,9 @@ struct FuncDef final : public ProgramUnit {
         Integer,
         Float,
     };
+
+    inline FuncDef()
+        : body(nullptr) {}
 
     Type                    retType; //!< 返回值类型
     std::string             ident;   //!< 函数名
