@@ -7,6 +7,8 @@
 
 using namespace ssyc::ast;
 
+namespace ssyc::utils {
+
 static void
     conv2py_resolve_TypeDecl(size_t, std::ostream &, const TypeDecl *, void *);
 static void conv2py_resolve_InitializeList(
@@ -436,3 +438,5 @@ def putch(x: int) -> None:
     conv2py_resolve_Program(0, os, program, nullptr);
     os << std::flush;
 }
+
+} // namespace ssyc::utils

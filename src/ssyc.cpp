@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
 
     if (FLAGS_conv2py) {
         LOG(INFO) << "[conv2py]";
-        conv2py(std::cout, parser.context()->program.get());
+        ssyc::utils::conv2py(std::cout, parser.context()->program.get());
     }
 
     return 0;
