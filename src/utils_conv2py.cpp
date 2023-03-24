@@ -416,7 +416,18 @@ from sys import stdin
 def getch() -> str:
 	return stdin.read(1)
 def getint() -> int:
-	return int(input())
+    value = 0
+    while True:
+        ch = ord(stdin.read(1)) - ord('0')
+        if ch >= 0 and ch < 10:
+            value = ch
+            break
+    while True:
+        ch = ord(stdin.read(1)) - ord('0')
+        if ch < 0 or ch >= 10:
+            break
+        value = value * 10 + ch
+    return value
 def putint(x: int) -> None:
 	print(x, end='')
 def putch(x: int) -> None:
