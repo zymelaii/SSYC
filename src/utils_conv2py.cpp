@@ -79,16 +79,24 @@ static void conv2py_resolve_InitializeList(
     size_t indent, std::ostream &os, const InitializeList *e, void *data) {
     os << fmt::format("{:\t>{}}", "", indent);
 
-    if (e->valueList.size() == 0) {
-        os << "[]";
-    } else {
-        os << "[";
-        conv2py_resolve_Expr(0, os, e->valueList[0], nullptr);
-        for (int i = 1; i < e->valueList.size(); ++i) {
-            os << ", ";
-            conv2py_resolve_Expr(0, os, e->valueList[i], nullptr);
+    if (data == nullptr) {
+        if (e->valueList.size() == 0) {
+            os << "[]";
+        } else {
+            os << "[";
+            conv2py_resolve_Expr(0, os, e->valueList[0], nullptr);
+            for (int i = 1; i < e->valueList.size(); ++i) {
+                os << ", ";
+                conv2py_resolve_Expr(0, os, e->valueList[i], nullptr);
+            }
+            os << "]";
         }
-        os << "]";
+    } else {
+        //! NOTE: 这玩意真难
+        //! FIXME: 下次再说
+        const auto &list   = *static_cast<std::vector<Expr *> *>(data);
+        int         depth  = list.size();
+        int         remain = 0;
     }
 }
 
@@ -194,7 +202,13 @@ static void conv2py_resolve_DeclStatement(
         if (value == nullptr) {
             if (decl->optSubscriptList.has_value()) {
                 //! FIXME: 这里的初始化应该根据类型填充列表值
-                os << "[]";
+                const auto &list = decl->optSubscriptList.value();
+                os << fmt::format("{:[>{}}0", "", list.size());
+                for (int i = list.size(); i > 0; --i) {
+                    os << "] * (";
+                    conv2py_resolve_Expr(0, os, list[i - 1], nullptr);
+                    os << ")";
+                }
             } else if (decl->type == TypeDecl::Type::Integer) {
                 os << "0";
             } else if (decl->type == TypeDecl::Type::Float) {
@@ -202,6 +216,15 @@ static void conv2py_resolve_DeclStatement(
             } else {
                 std::unreachable();
             }
+        } else if (decl->optSubscriptList.has_value()) {
+            if (value->type != Expr::Type::Orphan) { std::unreachable(); }
+            auto orphan = static_cast<const OrphanExpr *>(value);
+            if (!std::holds_alternative<InitializeList *>(orphan->ref)) {
+                std::unreachable();
+            }
+            auto list = std::get<InitializeList *>(orphan->ref);
+            conv2py_resolve_InitializeList(
+                0, os, list, &decl->optSubscriptList.value());
         } else {
             conv2py_resolve_Expr(0, os, value, nullptr);
         }
@@ -248,7 +271,7 @@ static void conv2py_resolve_IfElseStatement(
 
 static void conv2py_resolve_WhileStatement(
     size_t indent, std::ostream &os, const WhileStatement *e, void *data) {
-    os << fmt::format("{:\t>{}}if ", "", indent);
+    os << fmt::format("{:\t>{}}while ", "", indent);
     conv2py_resolve_Expr(0, os, e->condition, nullptr);
     os << ":" << std::endl;
 
@@ -388,7 +411,7 @@ static void conv2py_resolve_OrphanExpr(
 }
 
 void conv2py(std::ostream &os, const ssyc::ast::Program *program) {
-	os << R"(
+    os << R"(
 from sys import stdin
 def getch() -> str:
 	return stdin.read(1)
@@ -400,4 +423,5 @@ def putch(x: int) -> None:
 	print(chr(x), end='')
 )";
     conv2py_resolve_Program(0, os, program, nullptr);
+    os << std::flush;
 }
