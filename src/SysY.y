@@ -698,10 +698,10 @@ UnaryExp
 	expr->operand = $2;
 
 	switch ($1) {
-		case OP_ADD: {
+		case OP_POS: {
 			expr->op = UnaryExpr::Type::POS;
 		} break;
-		case OP_SUB: {
+		case OP_NEG: {
 			expr->op = UnaryExpr::Type::NEG;
 		} break;
 		case OP_LNOT: {
