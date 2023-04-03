@@ -1,9 +1,8 @@
 %{
-#include "pch.h"
-#include "utils.h"
-#include "ast.h"
-#include "parser_context.h"
-
+#include <ssyc/pch.h>
+#include <ssyc/utils.h>
+#include <ssyc/ast.h>
+#include <ssyc/parser_context.h>
 #include <string_view>
 #include <utility>
 

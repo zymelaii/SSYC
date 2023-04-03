@@ -5,16 +5,16 @@ find_package(fmt REQUIRED)
 find_package(glog REQUIRED)
 find_package(gflags REQUIRED COMPONENTS static)
 
-aux_source_directory(. SOURCE_FILES)
+file(GLOB_RECURSE SOURCE_FILES *.cpp)
 set(YACC_SOURCE_FILES lex.yy.cpp y.tab.hpp y.tab.cpp)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 add_custom_command(
 	OUTPUT ${YACC_SOURCE_FILES}
-	DEPENDS SysY.l SysY.y
-	COMMAND ${FLEX_EXECUTABLE} -f -olex.yy.cpp ${CMAKE_CURRENT_SOURCE_DIR}/SysY.l
-	COMMAND ${BISON_EXECUTABLE} --yacc -dv ${CMAKE_CURRENT_SOURCE_DIR}/SysY.y -o y.tab.cpp
+	DEPENDS ssyc/SysY.l ssyc/SysY.y
+	COMMAND ${FLEX_EXECUTABLE} -f -olex.yy.cpp ${CMAKE_CURRENT_SOURCE_DIR}/ssyc/SysY.l
+	COMMAND ${BISON_EXECUTABLE} --yacc -dv ${CMAKE_CURRENT_SOURCE_DIR}/ssyc/SysY.y -o y.tab.cpp
 	COMMENT "Generate yacc lexer/parser"
 )
 

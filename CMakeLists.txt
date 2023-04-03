@@ -17,4 +17,10 @@ if(MSVC)
 	message(FATAL_ERROR "SSYC supports GCC/LLVM-Clang only")
 endif()
 
+option(BUILD_TEST "build test unit" ON)
+
 add_subdirectory(src)
+
+if(BUILD_TEST)
+	add_subdirectory(test)
+endif()

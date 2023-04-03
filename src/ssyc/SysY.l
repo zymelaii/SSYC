@@ -1,12 +1,10 @@
 %{
-#include "pch.h"
-#include "utils.h"
-#include "ast.h"
-
+#include <ssyc/pch.h>
+#include <ssyc/utils.h>
+#include <ssyc/ast.h>
+#include <ssyc/lex/token.h>
 #include <stdint.h>
 #include <string.h>
-
-#include "y.tab.hpp"
 
 %}
 
@@ -56,11 +54,11 @@ IDENT [a-zA-Z_][0-9a-zA-Z_]*
 
 "void" 	{ SSYC_PRINT_TOKEN("found type keyword");
     yylval.type = T_VOID;
-    return T_VOID; 
+    return T_VOID;
 }
 "int" 	{ SSYC_PRINT_TOKEN("found type keyword");
     yylval.type = T_INT;;
-    return T_INT;  
+    return T_INT;
 }
 "float" { SSYC_PRINT_TOKEN("found type keyword");
     yylval.type = T_FLOAT;
