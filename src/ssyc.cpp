@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "parser.h"
+#include "validator.h"
 #include "utils.h"
 
 using ssyc::Parser;

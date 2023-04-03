@@ -22,8 +22,8 @@ constexpr std::string_view translate(const AstNodeType auto &e) {
         return "general-statement";
     } else if constexpr (T::id() == Type::DeclStatement) {
         return "decl-statement";
-    } else if constexpr (T::id() == Type::NestedStatement) {
-        return "nested-statement";
+    } else if constexpr (T::id() == Type::CompoundStatement) {
+        return "compound-statement";
     } else if constexpr (T::id() == Type::ExprStatement) {
         return "expr-statement";
     } else if constexpr (T::id() == Type::IfElseStatement) {

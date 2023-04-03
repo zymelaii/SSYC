@@ -81,7 +81,7 @@ int yylex();
 
 //! #-- TOKEN 声明 END ---
 
-%left OP_ADD OP_SUB OP_MUL OP_DIV 
+%left OP_ADD OP_SUB OP_MUL OP_DIV
 %left OP_LT OP_LE OP_GT OP_GE OP_EQ OP_NE
 %left OP_LAND OP_LOR
 %left COMMA
@@ -188,7 +188,7 @@ ConstDef
 	//! TODO: 检查各种合法性
 	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	
+
 	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $3);
 }
@@ -254,7 +254,7 @@ VarDef
 	//! TODO: 检查各种合法性
 	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	
+
 	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, nullptr);
 }
@@ -262,7 +262,7 @@ VarDef
 	//! TODO: 检查各种合法性
 	auto type = context.require<TypeDecl>();
 	type->ident = $1;
-	
+
 	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $3);
 }
@@ -271,7 +271,7 @@ VarDef
 	type->ident = $1;
 	type->optSubscriptList = std::move(*$2);
 	delete $2;
-	
+
 	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, nullptr);
 }
@@ -280,7 +280,7 @@ VarDef
 	type->ident = $1;
 	type->optSubscriptList = std::move(*$2);
 	delete $2;
-	
+
 	$$ = context.require<DeclStatement>();
 	$$->declList.emplace_back(type, $4);
 }
@@ -489,7 +489,7 @@ Stmt
 	$$ = statement;
 }
 | Block                                                                             { SSYC_PRINT_REDUCE(Stmt, "Block");
-	auto statement = context.require<NestedStatement>();
+	auto statement = context.require<CompoundStatement>();
 	statement->block = $1;
 
 	$$ = statement;
@@ -555,7 +555,7 @@ StmtBeforeElseStmt
 	$$ = statement;
 }
 | Block                                                                             { SSYC_PRINT_REDUCE(StmtBeforeElseStmt, "Block");
-	auto statement = context.require<NestedStatement>();
+	auto statement = context.require<CompoundStatement>();
 	statement->block = $1;
 
 	$$ = statement;
@@ -929,7 +929,7 @@ ConstInitValList
 
 	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
-	
+
 	$$ = expr;
 }
 | ConstInitValList COMMA ConstInitVal                                               { SSYC_PRINT_REDUCE(ConstInitValList, "ConstInitValList COMMA ConstInitVal");
@@ -973,7 +973,7 @@ InitValList
 
 	auto expr = context.require<OrphanExpr>();
 	expr->ref = list;
-	
+
 	$$ = expr;
 }
 | InitValList COMMA InitVal                                                         { SSYC_PRINT_REDUCE(InitValList, "InitValList COMMA InitVal");

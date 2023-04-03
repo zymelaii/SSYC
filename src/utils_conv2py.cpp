@@ -23,8 +23,8 @@ static void conv2py_resolve_Statement(
     size_t, std::ostream &, const Statement *, void *);
 static void conv2py_resolve_DeclStatement(
     size_t, std::ostream &, const DeclStatement *, void *);
-static void conv2py_resolve_NestedStatement(
-    size_t, std::ostream &, const NestedStatement *, void *);
+static void conv2py_resolve_CompoundStatement(
+    size_t, std::ostream &, const CompoundStatement *, void *);
 static void conv2py_resolve_ExprStatement(
     size_t, std::ostream &, const ExprStatement *, void *);
 static void conv2py_resolve_IfElseStatement(
@@ -171,9 +171,9 @@ static void conv2py_resolve_Statement(
     if (e->type == Statement::Type::Decl) {
         conv2py_resolve_DeclStatement(
             indent, os, static_cast<const DeclStatement *>(e), nullptr);
-    } else if (e->type == Statement::Type::Nested) {
-        conv2py_resolve_NestedStatement(
-            indent, os, static_cast<const NestedStatement *>(e), nullptr);
+    } else if (e->type == Statement::Type::Compound) {
+        conv2py_resolve_CompoundStatement(
+            indent, os, static_cast<const CompoundStatement *>(e), nullptr);
     } else if (e->type == Statement::Type::Expr) {
         conv2py_resolve_ExprStatement(
             indent, os, static_cast<const ExprStatement *>(e), nullptr);
@@ -234,8 +234,8 @@ static void conv2py_resolve_DeclStatement(
     }
 }
 
-static void conv2py_resolve_NestedStatement(
-    size_t indent, std::ostream &os, const NestedStatement *e, void *data) {
+static void conv2py_resolve_CompoundStatement(
+    size_t indent, std::ostream &os, const CompoundStatement *e, void *data) {
     os << fmt::format("{:\t>{}}if True:", "", indent) << std::endl;
     if (e->block == nullptr) {
         os << fmt::format("{:\t>{}}pass", "", indent + 1) << std::endl;

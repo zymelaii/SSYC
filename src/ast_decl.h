@@ -16,7 +16,7 @@ enum class Type : uint32_t {
 
     Statement,
     DeclStatement,
-    NestedStatement,
+    CompoundStatement,
     ExprStatement,
     IfElseStatement,
     WhileStatement,
@@ -66,7 +66,7 @@ struct Block;
 
 struct Statement;
 struct DeclStatement;
-struct NestedStatement;
+struct CompoundStatement;
 struct ExprStatement;
 struct IfElseStatement;
 struct WhileStatement;

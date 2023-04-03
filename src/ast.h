@@ -190,7 +190,7 @@ struct Statement : public ProgramUnit {
 
     enum class Type : uint8_t {
         Decl,
-        Nested,
+        Compound,
         Expr,
         IfElse,
         While,
@@ -217,13 +217,13 @@ struct DeclStatement final : public Statement {
     std::vector<std::pair<TypeDecl *, Expr *>> declList; //!< 声明列表
 };
 
-struct NestedStatement final : public Statement {
+struct CompoundStatement final : public Statement {
     static constexpr ast::Type id() {
-        return ast::Type::NestedStatement;
+        return ast::Type::CompoundStatement;
     }
 
-    inline NestedStatement()
-        : Statement(Statement::Type::Nested)
+    inline CompoundStatement()
+        : Statement(Statement::Type::Compound)
         , block(nullptr) {}
 
     Block *block;
