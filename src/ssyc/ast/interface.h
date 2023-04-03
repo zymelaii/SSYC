@@ -1,17 +1,11 @@
 #pragma once
 
+#include "common.h"
+
 #include <string>
 #include <stdint.h>
 
 namespace ssyc::ast {
-
-enum class NodeBaseType : uint8_t {
-    Type = 0,
-    Decl,
-    Expr,
-    Stmt,
-    Unknown,
-};
 
 struct NodeBrief {
     inline NodeBrief()
@@ -28,9 +22,7 @@ struct IBrief {
     virtual void acquire(NodeBrief &brief) const = 0;
 };
 
-struct ITreeWalker {
-
-};
+struct ITreeWalker {};
 
 #ifndef SSYC_IMPL_AST_INTERFACE
 #define SSYC_IMPL_AST_INTERFACE \

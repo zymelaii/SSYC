@@ -1,6 +1,6 @@
 #pragma once
 
-#include "decl_decl.h"
+#include "../type_declare.h"
 
 #include <string_view>
 #include <string>

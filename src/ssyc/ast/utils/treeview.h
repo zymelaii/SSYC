@@ -5,6 +5,4 @@
 
 namespace ssyc::ast::utils {
 
-
-
 };

@@ -1,9 +1,5 @@
-#include "../common.h"
-#include "../type_impl.h"
-#include "../decl_impl.h"
-#include "../expr_impl.h"
-#include "../stmt_impl.h"
-#include "../program.h"
+//#include "../common.h"
+#include "../typedef.h"
 
 #include <string_view>
 

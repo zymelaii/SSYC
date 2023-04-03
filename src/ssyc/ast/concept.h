@@ -1,8 +1,7 @@
 #pragma once
 
-#include "common.h"
+#include "type/base.h"
 
-#include <type_traits>
 #include <concepts>
 
 namespace ssyc::ast {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stmt_decl.h"
+#include "../type_declare.h"
 
 #include <vector>
 #include <variant>
