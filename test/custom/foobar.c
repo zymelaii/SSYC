@@ -8,6 +8,10 @@ int xxxx(int a);
 
 int f(int x);
 
+void bar(int, void* x, float);
+
+void fs(const int x);
+
 int foobar() {
     ((void(*)())f)();
 }
