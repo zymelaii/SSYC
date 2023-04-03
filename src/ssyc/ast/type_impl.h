@@ -6,11 +6,27 @@
 
 namespace ssyc::ast {
 
-struct BuiltinType : public Type {
+struct QualifiedType : public Type {
+    SSYC_IMPL_AST_INTERFACE
+
     //! TODO: to be completed
 };
 
+struct BuiltinType : public Type {
+    SSYC_IMPL_AST_INTERFACE
+
+    enum class Type {
+        Void,
+        Int,
+        Float,
+    };
+
+    Type typeId;
+};
+
 struct ArrayType : public Type {
+    SSYC_IMPL_AST_INTERFACE
+
     //! NOTE: elementType 不能为 void
     Type *elementType;
 
@@ -19,15 +35,21 @@ struct ArrayType : public Type {
 };
 
 struct ConstantArrayType : public ArrayType {
+    SSYC_IMPL_AST_INTERFACE
+
     //! TODO: to be completed
     //! NOTE: ArrayType::length 必须可编译期求值
 };
 
-struct VariableArrayType {
+struct VariableArrayType : public ArrayType {
+    SSYC_IMPL_AST_INTERFACE
+
     //! TODO: to be completed
 };
 
 struct FunctionProtoType : public Type {
+    SSYC_IMPL_AST_INTERFACE
+
     Type                       *retvalType;
     std::vector<ParamVarDecl *> params;
 };

@@ -4,6 +4,9 @@
 
 namespace ssyc::ast {
 
+//! 修饰符限定类型
+struct QualifiedType;
+
 //! 内置类型
 struct BuiltinType;
 

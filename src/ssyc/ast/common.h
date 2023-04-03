@@ -1,5 +1,7 @@
 #pragma once
 
+#include "interface.h"
+
 #include <type_traits>
 #include <concepts>
 #include <string_view>
@@ -7,7 +9,9 @@
 
 namespace ssyc::ast {
 
-struct AbstractAstNode {
+struct AbstractAstNode : public IBrief {
+    SSYC_IMPL_AST_INTERFACE
+
     //! 语法节点所在文件的 ID
     int fileId;
 
@@ -20,16 +24,24 @@ struct AbstractAstNode {
 };
 
 //! 类型
-struct Type : public AbstractAstNode {};
+struct Type : public AbstractAstNode {
+    SSYC_IMPL_AST_INTERFACE
+};
 
 //! 声明
-struct Decl : public AbstractAstNode {};
+struct Decl : public AbstractAstNode {
+    SSYC_IMPL_AST_INTERFACE
+};
 
 //! 表达式
-struct Expr : public AbstractAstNode {};
+struct Expr : public AbstractAstNode {
+    SSYC_IMPL_AST_INTERFACE
+};
 
 //! 语句
-struct Stmt : public AbstractAstNode {};
+struct Stmt : public AbstractAstNode {
+    SSYC_IMPL_AST_INTERFACE
+};
 
 }; // namespace ssyc::ast
 

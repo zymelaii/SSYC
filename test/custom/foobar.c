@@ -17,9 +17,14 @@ int foobar() {
 }
 
 void a(int xx) {
-    const int n = 2;
+    const int n
+
+    = 2;
     int a = 3, b = 3, c[3]= {1, 3};
-    for (fn(0ll);; a = a++) 3;
+    for (fn(0ll);; a = a++) {
+        break;
+        continue;
+    }
 
     sizeof("asd\0asdsad");
 
@@ -27,7 +32,7 @@ void a(int xx) {
 
     (int[][3]){1,2,3,4,4,2,2+3ll};
     ;
-
+    -a;
     ;
     ;
     a;
@@ -49,9 +54,11 @@ void a(int xx) {
 
     do 3; while(1);
 
+    while (3);
+
     fn;
 
     if (({1;})); else if (3);
 }
 
-int cc = 0;
+int cc[3] = {};
