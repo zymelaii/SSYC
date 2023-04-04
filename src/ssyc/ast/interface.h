@@ -46,6 +46,8 @@ public:
 
     const AbstractAstNode *next();
 
+    const int depth() const;
+
 private:
     int        complete() const;
     node_type *acquireNewNode();
@@ -55,6 +57,7 @@ private:
     node_type *pushCursor_; //!< 插入游标指针
 
     mutable size_t pushNumber_;
+    int            currentDepth_;
 
     std::stack<node_type *> freeList_;
     std::stack<walkproc_t>  walkProc_;

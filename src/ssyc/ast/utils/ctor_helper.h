@@ -15,7 +15,7 @@ struct ArrayAssocOnce {
         auto dim       = new IntegerLiteral;
         dim->value     = Dim;
         dim->type      = IntegerLiteral::IntegerType::u64;
-        dim->literal   = std::to_string(Dim);
+        dim->literal   = *new std::string{std::to_string(Dim)};
         e->elementType = T::emit();
         e->length      = dim;
         return e;
