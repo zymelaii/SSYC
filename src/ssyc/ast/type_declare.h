@@ -1,7 +1,5 @@
 #pragma once
 
-#include "interface.h" // IWYU pragma: export
-
 namespace ssyc::ast {
 
 /*!
@@ -66,4 +64,4 @@ struct ReturnStmt;   //!< return 语句
 
 } // namespace ssyc::ast
 
-#include "type/base.h" // IWYU pragma: export
+#include "interface.h" // IWYU pragma: export

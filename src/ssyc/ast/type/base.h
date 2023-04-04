@@ -2,9 +2,13 @@
 
 #include "../type_declare.h"
 
+#include <string_view>
+
 namespace ssyc::ast {
 
-struct AbstractAstNode : public IBrief {
+struct AbstractAstNode
+    : public IBrief
+    , public ITreeWalkBuilder {
     SSYC_IMPL_AST_INTERFACE
 
     //! 语法节点所在文件的 ID
@@ -33,6 +37,8 @@ struct Type : public AbstractAstNode {
 //! 声明
 struct Decl : public AbstractAstNode {
     SSYC_IMPL_AST_INTERFACE
+
+    std::string_view ident;
 };
 
 //! 表达式

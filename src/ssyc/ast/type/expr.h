@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../type_declare.h"
+#include "base.h"
 
 #include <vector>
 #include <string_view>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../type_declare.h"
+#include "base.h"
 
 #include <vector>
 
@@ -9,7 +10,7 @@ namespace ssyc::ast {
 struct QualifiedType : public Type {
     SSYC_IMPL_AST_INTERFACE
 
-    //! TODO: to be completed
+    Type *type;
 };
 
 struct BuiltinType : public Type {

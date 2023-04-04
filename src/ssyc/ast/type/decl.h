@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../type_declare.h"
+#include "base.h"
 
 #include <string_view>
 #include <string>
@@ -9,8 +10,6 @@ namespace ssyc::ast {
 
 struct VarDecl : public Decl {
     SSYC_IMPL_AST_INTERFACE
-
-    std::string_view ident;
 
     Type *varType;
 
@@ -22,8 +21,7 @@ struct VarDecl : public Decl {
 struct ParamVarDecl : public Decl {
     SSYC_IMPL_AST_INTERFACE
 
-    //! NOTE: 为空时表示实参匿名
-    std::string_view ident;
+    //! NOTE: ident 为空时表示实参匿名
 
     Type *paramType;
 
@@ -35,7 +33,6 @@ struct ParamVarDecl : public Decl {
 struct FunctionDecl : public Decl {
     SSYC_IMPL_AST_INTERFACE
 
-    std::string_view   ident;
     FunctionProtoType *protoType;
 
     //! NOTE: body 为空表示函数声明但未定义
