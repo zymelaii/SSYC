@@ -58,6 +58,7 @@ struct BinaryOperatorExpr : public Expr {
 
     enum class BinaryOpType {
         //! TODO: to be completed
+        Assign,
         Add,
         Sub,
         Mul,

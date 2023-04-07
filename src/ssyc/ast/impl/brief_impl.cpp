@@ -136,6 +136,9 @@ void BinaryOperatorExpr::acquire(NodeBrief &brief) const {
     brief.type = NodeBaseType::Expr;
     brief.name = "BinaryOperator"sv;
     switch (op) {
+        case BinaryOpType::Assign: {
+            brief.hint = "'='"sv;
+        } break;
         case BinaryOpType::Add: {
             brief.hint = "'+'"sv;
         } break;
