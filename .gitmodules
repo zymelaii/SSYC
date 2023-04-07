@@ -1,3 +1,6 @@
 [submodule "deps/compiler2022"]
 	path = deps/compiler2022
 	url = https://gitlab.eduxiji.net/nscscc/compiler2022.git
+[submodule "deps/llvm-project"]
+	path = deps/llvm-project
+	url = git@github.com:llvm/llvm-project.git

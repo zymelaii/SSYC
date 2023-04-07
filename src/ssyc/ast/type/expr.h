@@ -42,6 +42,10 @@ struct UnaryOperatorExpr : public Expr {
 
     enum class UnaryOpType {
         //! TODO: to be completed
+        Pos,
+        Neg,
+        LNot,
+        Inv,
     };
 
     UnaryOpType op;
@@ -54,6 +58,25 @@ struct BinaryOperatorExpr : public Expr {
 
     enum class BinaryOpType {
         //! TODO: to be completed
+        Add,
+        Sub,
+        Mul,
+        Div,
+        Mod,
+        Lsh,
+        Rsh,
+        And,
+        Or,
+        Xor,
+        Eq,
+        NE,
+        Gt,
+        Lt,
+        GE,
+        LE,
+        LAnd,
+        LOr,
+        Comma,
     };
 
     BinaryOpType op;

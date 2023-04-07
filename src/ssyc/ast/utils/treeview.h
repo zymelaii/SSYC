@@ -13,8 +13,9 @@ std::ostream &operator<<(std::ostream &os, const ast_node auto *root) {
 
     auto node = state.next();
     while (node != nullptr) {
-        os << std::setw(state.depth() * 2) << "" << getNodeBrief(node)
-           << std::endl;
+        os << std::setw(state.depth()) << std::setfill('|') << ""
+           << getNodeBrief(node) << " 0x"
+           << reinterpret_cast<const void *>(node) << std::endl;
         node = state.next();
     }
 

@@ -6,7 +6,15 @@ namespace ssyc::ast {
 
 void AbstractAstNode::flattenInsert(TreeWalkState &state) const {}
 
-void Program::flattenInsert(TreeWalkState &state) const {}
+void Program::flattenInsert(TreeWalkState &state) const {
+    for (const auto &e : unitList) {
+        if (std::holds_alternative<VarDecl *>(e)) {
+            state.push(std::get<VarDecl *>(e));
+        } else {
+            state.push(std::get<FunctionDecl *>(e));
+        }
+    }
+}
 
 void Type::flattenInsert(TreeWalkState &state) const {}
 

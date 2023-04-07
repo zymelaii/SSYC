@@ -116,13 +116,84 @@ void ParenExpr::acquire(NodeBrief &brief) const {
 void UnaryOperatorExpr::acquire(NodeBrief &brief) const {
     brief.type = NodeBaseType::Expr;
     brief.name = "UnaryOperator"sv;
-    //! TODO: add hint: operator
+    switch (op) {
+        case UnaryOpType::Pos: {
+            brief.hint = "'+'"sv;
+        } break;
+        case UnaryOpType::Neg: {
+            brief.hint = "'-'"sv;
+        } break;
+        case UnaryOpType::LNot: {
+            brief.hint = "'!'"sv;
+        } break;
+        case UnaryOpType::Inv: {
+            brief.hint = "'~'"sv;
+        } break;
+    }
 }
 
 void BinaryOperatorExpr::acquire(NodeBrief &brief) const {
     brief.type = NodeBaseType::Expr;
     brief.name = "BinaryOperator"sv;
-    //! TODO: add hint: operator
+    switch (op) {
+        case BinaryOpType::Add: {
+            brief.hint = "'+'"sv;
+        } break;
+        case BinaryOpType::Sub: {
+            brief.hint = "'-'"sv;
+        } break;
+        case BinaryOpType::Mul: {
+            brief.hint = "'*'"sv;
+        } break;
+        case BinaryOpType::Div: {
+            brief.hint = "'/'"sv;
+        } break;
+        case BinaryOpType::Mod: {
+            brief.hint = "'%'"sv;
+        } break;
+        case BinaryOpType::Lsh: {
+            brief.hint = "'<<'"sv;
+        } break;
+        case BinaryOpType::Rsh: {
+            brief.hint = "'>>'"sv;
+        } break;
+        case BinaryOpType::And: {
+            brief.hint = "'&'"sv;
+        } break;
+        case BinaryOpType::Or: {
+            brief.hint = "'|'"sv;
+        } break;
+        case BinaryOpType::Xor: {
+            brief.hint = "'^'"sv;
+        } break;
+        case BinaryOpType::Eq: {
+            brief.hint = "'=='"sv;
+        } break;
+        case BinaryOpType::NE: {
+            brief.hint = "'!='"sv;
+        } break;
+        case BinaryOpType::Gt: {
+            brief.hint = "'>'"sv;
+        } break;
+        case BinaryOpType::Lt: {
+            brief.hint = "'<'"sv;
+        } break;
+        case BinaryOpType::GE: {
+            brief.hint = "'>='"sv;
+        } break;
+        case BinaryOpType::LE: {
+            brief.hint = "'<='"sv;
+        } break;
+        case BinaryOpType::LAnd: {
+            brief.hint = "'&&'"sv;
+        } break;
+        case BinaryOpType::LOr: {
+            brief.hint = "'||'"sv;
+        } break;
+        case BinaryOpType::Comma: {
+            brief.hint = "','"sv;
+        } break;
+    }
 }
 
 void DeclRef::acquire(NodeBrief &brief) const {
