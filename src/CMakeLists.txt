@@ -1,51 +1,87 @@
-find_package(BISON REQUIRED)
-find_package(FLEX REQUIRED)
-
 find_package(fmt REQUIRED)
 find_package(glog REQUIRED)
-find_package(gflags REQUIRED COMPONENTS static)
-
-aux_source_directory(. SOURCE_FILES)
-set(YACC_SOURCE_FILES lex.yy.cpp y.tab.hpp y.tab.cpp)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_custom_command(
-	OUTPUT ${YACC_SOURCE_FILES}
-	DEPENDS SysY.l SysY.y
-	COMMAND ${FLEX_EXECUTABLE} -f -olex.yy.cpp ${CMAKE_CURRENT_SOURCE_DIR}/SysY.l
-	COMMAND ${BISON_EXECUTABLE} --yacc -dv ${CMAKE_CURRENT_SOURCE_DIR}/SysY.y -o y.tab.cpp
-	COMMENT "Generate yacc lexer/parser"
-)
+project(ssycapi VERSION 0.1.0)
+
+file(GLOB_RECURSE SOURCE_FILES *.cpp)
 
 add_executable(
 	${CMAKE_PROJECT_NAME}
 	${SOURCE_FILES}
-	${YACC_SOURCE_FILES}
-)
-
-target_compile_options(
-	${CMAKE_PROJECT_NAME}
-	PRIVATE -Wno-register -Wno-writable-strings
 )
 
 target_link_libraries(
 	${CMAKE_PROJECT_NAME}
-	PRIVATE fmt::fmt-header-only glog::glog gflags_static
+	PRIVATE fmt::fmt-header-only glog::glog
 )
 
 target_include_directories(
 	${CMAKE_PROJECT_NAME}
-	PUBLIC ${CMAKE_SOURCE_DIR}/include
+	PRIVATE ${CMAKE_SOURCE_DIR}/include
+)
+
+list(REMOVE_ITEM SOURCE_FILES main.cpp)
+
+add_library(${PROJECT_NAME} ${SOURCE_FILES})
+
+target_link_libraries(
+	${PROJECT_NAME}
+	PRIVATE fmt::fmt-header-only glog::glog
+)
+
+target_include_directories(
+	${PROJECT_NAME}
+	PRIVATE ${CMAKE_SOURCE_DIR}/include
 )
 
 include(GNUInstallDirs)
+set(PROJECT_EXPORT_TARGETS ${CMAKE_PROJECT_NAME} ${PROJECT_NAME})
+set(PROJECT_EXPORT_NAME ${CMAKE_PROJECT_NAME})
+set(PROJECT_INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_EXPORT_NAME})
+
+add_library(${PROJECT_EXPORT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
 install(
-	TARGETS ${CMAKE_PROJECT_NAME}
+	TARGETS ${PROJECT_EXPORT_TARGETS}
+	EXPORT ${PROJECT_EXPORT_NAME}Targets
 	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 	PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 	INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(
+	DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+export(
+	EXPORT ${PROJECT_EXPORT_NAME}Targets
+	NAMESPACE ${PROJECT_EXPORT_NAME}::
+	FILE ${PROJECT_EXPORT_NAME}Targets.cmake
+)
+install(
+	FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_EXPORT_NAME}Targets.cmake
+	DESTINATION ${PROJECT_INSTALL_CMAKEDIR}
+)
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+	${PROJECT_EXPORT_NAME}ConfigVersion.cmake
+	VERSION ${PROJECT_VERSION}
+	COMPATIBILITY AnyNewerVersion
+)
+install(
+	FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_EXPORT_NAME}ConfigVersion.cmake
+	DESTINATION ${PROJECT_INSTALL_CMAKEDIR}
+)
+
+install(
+	EXPORT ${PROJECT_EXPORT_NAME}Targets
+	FILE ${PROJECT_EXPORT_NAME}Config.cmake
+	NAMESPACE ${PROJECT_EXPORT_NAME}::
+	DESTINATION ${PROJECT_INSTALL_CMAKEDIR}
 )
