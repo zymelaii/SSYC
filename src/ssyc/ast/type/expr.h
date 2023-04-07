@@ -89,6 +89,7 @@ struct BinaryOperatorExpr : public Expr {
 struct DeclRef : public Expr {
     SSYC_IMPL_AST_INTERFACE
 
+    //! WARNING: ref is actually a shared ptr
     VarDecl* ref;
 };
 
