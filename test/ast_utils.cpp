@@ -106,14 +106,15 @@ TEST(AstCtor, DeclCtor) {
 }
 
 TEST(AstCtor, ProgramCtor) {
-    unsafe_wrapper_t<Module<
-        Decl::Var<Type::Int, Expr::Integer<3>>,
-        Decl::Var<Type::Int, Expr::Integer<5>>,
-        Decl::Function<
-            Type::Function<Type::Int>,
-            Stmt::Compound<Stmt::Return<Expr::BinaryOp<
-                BinaryOpType::Add,
-                Expr::SymRef<Decl::Var<Type::Int>>,
-                Expr::SymRef<Decl::Var<Type::Int>>>>>>>
+    unsafe_wrapper_t<
+        Module<
+            Decl::Var<Type::Int, Expr::Integer<3>>,
+            Decl::Var<Type::Int, Expr::Integer<5>>,
+            Decl::Function<
+                Type::Function<Type::Int>,
+                Stmt::Compound<Stmt::Return<Expr::BinaryOp<
+                    BinaryOpType::Add,
+                    Expr::SymRef<Decl::Var<Type::Int>>,
+                    Expr::SymRef<Decl::Var<Type::Int>>>>>>>
     >{};
 }
