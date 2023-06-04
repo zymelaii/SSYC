@@ -3,6 +3,7 @@
 #include <string.h>
 #include <set>
 #include <regex>
+#include <string>
 #include <stdio.h>
 #include <assert.h>
 #include <ctype.h>
@@ -21,6 +22,7 @@ struct LexStatePrivate {
     std::set<const char*>         strtable;   //<! buffered string table
     Buffer                        buffer;     //<! raw input buffer
     bool                          bufenabled; //<! save chars to buffer
+    std::string                   linebuffer; //<! input buffer of currnet line
 
     LexStatePrivate()
         : bufenabled{false} {
@@ -79,6 +81,40 @@ struct BufferGuard {
 
     LexState& state;
 };
+
+inline bool isnewline(char c) {
+    return c == '\n' || c == '\r';
+}
+
+inline bool isreserved(TOKEN token) {
+    const auto e = static_cast<int>(token);
+    return e >= FIRST_RESERVED && e <= LAST_RESERVED;
+}
+
+bool isintval(const char* s) {
+    auto              _ = R"(
+o integer-constant: ((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?
+x integer-suffix:   (([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)
+)";
+    static std::regex pattern(
+        R"(((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?)");
+    return std::regex_match(s, pattern);
+}
+
+bool isfltval(const char* s) {
+    auto              _ = R"(
+o floating-constant:               ((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?
+o decimal-floating-constant:       ((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+))[flFL]?
+o hexadecimal-floating-constant:   0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+[flFL]?
+x exponent-part:                   [eE][+-]?[0-9]+
+x binary-exponent-part:            [pP][+-]?[0-9]+
+x fractional-constant:             ([0-9]*\.[0-9]+)|([0-9]+\.)
+x hexadecimal-fractional-constant: ([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.)
+)";
+    static std::regex pattern(
+        R"(((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?)");
+    return std::regex_match(s, pattern);
+}
 
 //! format token to string
 const char* tok2str(TOKEN token) {
@@ -181,20 +217,57 @@ const char* tok2str(TOKEN token) {
 }
 
 //! format token into string buffer
-void tok2str(TOKEN token, char* buffer, size_t len) {
+const char* tok2str(TOKEN token, char* buffer, size_t len) {
     auto itok = static_cast<int>(token);
     if (itok > 0 && itok < FIRST_RESERVED) {
         snprintf(buffer, len, "%c", static_cast<char>(itok));
     } else {
         strcpy_s(buffer, len, tok2str(token));
     }
+    return buffer;
 }
 
-inline bool isnewline(char c) {
-    return c == '\n' || c == '\r';
+//! format token into pretty string
+const char* pretty_tok2str(Token token, char* buffer, size_t len) {
+    if (isreserved(token.id)) { return tok2str(token.id, buffer, len); }
+    switch (token.id) {
+        case TOKEN::TK_IDENT:
+        case TOKEN::TK_INTVAL:
+        case TOKEN::TK_FLTVAL: {
+            char buf[16]{};
+            auto id = tok2str(token.id, buf);
+            snprintf(buffer, len, "%s %s", id, token.detail.data());
+        } break;
+        case TOKEN::TK_STRING: {
+            snprintf(buffer, len, "<string> length: %llu", token.detail.size());
+        } break;
+        case TOKEN::TK_EOF: {
+            strcpy_s(buffer, len, "<eof>");
+        } break;
+        case TOKEN::TK_COMMENT: {
+            snprintf(buffer, len, "<comment> //%s", token.detail.data());
+        } break;
+        case TOKEN::TK_MLCOMMENT: {
+            strcpy_s(buffer, len, "<comment> /*...*/");
+        } break;
+        case TOKEN::TK_NONE: {
+            buffer[0] = '\0';
+        } break;
+        default: {
+            const auto itok = static_cast<int>(token.id);
+            char       buf[4]{};
+            if (itok > 0 && itok < FIRST_RESERVED) {
+                buf[0] = static_cast<char>(itok);
+            } else {
+                tok2str(token.id, buf);
+            }
+            snprintf(buffer, len, "\"%s\"", buf);
+        } break;
+    }
+    return buffer;
 }
 
-TOKEN isreserved(const char* s) {
+TOKEN to_reserved(const char* s) {
     auto e = FIRST_RESERVED;
     while (e <= LAST_RESERVED) {
         const auto token = static_cast<TOKEN>(e);
@@ -204,33 +277,9 @@ TOKEN isreserved(const char* s) {
     return TOKEN::TK_NONE;
 }
 
-bool isintval(const char* s) {
-    auto              _ = R"(
-o integer-constant: ((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?
-x integer-suffix:   (([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)
-)";
-    static std::regex pattern(
-        R"(((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?)");
-    return std::regex_match(s, pattern);
-}
-
-bool isfltval(const char* s) {
-    auto              _ = R"(
-o floating-constant:               ((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?
-o decimal-floating-constant:       ((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+))[flFL]?
-o hexadecimal-floating-constant:   0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+[flFL]?
-x exponent-part:                   [eE][+-]?[0-9]+
-x binary-exponent-part:            [pP][+-]?[0-9]+
-x fractional-constant:             ([0-9]*\.[0-9]+)|([0-9]+\.)
-x hexadecimal-fractional-constant: ([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.)
-)";
-    static std::regex pattern(
-        R"(((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?)");
-    return std::regex_match(s, pattern);
-}
-
 //! read next character
 inline void next(LexState& ls) {
+    if (ls.cur != '\0') { ls.d->linebuffer.push_back(ls.cur); }
     if (ls.d->bufenabled) { ls.d->bufsave(ls.cur); }
     ls.cur = ls.d->stream->get();
     ++ls.column;
@@ -274,6 +323,98 @@ void into_newline(LexState& ls) {
     const auto num = ls.line;
     if (++ls.line < num) { lexerror(ls, "too many lines", TOKEN::TK_NONE); }
     ls.column = 1;
+    ls.d->linebuffer.clear();
+    ls.d->linebuffer.push_back(ls.cur);
+}
+
+//! escape string
+int try_escape(LexState& ls, char* s) {
+    char*          origin = s;
+    constexpr int  N      = 11;
+    constexpr char ESCAPE_TABLE[N][2]{
+        {'\'', '\''},
+        {'"',  '"' },
+        {'?',  '?' },
+        {'\\', '\\'},
+        {'a',  '\a'},
+        {'b',  '\b'},
+        {'f',  '\f'},
+        {'n',  '\n'},
+        {'r',  '\r'},
+        {'t',  '\t'},
+        {'v',  '\v'},
+    };
+    int   escaped = 0;
+    bool  err     = false;
+    char *p = s, *q = p;
+    while (true) {
+        while (*p != '\0' && *p != '\\') { *s++ = *p++; }
+        if (*p == '\0') { break; }
+        q     = p + 1;
+        int i = 0;
+        while (i < N) {
+            if (ESCAPE_TABLE[i][0] == *q) {
+                *s++ = ESCAPE_TABLE[i][1];
+                ++escaped;
+                p = q + 1;
+                break;
+            }
+            ++i;
+        }
+        if (i < N) { continue; }
+        if (*q >= '0' && *q <= '7') { //<! arbitrary octal value
+            int value = *q - '0';
+            int n     = 1;
+            while (*++q != '\0' && n < 3) {
+                if (!(*q >= '0' && *q <= '7')) { break; }
+                value = value * 8 + *q - '0';
+                ++n;
+            }
+            if (value > 0xff) {
+                err = true;
+                lexerror(
+                    ls, "octal escape sequence out of range", TOKEN::TK_STRING);
+            }
+            *s++ = value % 0xff;
+            ++escaped;
+            p = q;
+        } else if (*q == 'x') { //<! arbitrary hexadecimal value
+            int n     = 0;
+            int value = 0;
+            while (*++q != '\0' && n < 2) {
+                if (!isxdigit(*q)) { break; }
+                value =
+                    value * 16 + tolower(*q) - (isdigit(*q) ? '0' : 'a' - 10);
+                ++n;
+            }
+            if (n == 0) {
+                err = true;
+                lexerror(
+                    ls,
+                    "\\x used with no following hex digits",
+                    TOKEN::TK_STRING);
+            }
+            *s++ = value;
+            ++escaped;
+            p = q;
+        } else if (*q == '\0') {
+            err = true;
+            lexerror(ls, "no characters to escape", TOKEN::TK_STRING);
+            *s++ = '\\';
+            ++escaped;
+            break;
+        } else {
+            err = true;
+            char msg[64]{};
+            sprintf(msg, "unknown escape sequence '\\%c'", *q);
+            lexerror(ls, msg, TOKEN::TK_STRING);
+            *s++ = *q;
+            ++escaped;
+            p = q + 1;
+        }
+    }
+    *s = '\0';
+    return err ? -escaped : escaped;
 }
 
 //! read number constant (integer and float)
@@ -306,7 +447,35 @@ TOKEN read_number(LexState& ls, std::string_view& raw) {
 //! read string constant
 TOKEN read_string(LexState& ls, std::string_view& raw) {
     assert(ls.cur == '"');
-    //! TODO: to be completed
+    next(ls);
+    BufferGuard guard(ls);
+    bool        escape = false;
+    bool        ok     = false;
+    while (ls.cur != EOF) {
+        if (isnewline(ls.cur)) { break; }
+        if (escape) {
+            next(ls);
+            escape = false;
+        } else if (nextif(ls, "\\")) {
+            continue;
+        } else if (nextif(ls, "\"")) {
+            ok = true;
+            break;
+        } else {
+            next(ls);
+        }
+    }
+    if (!ok) {
+        lexerror(ls, "unclosed string literal", TOKEN::TK_STRING);
+    } else {
+        ls.d->buffer.n -= 1;
+    }
+    char* s   = ls.d->bufdup();
+    int   ret = try_escape(ls, s);
+    if (ok && ret < 0) {
+        lexerror(ls, "mal-formed string literal", TOKEN::TK_STRING);
+    }
+    raw = ls.d->savestr(s);
     return TOKEN::TK_STRING;
 }
 
@@ -317,13 +486,22 @@ TOKEN read_symbol(LexState& ls, std::string_view& raw) {
     next(ls);
     while (isalnum(ls.cur) || ls.cur == '_') { next(ls); }
     raw         = ls.d->savestr(ls.d->bufdup());
-    auto result = isreserved(raw.data());
+    auto result = to_reserved(raw.data());
     return result == TOKEN::TK_NONE ? TOKEN::TK_IDENT : result;
 }
 
 //! error handler for lex
 void lexerror(LexState& ls, const char* msg, TOKEN token) {
-    //! TODO: to be completed
+    fprintf(
+        stderr,
+        "%zu:%zu: error: %s\n%s\n%*s^\n",
+        ls.line,
+        ls.column,
+        msg,
+        ls.d->linebuffer.c_str(),
+        std::max(static_cast<int>(ls.column) - 1, 0),
+        "");
+    //! TODO: introduce custom error handlers
 }
 
 //! main lex method
@@ -339,7 +517,6 @@ TOKEN lex(LexState& ls, std::string_view& raw) {
                 next(ls);
                 continue;
             } break;
-
             //! line breaks
             case '\n':
             case '\r': {
@@ -359,6 +536,8 @@ TOKEN lex(LexState& ls, std::string_view& raw) {
                     while (ls.cur != EOF) {
                         if (nextif(ls, "*")) {
                             if (nextif(ls, "/")) { break; }
+                        } else if (isnewline(ls.cur)) {
+                            into_newline(ls);
                         } else {
                             next(ls);
                         }
@@ -388,15 +567,15 @@ TOKEN lex(LexState& ls, std::string_view& raw) {
             } break;
             case '>': {
                 next(ls);
-                return nextif(ls, "=")
-                         ? nextif(ls, ">") ? TOKEN::TK_SHR : TOKEN::TK_GE
-                         : TOKEN::TK_GT;
+                return nextif(ls, "=") ? TOKEN::TK_GE
+                     : nextif(ls, ">") ? TOKEN::TK_SHR
+                                       : TOKEN::TK_GT;
             } break;
             case '<': {
                 next(ls);
-                return nextif(ls, "=")
-                         ? nextif(ls, "<") ? TOKEN::TK_SHL : TOKEN::TK_LE
-                         : TOKEN::TK_LT;
+                return nextif(ls, "=") ? TOKEN::TK_LE
+                     : nextif(ls, "<") ? TOKEN::TK_SHL
+                                       : TOKEN::TK_LT;
             } break;
             case '|': {
                 next(ls);
@@ -408,6 +587,7 @@ TOKEN lex(LexState& ls, std::string_view& raw) {
             } break;
             //! string constant
             case '"': {
+                return read_string(ls, raw);
             } break;
             //! EOF
             case EOF: {

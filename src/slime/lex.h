@@ -124,5 +124,15 @@ protected:
     void resetstream(std::istream *input);
 };
 
-const char *tok2str(TOKEN token);
-void        tok2str(TOKEN token, char *buffer, size_t len);
+const char *tok2str(TOKEN token, char *buffer, size_t len);
+const char *pretty_tok2str(Token token, char *buffer, size_t len);
+
+template <size_t N>
+inline const char *tok2str(TOKEN token, char (&buffer)[N]) {
+    return tok2str(token, buffer, N);
+}
+
+template <size_t N>
+inline const char *pretty_tok2str(Token token, char (&buffer)[N]) {
+    return pretty_tok2str(token, buffer, N);
+}

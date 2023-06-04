@@ -5,26 +5,29 @@
 #include <string>
 #include <fstream>
 
-extern TOKEN read_number(LexState& ls);
-
 int main(int argc, char* argv[]) {
-    std::ifstream ifs(
-        argc > 1 ? argv[1]
-                 : R"(E:\Storage\FreeSpace\workspace\SSYC\src\slime\foobar.c)");
-
     LexState ls;
-    ls.reset(ifs);
+    bool     has_input = false;
+    if (argc > 2) {
+        std::ifstream ifs(argv[1]);
+        if (ifs.is_open()) {
+            ls.reset(ifs);
+            has_input = true;
+        }
+    }
+    if (!has_input) {
+        std::string       input;
+        std::stringstream ss;
+        std::getline(std::cin, input, '\0');
+        ss << input;
+        ls.reset(ss);
+    }
 
+    char buf[256]{};
     while (ls.token.id != TOKEN::TK_EOF) {
         ls.next();
-        char buf[32]{};
-        tok2str(ls.token.id, buf, 32);
-        printf(
-            "<%zu:%zu> %s: %s\n",
-            ls.line,
-            ls.column,
-            buf,
-            ls.token.detail.data());
+        const char* tok = tok2str(ls.token.id, buf);
+        puts(pretty_tok2str(ls.token, buf));
     }
 
     return 0;
