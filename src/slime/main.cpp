@@ -1,14 +1,13 @@
 #include "lex.h"
-#include <sstream>
-#include <iostream>
-#include <regex>
 #include <string>
+#include <sstream>
 #include <fstream>
+#include <iostream>
 
 int main(int argc, char* argv[]) {
     LexState ls;
     bool     has_input = false;
-    if (argc > 2) {
+    if (argc > 1) {
         std::ifstream ifs(argv[1]);
         if (ifs.is_open()) {
             ls.reset(ifs);
