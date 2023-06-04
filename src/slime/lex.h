@@ -69,11 +69,6 @@ enum class TOKEN : int {
 
 static constexpr int LAST_RESERVED = static_cast<int>(TOKEN::LAST_RESERVED);
 
-inline size_t totalReserved() {
-    const auto LAST_RESERVED = static_cast<int>(TOKEN::LAST_RESERVED);
-    return LAST_RESERVED - FIRST_RESERVED + 1;
-}
-
 struct Token {
     TOKEN            id;     //<! token ID
     std::string_view detail; //<! raw content of token
