@@ -45,7 +45,7 @@ enum class TOKEN : int {
     TK_SWITCH,                //<! `switch`
     TK_CASE,                  //<! `case`
     TK_DEFAULT,               //<! `default`
-    TK_BERAK,                 //<! `break`
+    TK_BREAK,                 //<! `break`
     TK_CONTINUE,              //<! `continue`
     TK_RETURN,                //<! `return`
     LAST_RESERVED = TK_RETURN,

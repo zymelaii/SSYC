@@ -158,7 +158,7 @@ const char* tok2str(TOKEN token) {
         case TOKEN::TK_DEFAULT: {
             return "default";
         }
-        case TOKEN::TK_BERAK: {
+        case TOKEN::TK_BREAK: {
             return "break";
         }
         case TOKEN::TK_CONTINUE: {
