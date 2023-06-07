@@ -1,16 +1,17 @@
-#include "lex.h"
+#include "parser.h"
+
 #include <string>
 #include <sstream>
 #include <fstream>
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    LexState ls;
-    bool     has_input = false;
+    Parser parser;
+    bool   has_input = false;
     if (argc > 1) {
         std::ifstream ifs(argv[1]);
         if (ifs.is_open()) {
-            ls.reset(ifs);
+            parser.ls.reset(ifs);
             has_input = true;
         }
     }
@@ -19,15 +20,18 @@ int main(int argc, char* argv[]) {
         std::stringstream ss;
         std::getline(std::cin, input, '\0');
         ss << input;
-        ls.reset(ss);
+        parser.ls.reset(ss);
     }
 
-    char buf[256]{};
-    while (ls.token.id != TOKEN::TK_EOF) {
-        ls.next();
-        const char* tok = tok2str(ls.token.id, buf);
-        puts(pretty_tok2str(ls.token, buf));
-    }
+    // char buf[256]{};
+    // while (parser.ls.token.id != TOKEN::TK_EOF) {
+    //     parser.ls.next();
+    //     const char* tok = tok2str(parser.ls.token.id, buf);
+    //     puts(pretty_tok2str(parser.ls.token, buf));
+    // }
+
+    parser.next();
+    while (parser.ls.token.id != TOKEN::TK_EOF) { parser.func(); }
 
     return 0;
 }
