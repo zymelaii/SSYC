@@ -633,7 +633,7 @@ void Parser::landexpr() {
  */
 void Parser::lorexpr() {
     landexpr();
-    while (ls.token.id == TOKEN::TK_LAND) {
+    while (ls.token.id == TOKEN::TK_LOR) {
         next();
         landexpr();
     }
