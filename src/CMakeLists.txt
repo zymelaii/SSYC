@@ -1,87 +1,9 @@
-find_package(fmt REQUIRED)
-find_package(glog REQUIRED)
+project(slimec)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+add_subdirectory(slime)
 
-project(ssycapi VERSION 0.1.0)
+set(SOURCE_FILES main.cpp)
 
-file(GLOB_RECURSE SOURCE_FILES *.cpp)
+add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 
-add_executable(
-	${CMAKE_PROJECT_NAME}
-	${SOURCE_FILES}
-)
-
-target_link_libraries(
-	${CMAKE_PROJECT_NAME}
-	PRIVATE fmt::fmt-header-only glog::glog
-)
-
-target_include_directories(
-	${CMAKE_PROJECT_NAME}
-	PRIVATE ${CMAKE_SOURCE_DIR}/include
-)
-
-list(REMOVE_ITEM SOURCE_FILES main.cpp)
-
-add_library(${PROJECT_NAME} ${SOURCE_FILES})
-
-target_link_libraries(
-	${PROJECT_NAME}
-	PRIVATE fmt::fmt-header-only glog::glog
-)
-
-target_include_directories(
-	${PROJECT_NAME}
-	PRIVATE ${CMAKE_SOURCE_DIR}/include
-)
-
-include(GNUInstallDirs)
-set(PROJECT_EXPORT_TARGETS ${CMAKE_PROJECT_NAME} ${PROJECT_NAME})
-set(PROJECT_EXPORT_NAME ${CMAKE_PROJECT_NAME})
-set(PROJECT_INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_EXPORT_NAME})
-
-add_library(${PROJECT_EXPORT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
-
-install(
-	TARGETS ${PROJECT_EXPORT_TARGETS}
-	EXPORT ${PROJECT_EXPORT_NAME}Targets
-	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-	PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-	INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
-install(
-	DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-	DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-)
-
-export(
-	EXPORT ${PROJECT_EXPORT_NAME}Targets
-	NAMESPACE ${PROJECT_EXPORT_NAME}::
-	FILE ${PROJECT_EXPORT_NAME}Targets.cmake
-)
-install(
-	FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_EXPORT_NAME}Targets.cmake
-	DESTINATION ${PROJECT_INSTALL_CMAKEDIR}
-)
-
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-	${PROJECT_EXPORT_NAME}ConfigVersion.cmake
-	VERSION ${PROJECT_VERSION}
-	COMPATIBILITY AnyNewerVersion
-)
-install(
-	FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_EXPORT_NAME}ConfigVersion.cmake
-	DESTINATION ${PROJECT_INSTALL_CMAKEDIR}
-)
-
-install(
-	EXPORT ${PROJECT_EXPORT_NAME}Targets
-	FILE ${PROJECT_EXPORT_NAME}Config.cmake
-	NAMESPACE ${PROJECT_EXPORT_NAME}::
-	DESTINATION ${PROJECT_INSTALL_CMAKEDIR}
-)
+target_link_libraries(${PROJECT_NAME} PRIVATE ssyc::slime)

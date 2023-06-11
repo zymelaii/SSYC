@@ -1,10 +1,10 @@
 #pragma once
 
-#include "lex.h"
+#include "../lex/lex.h"
+
+namespace slime {
 
 struct ParseState {};
-
-struct Expr {};
 
 class Parser {
 public:
@@ -55,3 +55,5 @@ public:
 
     void exprlist();
 };
+
+} // namespace slime

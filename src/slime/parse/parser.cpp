@@ -2,6 +2,8 @@
 
 #include <assert.h>
 
+namespace slime {
+
 void Parser::next() {
     do {
         ls.next();
@@ -672,3 +674,5 @@ void Parser::expr() {
         assignexpr();
     }
 }
+
+} // namespace slime

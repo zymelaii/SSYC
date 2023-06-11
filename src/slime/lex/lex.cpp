@@ -8,8 +8,7 @@
 #include <assert.h>
 #include <ctype.h>
 
-void  lexerror(LexState& ls, const char* msg, TOKEN token);
-TOKEN lex(LexState& ls, std::string_view& raw);
+namespace slime {
 
 struct Buffer {
     char*  buf;
@@ -81,6 +80,17 @@ struct BufferGuard {
 
     LexState& state;
 };
+
+} // namespace slime
+
+using slime::BufferGuard;
+using slime::LexState;
+using slime::TOKEN;
+using slime::detail::FIRST_RESERVED;
+using slime::detail::LAST_RESERVED;
+
+void  lexerror(LexState& ls, const char* msg, TOKEN token);
+TOKEN lex(LexState& ls, std::string_view& raw);
 
 inline bool isnewline(char c) {
     return c == '\n' || c == '\r';
@@ -214,57 +224,6 @@ const char* tok2str(TOKEN token) {
             return "<single>";
         }
     }
-}
-
-//! format token into string buffer
-const char* tok2str(TOKEN token, char* buffer, size_t len) {
-    auto itok = static_cast<int>(token);
-    if (itok > 0 && itok < FIRST_RESERVED) {
-        snprintf(buffer, len, "%c", static_cast<char>(itok));
-    } else {
-        strcpy_s(buffer, len, tok2str(token));
-    }
-    return buffer;
-}
-
-//! format token into pretty string
-const char* pretty_tok2str(Token token, char* buffer, size_t len) {
-    if (isreserved(token.id)) { return tok2str(token.id, buffer, len); }
-    switch (token.id) {
-        case TOKEN::TK_IDENT:
-        case TOKEN::TK_INTVAL:
-        case TOKEN::TK_FLTVAL: {
-            char buf[16]{};
-            auto id = tok2str(token.id, buf);
-            snprintf(buffer, len, "%s %s", id, token.detail.data());
-        } break;
-        case TOKEN::TK_STRING: {
-            snprintf(buffer, len, "<string> length: %llu", token.detail.size());
-        } break;
-        case TOKEN::TK_EOF: {
-            strcpy_s(buffer, len, "<eof>");
-        } break;
-        case TOKEN::TK_COMMENT: {
-            snprintf(buffer, len, "<comment> //%s", token.detail.data());
-        } break;
-        case TOKEN::TK_MLCOMMENT: {
-            strcpy_s(buffer, len, "<comment> /*...*/");
-        } break;
-        case TOKEN::TK_NONE: {
-            buffer[0] = '\0';
-        } break;
-        default: {
-            const auto itok = static_cast<int>(token.id);
-            char       buf[4]{};
-            if (itok > 0 && itok < FIRST_RESERVED) {
-                buf[0] = static_cast<char>(itok);
-            } else {
-                tok2str(token.id, buf);
-            }
-            snprintf(buffer, len, "\"%s\"", buf);
-        } break;
-    }
-    return buffer;
 }
 
 TOKEN to_reserved(const char* s) {
@@ -608,6 +567,8 @@ TOKEN lex(LexState& ls, std::string_view& raw) {
     }
 }
 
+namespace slime {
+
 LexState::LexState()
     : d{std::make_unique<LexStatePrivate>()} {}
 
@@ -638,3 +599,56 @@ TOKEN LexState::lookahead() {
     }
     return nexttoken.id;
 }
+
+//! format token into string buffer
+const char* tok2str(TOKEN token, char* buffer, size_t len) {
+    auto itok = static_cast<int>(token);
+    if (itok > 0 && itok < FIRST_RESERVED) {
+        snprintf(buffer, len, "%c", static_cast<char>(itok));
+    } else {
+        strcpy_s(buffer, len, ::tok2str(token));
+    }
+    return buffer;
+}
+
+//! format token into pretty string
+const char* pretty_tok2str(Token token, char* buffer, size_t len) {
+    if (isreserved(token.id)) { return tok2str(token.id, buffer, len); }
+    switch (token.id) {
+        case TOKEN::TK_IDENT:
+        case TOKEN::TK_INTVAL:
+        case TOKEN::TK_FLTVAL: {
+            char buf[16]{};
+            auto id = tok2str(token.id, buf);
+            snprintf(buffer, len, "%s %s", id, token.detail.data());
+        } break;
+        case TOKEN::TK_STRING: {
+            snprintf(buffer, len, "<string> length: %llu", token.detail.size());
+        } break;
+        case TOKEN::TK_EOF: {
+            strcpy_s(buffer, len, "<eof>");
+        } break;
+        case TOKEN::TK_COMMENT: {
+            snprintf(buffer, len, "<comment> //%s", token.detail.data());
+        } break;
+        case TOKEN::TK_MLCOMMENT: {
+            strcpy_s(buffer, len, "<comment> /*...*/");
+        } break;
+        case TOKEN::TK_NONE: {
+            buffer[0] = '\0';
+        } break;
+        default: {
+            const auto itok = static_cast<int>(token.id);
+            char       buf[4]{};
+            if (itok > 0 && itok < FIRST_RESERVED) {
+                buf[0] = static_cast<char>(itok);
+            } else {
+                tok2str(token.id, buf);
+            }
+            snprintf(buffer, len, "\"%s\"", buf);
+        } break;
+    }
+    return buffer;
+}
+
+} // namespace slime
