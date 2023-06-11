@@ -1,5 +1,7 @@
 #pragma once
 
+#include "type.h"
+
 #include <string_view>
 
 namespace slime::ir {
@@ -9,8 +11,11 @@ public:
     Value(const Value&)            = delete;
     Value& operator=(const Value&) = delete;
 
-protected:
-    Value();
+    Value(Type* type)
+        : type_{type} {}
+
+private:
+    Type* type_;
 };
 
 } // namespace slime::ir
