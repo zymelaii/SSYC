@@ -222,7 +222,7 @@ const char* tok2str(TOKEN token, char* buffer, size_t len) {
     if (itok > 0 && itok < FIRST_RESERVED) {
         snprintf(buffer, len, "%c", static_cast<char>(itok));
     } else {
-        strcpy_s(buffer, len, tok2str(token));
+        strncpy(buffer, tok2str(token), len);
     }
     return buffer;
 }
@@ -242,13 +242,13 @@ const char* pretty_tok2str(Token token, char* buffer, size_t len) {
             snprintf(buffer, len, "<string> length: %llu", token.detail.size());
         } break;
         case TOKEN::TK_EOF: {
-            strcpy_s(buffer, len, "<eof>");
+            strncpy(buffer, "<eof>", len);
         } break;
         case TOKEN::TK_COMMENT: {
             snprintf(buffer, len, "<comment> //%s", token.detail.data());
         } break;
         case TOKEN::TK_MLCOMMENT: {
-            strcpy_s(buffer, len, "<comment> /*...*/");
+            strncpy(buffer, "<comment> /*...*/", len);
         } break;
         case TOKEN::TK_NONE: {
             buffer[0] = '\0';
