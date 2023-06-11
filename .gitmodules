@@ -7,3 +7,6 @@
 [submodule "deps/lua"]
 	path = deps/lua
 	url = git@github.com:lua/lua
+[submodule "deps/MimiC"]
+	path = deps/MimiC
+	url = git@github.com:MaxXSoft/MimiC.git
