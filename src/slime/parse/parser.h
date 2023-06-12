@@ -1,31 +1,27 @@
 #pragma once
 
-#include "lex.h"
+#include "../lex/lex.h"
 #include "ast.h"
 
-struct ParseState {
-    
+namespace slime {
+
+namespace detail {
+static constexpr size_t MAX_SYMTABLE_LENGTH = 512;
+} // namespace detail
+
+struct ParseState {};
+
+struct syminfo {
+    char* name;
+    int   type;    // 类型(void/int)
+    int   stype;   // var:0 function:1
+    int   arrsize; // 数组大小
 };
 
-struct Expr {};
-
-#define MAX_SYMTABLE_LENGTH 512
-
-struct syminfo{
-    char *name;
-    int type;       //类型(void/int)
-    int stype;      //var:0 function:1
-    int arrsize;    //数组大小
-};
-
-struct symtable{
-    struct syminfo symbols[MAX_SYMTABLE_LENGTH];
-    int sym_num;
-};
-
-struct symtable gsym{
-    .sym_num = 0
-};
+struct symtable {
+    syminfo symbols[detail::MAX_SYMTABLE_LENGTH];
+    int     sym_num;
+} gsym{.sym_num = 0};
 
 class Parser {
 public:
@@ -33,7 +29,7 @@ public:
     ParseState ps;
 
     void next();
-    bool expect(TOKEN token, const char *msg = nullptr);
+    bool expect(TOKEN token, const char* msg = nullptr);
 
 protected:
     void enterblock();
@@ -57,7 +53,7 @@ public:
     void returnstat();
     void block();
 
-    int  add_globalsym(LexState &ls); //添加一个全局变量符号到gsym，返回下标。
+    int add_globalsym(LexState& ls); // 添加一个全局变量符号到gsym，返回下标。
     void add_localsym();
 
     struct ASTNode* primaryexpr();
@@ -79,3 +75,5 @@ public:
 
     void exprlist();
 };
+
+} // namespace slime

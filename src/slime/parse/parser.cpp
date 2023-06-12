@@ -4,35 +4,29 @@
 #include <stdlib.h>
 #include <assert.h>
 
-void Parser::next()
-{
-    do
-    {
+namespace slime {
+
+void Parser::next() {
+    do {
         ls.next();
-    } while (ls.token.id == TOKEN::TK_COMMENT || ls.token.id == TOKEN::TK_MLCOMMENT);
+    } while (ls.token.id == TOKEN::TK_COMMENT
+             || ls.token.id == TOKEN::TK_MLCOMMENT);
 }
 
-bool Parser::expect(TOKEN token, const char *msg)
-{
-    if (ls.token.id == token)
-    {
+bool Parser::expect(TOKEN token, const char *msg) {
+    if (ls.token.id == token) {
         ls.next();
         return true;
     }
     //! TODO: prettify display message
-    if (msg != nullptr)
-    {
-        fprintf(stderr, "%s", msg);
-    }
+    if (msg != nullptr) { fprintf(stderr, "%s", msg); }
     //! TODO: raise an error
     return false;
 }
 
 //! 初始化声明环境
-void Parser::enterdecl()
-{
-    if (ls.token.id == TOKEN::TK_CONST)
-    {
+void Parser::enterdecl() {
+    if (ls.token.id == TOKEN::TK_CONST) {
         //! TODO: 标记声明环境为 const
         next();
     }
@@ -40,50 +34,37 @@ void Parser::enterdecl()
 }
 
 //! 结束声明并清理声明环境
-void Parser::leavedecl()
-{
+void Parser::leavedecl() {
     assert(ls.token.id == TOKEN::TK_SEMICOLON);
     next();
     //! TODO: 清理操作
 }
 
 //! 获取函数原型并初始化定义
-void Parser::enterfunc()
-{
-    switch (ls.token.id)
-    {
-        case TOKEN::TK_VOID:
-        {
+void Parser::enterfunc() {
+    switch (ls.token.id) {
+        case TOKEN::TK_VOID: {
             //! TODO: 标记返回值类型
             next();
-        }
-        break;
-        case TOKEN::TK_INT:
-        {
+        } break;
+        case TOKEN::TK_INT: {
             //! TODO: 标记返回值类型
             next();
-        }
-        break;
-        case TOKEN::TK_FLOAT:
-        {
+        } break;
+        case TOKEN::TK_FLOAT: {
             //! TODO: 标记返回值类型
             next();
-        }
-        break;
-        default:
-        {
+        } break;
+        default: {
             //! TODO: 处理错误：无法处理的返回值类型
-        }
-        break;
+        } break;
     }
-    if (ls.token.id != TOKEN::TK_IDENT)
-    {
+    if (ls.token.id != TOKEN::TK_IDENT) {
         //! TODO: 处理错误：函数名缺失
     }
     //! TODO: 检查并处理函数名
     next();
-    if (ls.token.id != TOKEN::TK_LPAREN)
-    {
+    if (ls.token.id != TOKEN::TK_LPAREN) {
         //! TODO: 处理错误：丢失参数列表
     }
     funcargs();
@@ -91,8 +72,7 @@ void Parser::enterfunc()
 }
 
 //! 结束函数定义
-void Parser::leavefunc()
-{
+void Parser::leavefunc() {
     //! TODO: 检查并处理函数体
 }
 
@@ -106,46 +86,31 @@ void Parser::leaveblock() {}
  * decl ->
  *      [ 'const' ] type vardef { ',' vardef } ';'
  */
-void Parser::decl()
-{
+void Parser::decl() {
     enterdecl();
     bool err = false;
-    switch (ls.token.id)
-    {
-    case TOKEN::TK_INT:
-    {
-        //! TODO: 设置声明类型
-        next();
+    switch (ls.token.id) {
+        case TOKEN::TK_INT: {
+            //! TODO: 设置声明类型
+            next();
+        } break;
+        case TOKEN::TK_FLOAT: {
+            //! TODO: 设置声明类型
+            next();
+        } break;
+        default: {
+            //! TODO: 处理报错
+            err = true;
+        } break;
     }
-    break;
-    case TOKEN::TK_FLOAT:
-    {
-        //! TODO: 设置声明类型
-        next();
-    }
-    break;
-    default:
-    {
-        //! TODO: 处理报错
-        err = true;
-    }
-    break;
-    }
-    if (!err)
-    {
-        while (true)
-        {
+    if (!err) {
+        while (true) {
             vardef();
-            if (ls.token.id == TOKEN::TK_SEMICOLON)
-            {
+            if (ls.token.id == TOKEN::TK_SEMICOLON) {
                 break;
-            }
-            else if (ls.token.id == TOKEN::TK_COMMA)
-            {
+            } else if (ls.token.id == TOKEN::TK_COMMA) {
                 next();
-            }
-            else
-            {
+            } else {
                 //! TODO: 处理报错
             }
         }
@@ -158,11 +123,9 @@ void Parser::decl()
  *      ident { '[' expr ']' }
  *      ident '='
  */
-void Parser::vardef()
-{
-    struct ASTNode *root;
-    if (ls.token.id != TOKEN::TK_IDENT)
-    {
+void Parser::vardef() {
+    ASTNode *root;
+    if (ls.token.id != TOKEN::TK_IDENT) {
         //! TODO: 处理错误
         fprintf(stderr, "No TK_IDENT found in vardef()!\n");
         return;
@@ -170,40 +133,31 @@ void Parser::vardef()
     //! TODO: 检查变量同名
     //! TODO: 处理变量名
     next();
-    if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON)
-    {
+    if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON) {
         return;
     }
-    while (ls.token.id == TOKEN::TK_LBRACKET)
-    { //<! 数组长度声明
+    while (ls.token.id == TOKEN::TK_LBRACKET) { //<! 数组长度声明
         next();
         //! NOTE: 目前不支持数组长度推断
         expr();
         //! TODO: 获取并处理数组长度
-        if (ls.token.id == TOKEN::TK_RBRACKET)
-        {
+        if (ls.token.id == TOKEN::TK_RBRACKET) {
             next();
-        }
-        else
-        {
+        } else {
             //! TODO: 处理错误：括号未闭合
         }
     }
-    if (ls.token.id == TOKEN::TK_ASS)
-    {
+    if (ls.token.id == TOKEN::TK_ASS) {
         next();
-        if (ls.token.id == TOKEN::TK_LBRACE)
-        {
+        if (ls.token.id == TOKEN::TK_LBRACE) {
             initlist();
-        }
-        else
-        {
+        } else {
             expr();
         }
         //! TODO: 获取并处理初始化赋值
     }
-    if (!(ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON))
-    {
+    if (!(ls.token.id == TOKEN::TK_COMMA
+          || ls.token.id == TOKEN::TK_SEMICOLON)) {
         //! TODO: 处理错误：丢失的变量定义终止符
     }
 }
@@ -213,30 +167,23 @@ void Parser::vardef()
  *      '{' '}' |
  *      '{' (expr | init-list) { ',' (expr | init-list) } [ ',' ] '}'
  */
-void Parser::initlist()
-{
+void Parser::initlist() {
     //! NOTE: 初始化列表必须有类型约束，由 ParseState 提供
     assert(ls.token.id == TOKEN::TK_LBRACE);
     next();
     bool has_more = true; //<! 是否允许存在下一个值
-    while (ls.token.id != TOKEN::TK_RBRACE)
-    {
-        if (!has_more)
-        {
+    while (ls.token.id != TOKEN::TK_RBRACE) {
+        if (!has_more) {
             //! TODO: 处理错误
         }
         //! TODO: 处理可能出现的错误
-        if (ls.token.id == TOKEN::TK_LBRACE)
-        {
+        if (ls.token.id == TOKEN::TK_LBRACE) {
             initlist();
-        }
-        else
-        {
+        } else {
             expr();
         }
         has_more = false;
-        if (ls.token.id == TOKEN::TK_COMMA)
-        {
+        if (ls.token.id == TOKEN::TK_COMMA) {
             //! NOTE: 允许 trailing-comma
             has_more = true;
             next();
@@ -246,8 +193,7 @@ void Parser::initlist()
     //! TODO: 处理并存储初始化列表的值
 }
 
-void Parser::func()
-{
+void Parser::func() {
     enterfunc();
     //! NOTE: 暂时不允许只声明不定义
     block();
@@ -255,70 +201,52 @@ void Parser::func()
     leavefunc();
 }
 
-void Parser::funcargs()
-{
+void Parser::funcargs() {
     assert(ls.token.id == TOKEN::TK_LPAREN);
     next();
-    while (ls.token.id != TOKEN::TK_RPAREN)
-    {
+    while (ls.token.id != TOKEN::TK_RPAREN) {
         //! FIXME: 可能死循环
-        switch (ls.token.id)
-        {
-            case TOKEN::TK_INT:
-            {
+        switch (ls.token.id) {
+            case TOKEN::TK_INT: {
                 //! TODO: 标记参数基本类型
                 next();
-            }
-            break;
-            case TOKEN::TK_FLOAT:
-            {
+            } break;
+            case TOKEN::TK_FLOAT: {
                 //! TODO: 标记参数基本类型
                 next();
-            }
-            break;
-            default:
-            {
+            } break;
+            default: {
                 //! TODO: 处理错误：未知的参数类型
-            }
-            break;
+            } break;
         }
-        if (ls.token.id != TOKEN::TK_IDENT)
-        {
+        if (ls.token.id != TOKEN::TK_IDENT) {
             //! TODO: 处理错误：缺少参数名
         }
         //! TODO: 处理参数名
         next();
-        if (ls.token.id == TOKEN::TK_LBRACKET)
-        {
+        if (ls.token.id == TOKEN::TK_LBRACKET) {
             //! 处理数组参数类型
             next();
-            if (ls.token.id != TOKEN::TK_RBRACKET)
-            {
+            if (ls.token.id != TOKEN::TK_RBRACKET) {
                 //! TODO: 处理错误：数组作为参数第一个下标必须为空
             }
             next();
-            while (ls.token.id == TOKEN::TK_LBRACKET)
-            {
+            while (ls.token.id == TOKEN::TK_LBRACKET) {
                 expr();
                 //! NOTE: 处理并存储长度值
-                if (ls.token.id != TOKEN::TK_RBRACKET)
-                {
+                if (ls.token.id != TOKEN::TK_RBRACKET) {
                     //! TODO: 处理错误：数组长度声明括号未闭合
                 }
                 next();
             }
         }
         //! TODO: 完成参数类型并写入函数原型
-        if (ls.token.id == TOKEN::TK_COMMA)
-        {
-            if (ls.lookahead() == TOKEN::TK_RPAREN)
-            {
+        if (ls.token.id == TOKEN::TK_COMMA) {
+            if (ls.lookahead() == TOKEN::TK_RPAREN) {
                 //! TODO: 处理错误：参数列表不允许有 trailing-comma
             }
             next();
-        }
-        else
-        {
+        } else {
             //! TODO: 处理错误：非法的终止符
         }
     }
@@ -336,56 +264,37 @@ void Parser::funcargs()
  *      block |
  *      expr ';'
  */
-void Parser::statement()
-{
-    switch (ls.token.id)
-    {
-        case TOKEN::TK_SEMICOLON:
-        {
+void Parser::statement() {
+    switch (ls.token.id) {
+        case TOKEN::TK_SEMICOLON: {
             next();
-        }
-        break;
-        case TOKEN::TK_IF:
-        {
+        } break;
+        case TOKEN::TK_IF: {
             ifstat();
-        }
-        break;
-        case TOKEN::TK_WHILE:
-        {
+        } break;
+        case TOKEN::TK_WHILE: {
             whilestat();
-        }
-        break;
-        case TOKEN::TK_BREAK:
-        {
+        } break;
+        case TOKEN::TK_BREAK: {
             breakstat();
-        }
-        break;
-        case TOKEN::TK_CONTINUE:
-        {
+        } break;
+        case TOKEN::TK_CONTINUE: {
             continuestat();
-        }
-        break;
-        case TOKEN::TK_RETURN:
-        {
+        } break;
+        case TOKEN::TK_RETURN: {
             returnstat();
-        }
-        break;
-        case TOKEN::TK_LBRACE:
-        {
+        } break;
+        case TOKEN::TK_LBRACE: {
             block();
-        }
-        break;
-        default:
-        {
+        } break;
+        default: {
             expr();
             expect(TOKEN::TK_SEMICOLON, "expect ';' after expression");
-        }
-        break;
+        } break;
     }
 }
 
-void Parser::ifstat()
-{
+void Parser::ifstat() {
     assert(ls.token.id == TOKEN::TK_IF);
     next();
     //! TODO: 提升嵌套层次
@@ -394,15 +303,13 @@ void Parser::ifstat()
     //! TODO: 检查 expr 是否为条件表达式
     expect(TOKEN::TK_RPAREN, "expect ')'");
     statement();
-    if (ls.token.id == TOKEN::TK_ELSE)
-    {
+    if (ls.token.id == TOKEN::TK_ELSE) {
         next();
         statement();
     }
 }
 
-void Parser::whilestat()
-{
+void Parser::whilestat() {
     assert(ls.token.id == TOKEN::TK_WHILE);
     next();
     //! TODO: 提升嵌套层次
@@ -413,55 +320,42 @@ void Parser::whilestat()
     statement();
 }
 
-void Parser::breakstat()
-{
+void Parser::breakstat() {
     assert(ls.token.id == TOKEN::TK_BREAK);
     next();
     //! TODO: 外层环境检查
     expect(TOKEN::TK_SEMICOLON, "expect ';' after break statement");
 }
 
-void Parser::continuestat()
-{
+void Parser::continuestat() {
     assert(ls.token.id == TOKEN::TK_CONTINUE);
     next();
     //! TODO: 外层环境检查
     expect(TOKEN::TK_SEMICOLON, "expect ';' after continue statement");
 }
 
-void Parser::returnstat()
-{
+void Parser::returnstat() {
     assert(ls.token.id == TOKEN::TK_RETURN);
     next();
-    if (ls.token.id != TOKEN::TK_SEMICOLON)
-    {
-        expr();
-    }
+    if (ls.token.id != TOKEN::TK_SEMICOLON) { expr(); }
     //! TODO: 返回值检验
     expect(TOKEN::TK_SEMICOLON, "expect ';' after return statement");
 }
 
-void Parser::block()
-{
+void Parser::block() {
     enterblock();
     assert(ls.token.id == TOKEN::TK_LBRACE);
     next();
-    while (ls.token.id != TOKEN::TK_RBRACE)
-    {
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_INT:
-        case TOKEN::TK_FLOAT:
-        case TOKEN::TK_CONST:
-        {
-            decl();
-        }
-        break;
-        default:
-        {
-            statement();
-        }
-        break;
+    while (ls.token.id != TOKEN::TK_RBRACE) {
+        switch (ls.token.id) {
+            case TOKEN::TK_INT:
+            case TOKEN::TK_FLOAT:
+            case TOKEN::TK_CONST: {
+                decl();
+            } break;
+            default: {
+                statement();
+            } break;
         }
         //! FIXME: 有概率陷入死循环
     }
@@ -469,12 +363,13 @@ void Parser::block()
     leaveblock();
 }
 
-int add_globalsym(LexState &ls, int type)
-{
-    for(int i=0;i<gsym.sym_num;i++)
-    {
-        if(!strcmp(ls.token.detail.data(), gsym.symbols[i].name)){
-            fprintf(stderr, "Duplicate definition of symbol %s!\n", gsym.symbols[i].name);
+int add_globalsym(LexState &ls, int type) {
+    for (int i = 0; i < gsym.sym_num; i++) {
+        if (!strcmp(ls.token.detail.data(), gsym.symbols[i].name)) {
+            fprintf(
+                stderr,
+                "Duplicate definition of symbol %s!\n",
+                gsym.symbols[i].name);
             return -1;
         }
     }
@@ -489,11 +384,9 @@ int add_globalsym(LexState &ls, int type)
  * expr-list ->
  *      expr { ',' expr-list }
  */
-void Parser::exprlist()
-{
+void Parser::exprlist() {
     expr();
-    while (ls.token.id == TOKEN::TK_COMMA)
-    {
+    while (ls.token.id == TOKEN::TK_COMMA) {
         next();
         expr();
     }
@@ -507,53 +400,39 @@ void Parser::exprlist()
  *      string-literal |
  *      '(' expr ')'
  */
-struct ASTNode* Parser::primaryexpr()
-{
-    struct ASTNode *n;
+ASTNode *Parser::primaryexpr() {
+    ASTNode *n;
     ASTVal32 val;
 
-    switch (ls.token.id)
-    {
-        case TOKEN::TK_IDENT:
-        {
-            add_globalsym(ls);    
+    switch (ls.token.id) {
+        case TOKEN::TK_IDENT: {
+            add_globalsym(ls);
             //! TODO: 支持局部变量
             next();
-        }
-        break;
-        case TOKEN::TK_INTVAL:
-        {
+        } break;
+        case TOKEN::TK_INTVAL: {
             val.intvalue = atoi(ls.token.detail.data());
-            n = mkastleaf(A_INTLIT, val);
+            n            = mkastleaf(A_INTLIT, val);
             next();
-        }
-        break;
-        case TOKEN::TK_FLTVAL:
-        {
+        } break;
+        case TOKEN::TK_FLTVAL: {
             val.fltvalue = atof(ls.token.detail.data());
-            n = mkastleaf(A_FLTLIT, val);
+            n            = mkastleaf(A_FLTLIT, val);
             next();
-        }
-        break;
-        case TOKEN::TK_STRING:
-        {
+        } break;
+        case TOKEN::TK_STRING: {
             //! NOTE: #feature(string)
             fprintf(stderr, "前面的特性以后再来做吧!(指string)\n");
             next();
-        }
-        break;
-        case TOKEN::TK_LPAREN:
-        {
+        } break;
+        case TOKEN::TK_LPAREN: {
             next();
             expr();
             expect(TOKEN::TK_RPAREN, "expect ')' after expression");
-        }
-        break;
-        default:
-        {
+        } break;
+        default: {
             //! FIXME: 错误处理
-        }
-        break;
+        } break;
     }
 
     return n;
@@ -565,34 +444,25 @@ struct ASTNode* Parser::primaryexpr()
  *      postfix-expr '[' expr ']' |
  *      postfix-expr '(' [ expr-list ] ')'
  */
-struct ASTNode* Parser::postfixexpr()
-{
-    struct ASTNode *left, *right;
+ASTNode *Parser::postfixexpr() {
+    ASTNode *left, *right;
     ASTVal32 val = {.intvalue = 0};
 
-    left = primaryexpr();
+    left    = primaryexpr();
     bool ok = false;
-    while (!ok)
-    {
-        switch (ls.token.id)
-        {
-            case TOKEN::TK_LBRACKET:
-            { //<! array index
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_LBRACKET: { //<! array index
                 expr();
                 expect(TOKEN::TK_RBRACKET, "expect ']'");
-            }
-            break;
-            case TOKEN::TK_LPAREN:
-            { //<! function call
+            } break;
+            case TOKEN::TK_LPAREN: { //<! function call
                 exprlist();
                 expect(TOKEN::TK_RBRACKET, "expect ')'");
-            }
-            break;
-            default:
-            {
+            } break;
+            default: {
                 ok = true;
-            }
-            break;
+            } break;
         }
     }
 }
@@ -605,35 +475,31 @@ struct ASTNode* Parser::postfixexpr()
  *      '~' unary-expr |
  *      '!' unary-expr
  */
-struct ASTNode* Parser::unaryexpr()
-{
-    struct ASTNode *left, *right;
-    ASTVal32 val = {.intvalue = 0};
-    int nodetype = 0;
+ASTNode *Parser::unaryexpr() {
+    ASTNode *left, *right;
+    ASTVal32 val      = {.intvalue = 0};
+    int      nodetype = 0;
 
     left = NULL;
 
-    switch (ls.token.id)
-    {
+    switch (ls.token.id) {
         case TOKEN::TK_ADD:
-            nodetype = A_PLUS; goto handle;
+            nodetype = A_PLUS;
+            goto handle;
         case TOKEN::TK_SUB:
-            nodetype = A_MINUS; goto handle;
+            nodetype = A_MINUS;
+            goto handle;
         case TOKEN::TK_INV:
-        case TOKEN::TK_NOT:
-        {
+        case TOKEN::TK_NOT: {
             nodetype = tok2ast(ls.token.id);
-    handle:
+handle:
             next();
             right = unaryexpr();
-            left = mkastnode(nodetype, NULL, right, val);
-        }
-        break;
-        default:
-        {
+            left  = mkastnode(nodetype, NULL, right, val);
+        } break;
+        default: {
             left = postfixexpr();
-        }
-        break;
+        } break;
     }
 
     return left;
@@ -646,68 +512,54 @@ struct ASTNode* Parser::unaryexpr()
  *      mul-expr '/' unary-expr |
  *      mul-expr '%' unary-expr
  */
-struct ASTNode* Parser::mulexpr()
-{
-    struct ASTNode *left, *right;
-    ASTVal32 val = {.intvalue = 0};
-    TOKEN tokentype = ls.token.id;
-    
-    left = unaryexpr();
+ASTNode *Parser::mulexpr() {
+    ASTNode *left, *right;
+    ASTVal32 val       = {.intvalue = 0};
+    TOKEN    tokentype = ls.token.id;
+
+    left    = unaryexpr();
     bool ok = false;
-    while (!ok)
-    {
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_MUL:
-        case TOKEN::TK_DIV:
-        case TOKEN::TK_MOD:
-        {
-            next();
-            right = unaryexpr();
-            left = mkastnode(tok2ast(tokentype), left, right, val);
-        }
-        break;
-        default:
-        {
-            ok = true;
-        } 
-        break;
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_MUL:
+            case TOKEN::TK_DIV:
+            case TOKEN::TK_MOD: {
+                next();
+                right = unaryexpr();
+                left  = mkastnode(tok2ast(tokentype), left, right, val);
+            } break;
+            default: {
+                ok = true;
+            } break;
         }
     }
     return left;
 }
 
-/*! 
+/*!
  * add-expr ->
  *      mul-expr |
  *      add-expr '+' mul-expr |
  *      add-expr '-' mul-expr
  */
-struct ASTNode* Parser::addexpr()
-{
-    struct ASTNode *left, *right;
-    ASTVal32 val = {.intvalue = 0};
-    TOKEN tokentype = ls.token.id;
+ASTNode *Parser::addexpr() {
+    ASTNode *left, *right;
+    ASTVal32 val       = {.intvalue = 0};
+    TOKEN    tokentype = ls.token.id;
 
-    left = mulexpr();
+    left    = mulexpr();
     bool ok = false;
-    while (!ok)
-    {
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_ADD:
-        case TOKEN::TK_SUB:
-        {
-            next();
-            right = mulexpr();
-            left = mkastnode(tok2ast(tokentype), left, right, val);
-        }
-        break;
-        default:
-        {
-            ok = true;
-        }
-        break;
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_ADD:
+            case TOKEN::TK_SUB: {
+                next();
+                right = mulexpr();
+                left  = mkastnode(tok2ast(tokentype), left, right, val);
+            } break;
+            default: {
+                ok = true;
+            } break;
         }
     }
 
@@ -720,31 +572,24 @@ struct ASTNode* Parser::addexpr()
  *      shift-expr '<<' add-expr |
  *      shift-expr '>>' add-expr
  */
-struct ASTNode* Parser::shiftexpr()
-{
-    struct ASTNode *left, *right;
-    ASTVal32 val = {.intvalue = 0};
-    TOKEN tokentype = ls.token.id;
+ASTNode *Parser::shiftexpr() {
+    ASTNode *left, *right;
+    ASTVal32 val       = {.intvalue = 0};
+    TOKEN    tokentype = ls.token.id;
 
-    left = addexpr();
+    left    = addexpr();
     bool ok = false;
-    while (!ok)
-    {
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_SHL:
-        case TOKEN::TK_SHR:
-        {
-            next();
-            right = addexpr();
-            left = mkastnode(tok2ast(tokentype), left, right, val);
-        }
-        break;
-        default:
-        {
-            ok = true;
-        }
-        break;
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_SHL:
+            case TOKEN::TK_SHR: {
+                next();
+                right = addexpr();
+                left  = mkastnode(tok2ast(tokentype), left, right, val);
+            } break;
+            default: {
+                ok = true;
+            } break;
         }
     }
     return left;
@@ -758,33 +603,26 @@ struct ASTNode* Parser::shiftexpr()
  *      rel-expr '<=' shift-expr |
  *      rel-expr '>=' shift-expr
  */
-struct ASTNode* Parser::relexpr()
-{
-    struct ASTNode *left, *right;
-    ASTVal32 val = {.intvalue = 0};
-    TOKEN tokentype = ls.token.id;
+ASTNode *Parser::relexpr() {
+    ASTNode *left, *right;
+    ASTVal32 val       = {.intvalue = 0};
+    TOKEN    tokentype = ls.token.id;
 
-    left = shiftexpr();
+    left    = shiftexpr();
     bool ok = false;
-    while (!ok)
-    {
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_LT:
-        case TOKEN::TK_GT:
-        case TOKEN::TK_LE:
-        case TOKEN::TK_GE:
-        {
-            next();
-            right = shiftexpr();
-            left = mkastnode(tok2ast(tokentype), left, right, val);
-        }
-        break;
-        default:
-        {
-            ok = true;
-        }
-        break;
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_LT:
+            case TOKEN::TK_GT:
+            case TOKEN::TK_LE:
+            case TOKEN::TK_GE: {
+                next();
+                right = shiftexpr();
+                left  = mkastnode(tok2ast(tokentype), left, right, val);
+            } break;
+            default: {
+                ok = true;
+            } break;
         }
     }
     return left;
@@ -796,32 +634,25 @@ struct ASTNode* Parser::relexpr()
  *      eq-expr '==' rel-expr |
  *      eq-expr '!=' rel-expr
  */
-struct ASTNode* Parser::eqexpr()
-{
-    struct ASTNode *left, *right;
-    ASTVal32 val = {.intvalue = 0};
-    TOKEN tokentype = ls.token.id;
+ASTNode *Parser::eqexpr() {
+    ASTNode *left, *right;
+    ASTVal32 val       = {.intvalue = 0};
+    TOKEN    tokentype = ls.token.id;
 
-    left = relexpr();
+    left    = relexpr();
     bool ok = false;
-    while (!ok)
-    {
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_EQ:
-        case TOKEN::TK_NE:
-        case TOKEN::TK_LE:
-        {
-            next();
-            right = relexpr();
-            left = mkastnode(tok2ast(tokentype), left, right, val);
-        }
-        break;
-        default:
-        {
-            ok = true;
-        }
-        break;
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_EQ:
+            case TOKEN::TK_NE:
+            case TOKEN::TK_LE: {
+                next();
+                right = relexpr();
+                left  = mkastnode(tok2ast(tokentype), left, right, val);
+            } break;
+            default: {
+                ok = true;
+            } break;
         }
     }
 
@@ -833,14 +664,12 @@ struct ASTNode* Parser::eqexpr()
  *      eq-expr |
  *      and-expr '&' eq-expr
  */
-struct ASTNode* Parser::andexpr()
-{
-    struct ASTNode *left, *right;
+ASTNode *Parser::andexpr() {
+    ASTNode *left, *right;
     ASTVal32 val = {.intvalue = 0};
 
     left = eqexpr();
-    while (ls.token.id == TOKEN::TK_AND)
-    {
+    while (ls.token.id == TOKEN::TK_AND) {
         next();
         right = eqexpr();
         mkastnode(tok2ast(TOKEN::TK_AND), left, right, val);
@@ -854,14 +683,12 @@ struct ASTNode* Parser::andexpr()
  *      and-expr |
  *      xor-expr '^' and-expr
  */
-struct ASTNode* Parser::xorexpr()
-{
-    struct ASTNode *left, *right;
+ASTNode *Parser::xorexpr() {
+    ASTNode *left, *right;
     ASTVal32 val = {.intvalue = 0};
 
     left = andexpr();
-    while (ls.token.id == TOKEN::TK_XOR)
-    {
+    while (ls.token.id == TOKEN::TK_XOR) {
         next();
         right = andexpr();
         mkastnode(tok2ast(TOKEN::TK_XOR), left, right, val);
@@ -875,14 +702,12 @@ struct ASTNode* Parser::xorexpr()
  *      xor-expr |
  *      or-expr '|' xor-expr
  */
-struct ASTNode* Parser::orexpr()
-{
-    struct ASTNode *left, *right;
+ASTNode *Parser::orexpr() {
+    ASTNode *left, *right;
     ASTVal32 val = {.intvalue = 0};
 
     left = xorexpr();
-    while (ls.token.id == TOKEN::TK_OR)
-    {
+    while (ls.token.id == TOKEN::TK_OR) {
         next();
         right = xorexpr();
         mkastnode(tok2ast(TOKEN::TK_OR), left, right, val);
@@ -896,14 +721,12 @@ struct ASTNode* Parser::orexpr()
  *      or-expr |
  *      land-expr '&&' or-expr
  */
-struct ASTNode* Parser::landexpr()
-{
-    struct ASTNode *left, *right;
+ASTNode *Parser::landexpr() {
+    ASTNode *left, *right;
     ASTVal32 val = {.intvalue = 0};
 
     left = orexpr();
-    while (ls.token.id == TOKEN::TK_LAND)
-    {
+    while (ls.token.id == TOKEN::TK_LAND) {
         next();
         right = orexpr();
         mkastnode(tok2ast(TOKEN::TK_LAND), left, right, val);
@@ -917,13 +740,12 @@ struct ASTNode* Parser::landexpr()
  *      land-expr |
  *      lor-expr '||' land-expr
  */
-struct ASTNode* Parser::lorexpr() {
-    struct ASTNode *left, *right;
+ASTNode *Parser::lorexpr() {
+    ASTNode *left, *right;
     ASTVal32 val = {.intvalue = 0};
 
     left = landexpr();
-    while (ls.token.id == TOKEN::TK_LOR)
-    {
+    while (ls.token.id == TOKEN::TK_LOR) {
         next();
         right = landexpr();
         mkastnode(tok2ast(TOKEN::TK_LOR), left, right, val);
@@ -936,8 +758,7 @@ struct ASTNode* Parser::lorexpr() {
  * cond-expr ->
  *      lor-expr
  */
-struct ASTNode* Parser::condexpr()
-{
+ASTNode *Parser::condexpr() {
     return lorexpr();
 }
 
@@ -946,16 +767,13 @@ struct ASTNode* Parser::condexpr()
  *      cond-expr |
  *      unary-expr '=' assign-expr
  */
-struct ASTNode* Parser::assignexpr()
-{
-    struct ASTNode *left, *right, *root;
+ASTNode *Parser::assignexpr() {
+    ASTNode *left, *right, *root;
     left = condexpr();
-    if (ls.token.id == TOKEN::TK_ASS)
-    {
+    if (ls.token.id == TOKEN::TK_ASS) {
         next();
         right = assignexpr();
     }
-
 }
 
 /*!
@@ -963,12 +781,12 @@ struct ASTNode* Parser::assignexpr()
  *      assign-expr |
  *      expr ',' assign-expr
  */
-struct ASTNode* Parser::expr()
-{
+ASTNode *Parser::expr() {
     assignexpr();
-    while (ls.token.id == TOKEN::TK_COMMA)
-    {
+    while (ls.token.id == TOKEN::TK_COMMA) {
         next();
         assignexpr();
     }
 }
+
+} // namespace slime
