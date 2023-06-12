@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <getopt.h>
+#include <string.h>
 #include <memory>
 
 using slime::Driver;
