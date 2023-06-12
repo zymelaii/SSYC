@@ -6,6 +6,8 @@
 
 namespace slime {
 
+static symtable g_sym;
+
 void Parser::next() {
     do {
         ls.next();
@@ -363,21 +365,25 @@ void Parser::block() {
     leaveblock();
 }
 
-int add_globalsym(LexState &ls, int type) {
-    for (int i = 0; i < gsym.sym_num; i++) {
-        if (!strcmp(ls.token.detail.data(), gsym.symbols[i].name)) {
+int Parser::add_globalsym(LexState &ls, int type) {
+    for (int i = 0; i < g_sym.sym_num; i++) {
+        if (!strcmp(ls.token.detail.data(), g_sym.symbols[i].name)) {
             fprintf(
                 stderr,
                 "Duplicate definition of symbol %s!\n",
-                gsym.symbols[i].name);
+                g_sym.symbols[i].name);
             return -1;
         }
     }
 
-    gsym.symbols[gsym.sym_num].name = strdup(ls.token.detail.data());
-    gsym.symbols[gsym.sym_num].type = type;
+    g_sym.symbols[g_sym.sym_num].name = strdup(ls.token.detail.data());
+    g_sym.symbols[g_sym.sym_num].type = type;
 
-    return gsym.sym_num++;
+    return g_sym.sym_num++;
+}
+
+void Parser::add_localsym() {
+    //! TODO: add and update local symbol
 }
 
 /*!
@@ -406,7 +412,8 @@ ASTNode *Parser::primaryexpr() {
 
     switch (ls.token.id) {
         case TOKEN::TK_IDENT: {
-            add_globalsym(ls);
+            //! FIXME: type 还没搞
+            add_globalsym(ls, 0);
             //! TODO: 支持局部变量
             next();
         } break;
@@ -422,7 +429,9 @@ ASTNode *Parser::primaryexpr() {
         } break;
         case TOKEN::TK_STRING: {
             //! NOTE: #feature(string)
-            fprintf(stderr, "前面的特性以后再来做吧!(指string)\n");
+            fprintf(
+                stderr,
+                "The preceding properties will be done later! (ref. string)\n");
             next();
         } break;
         case TOKEN::TK_LPAREN: {
@@ -465,6 +474,10 @@ ASTNode *Parser::postfixexpr() {
             } break;
         }
     }
+
+    //! TODO: to be completed
+    assert(false && "todo: to be completed");
+    return nullptr;
 }
 
 /*!
@@ -774,6 +787,10 @@ ASTNode *Parser::assignexpr() {
         next();
         right = assignexpr();
     }
+
+    //! TODO: to be completed
+    assert(false && "todo: to be completed");
+    return nullptr;
 }
 
 /*!
@@ -787,6 +804,10 @@ ASTNode *Parser::expr() {
         next();
         assignexpr();
     }
+
+    //! TODO: to be completed
+    assert(false && "todo: to be completed");
+    return nullptr;
 }
 
 } // namespace slime

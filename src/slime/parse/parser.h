@@ -21,7 +21,7 @@ struct syminfo {
 struct symtable {
     syminfo symbols[detail::MAX_SYMTABLE_LENGTH];
     int     sym_num;
-} gsym{.sym_num = 0};
+};
 
 class Parser {
 public:
@@ -53,7 +53,8 @@ public:
     void returnstat();
     void block();
 
-    int add_globalsym(LexState& ls); // 添加一个全局变量符号到gsym，返回下标。
+    //! 添加一个全局变量符号到gsym，返回下标
+    int  add_globalsym(LexState& ls, int type);
     void add_localsym();
 
     struct ASTNode* primaryexpr();
