@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include <stddef.h>
 #include <assert.h>
 #include <type_traits>
 #include <utility>
