@@ -19,7 +19,11 @@ enum ASTNodeType {
     A_MINUS,
     A_INV,
     A_NOT,
+    A_STMT,     //连接多个语句
     A_ASSIGN,
+    A_IDENT,
+    A_FUNCTION,
+    A_RETURN,
     A_INTLIT,
     A_FLTLIT
 };
@@ -32,14 +36,20 @@ union ASTVal32 {
 
 struct ASTNode {
     int             op;
+    int             id;     //符号在符号表中的位置
     struct ASTNode *left;
+    struct ASTNode *mid;
     struct ASTNode *right;
     ASTVal32        val;
 };
 
-struct ASTNode *mkastnode(int op, ASTNode *left, ASTNode *right, ASTVal32 val);
+struct ASTNode *mkastnode(int op, ASTNode *left, ASTNode *mid, ASTNode *right, ASTVal32 val);
 struct ASTNode *mkastleaf(int op, ASTVal32 val);
+struct ASTNode *mkastunary(int op, ASTNode *left, ASTVal32 val);
 
 int tok2ast(TOKEN tok); //<! TOKEN类型转换为AST结点类型
+const char *ast2str(int asttype);
+void inorder(ASTNode *n);
 
 } // namespace slime
+ 
