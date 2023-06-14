@@ -135,6 +135,11 @@ namespace slime
 
         switch (ls.token.id)
         {
+        case TOKEN::TK_VOID:
+        {
+            type = TYPE_VOID;
+            next();
+        }
         case TOKEN::TK_INT:
         {
             type = TYPE_INT;
@@ -165,6 +170,11 @@ namespace slime
                     root = func(type);
                 }
                 else{
+                    if(type == TYPE_VOID)
+                    {
+                        fprintf(stderr, "Variable %s declared declared void.\n", ls.token.detail.data());
+                        exit(-1);
+                    }
                     tag  = S_VARIABLE;
                     root = vardef(type);
                     if (ls.token.id == TOKEN::TK_SEMICOLON)
