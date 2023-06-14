@@ -51,11 +51,10 @@ void Driver::execute() {
             ls.next();
         }
     } else {
-        ASTNode *root;
-        while (ls.token.id != TOKEN::TK_EOF) { 
-        
-            root = parser_.func(); 
-            parser_.traverseAST(root);            
+        ASTNode* root;
+        while (ls.token.id != TOKEN::TK_EOF) {
+            root = parser_.global_parse();
+            parser_.traverseAST(root);
         }
     }
 

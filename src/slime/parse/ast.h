@@ -5,7 +5,7 @@
 namespace slime {
 
 enum ASTNodeType {
-    A_ADD,           
+    A_ADD,
     A_SUBTRACT,
     A_MULTIPLY,
     A_DIVIDE,
@@ -19,7 +19,7 @@ enum ASTNodeType {
     A_MINUS,
     A_INV,
     A_NOT,
-    A_STMT,     //连接多个语句
+    A_STMT,     // 连接多个语句
     A_ASSIGN,   // 15
     A_IDENT,    // 16
     A_FUNCTION, // 17
@@ -42,13 +42,13 @@ struct ASTNode {
     ASTVal32        val;
 };
 
-struct ASTNode *mkastnode(int op, ASTNode *left, ASTNode *mid, ASTNode *right, ASTVal32 val);
+struct ASTNode *mkastnode(
+    int op, ASTNode *left, ASTNode *mid, ASTNode *right, ASTVal32 val);
 struct ASTNode *mkastleaf(int op, ASTVal32 val);
 struct ASTNode *mkastunary(int op, ASTNode *left, ASTVal32 val);
 
-int tok2ast(TOKEN tok); //<! TOKEN类型转换为AST结点类型
+int         tok2ast(TOKEN tok); //<! TOKEN类型转换为AST结点类型
 const char *ast2str(int asttype);
-void inorder(ASTNode *n);
+void        inorder(ASTNode *n);
 
 } // namespace slime
- 

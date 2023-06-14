@@ -33,6 +33,11 @@ namespace slime
         return false;
     }
 
+    ASTNode *Parser::global_parse()
+    {
+        return decl();
+    }
+
     //! 初始化声明环境
     void Parser::enterdecl()
     {
@@ -45,52 +50,28 @@ namespace slime
     }
 
     //! 结束声明并清理声明环境
-    void Parser::leavedecl()
+    void Parser::leavedecl(int tag)
     {
-        assert(ls.token.id == TOKEN::TK_SEMICOLON);
+        if(tag == S_VARIABLE)
+            assert(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_COMMA);
         next();
         //! TODO: 清理操作
     }
 
-    //! 获取函数原型并初始化定义
-    int Parser::enterfunc()
+    // 标记函数类型，处理函数参数列表
+    int Parser::enterfunc(int type)
     {
-        int type, ret = 0;
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_VOID:
-        {
-            type = TYPE_VOID;
-            next();
-        }
-        break;
-        case TOKEN::TK_INT:
-        {
-            type = TYPE_INT;
-            next();
-        }
-        break;
-        case TOKEN::TK_FLOAT:
-        {
-            type = TYPE_FLOAT;
-            next();
-        }
-        break;
-        default:
-        {
-            fprintf(stderr, "unknown return type in enterfunc()!\n");
-            //! TODO: 处理错误：无法处理的返回值类型
-        }
-        break;
-        }
+        int ret = 0;
+
         if (ls.token.id != TOKEN::TK_IDENT)
         {
             fprintf(stderr, "Missing function name in enterfunc()!\n");
+            exit(-1);
             //! TODO: 处理错误：函数名缺失
         }
         //! TODO: 检查并处理函数名
         if(find_globalsym(ls.token.detail.data()) != -1){
-            fprintf(stderr, "Duplicate defined symbol in enterfunc()!\n");
+            fprintf(stderr, "Duplicate defined symbol:%s in enterfunc()!\n", ls.token.detail.data());
         }
 
         ret = add_globalsym(ls, type, S_FUNCTION);
@@ -127,7 +108,7 @@ namespace slime
         enterdecl();
         ASTNode *root = NULL;
         bool err = false;
-        int type;
+        int type, tag;
 
         switch (ls.token.id)
         {
@@ -153,24 +134,32 @@ namespace slime
         }
         if (!err)
         {
-            while (true)
+            while (ls.token.id != TOKEN::TK_EOF)
             {
-                root = vardef(type);
-                if (ls.token.id == TOKEN::TK_SEMICOLON)
+                if(ls.lookahead() == TOKEN::TK_LPAREN)
                 {
-                    break;
+                    tag  = S_FUNCTION;
+                    root = func(type);
                 }
-                else if (ls.token.id == TOKEN::TK_COMMA)
-                {
-                    next();
-                }
-                else
-                {
-                    //! TODO: 处理报错
+                else{
+                    tag  = S_VARIABLE;
+                    root = vardef(type);
+                    if (ls.token.id == TOKEN::TK_SEMICOLON)
+                    {
+                        break;
+                    }
+                    else if (ls.token.id == TOKEN::TK_COMMA)
+                    {
+                        next();
+                    }
+                    else
+                    {
+                        //! TODO: 处理报错
+                    }
                 }
             }
         }
-        leavedecl();
+        leavedecl(tag);
         return root;
     }
 
@@ -188,6 +177,7 @@ namespace slime
         {
             //! TODO: 处理错误
             fprintf(stderr, "No TK_IDENT found in vardef()!\n");
+            exit(-1);
             return NULL;
         }
 
@@ -283,11 +273,11 @@ namespace slime
         //! TODO: 处理并存储初始化列表的值
     }
 
-    ASTNode *Parser::func()
+    ASTNode *Parser::func(int type)
     {
         ASTNode *tree;
         ASTVal32 val = {.intvalue = 0};
-        val.symindex = enterfunc();
+        val.symindex = enterfunc(type);
         ps.cur_func = val.symindex;
         //! NOTE: 暂时不允许只声明不定义
         tree = block();
