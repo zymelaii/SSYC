@@ -11,6 +11,9 @@ template <typename T>
 class ListNode;
 
 template <typename T>
+class ListTrait;
+
+template <typename T>
 class AbstractListTrait {
 public:
     using node_type  = ListNode<T>;
@@ -44,6 +47,8 @@ template <typename T>
 class ListNode {
 public:
     using value_type = T;
+
+    friend ListTrait<value_type>;
 
     ListNode()
         : isPtr_{std::is_trivial_v<value_type>}
@@ -200,6 +205,20 @@ public:
         guard_[1].parent_ = this;
         guard_[0].next_   = &guard_[1];
         guard_[1].prev_   = &guard_[0];
+    }
+
+    template <typename... Args>
+    void insertToHead(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        node->insertToHead(*this);
+    }
+
+    template <typename... Args>
+    void insertToTail(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        node->insertToTail(*this);
     }
 
 private:
