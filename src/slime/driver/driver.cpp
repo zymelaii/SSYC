@@ -58,8 +58,8 @@ void Driver::execute() {
             if(!root) printf("Uninitialised global symbol defined.\n");
             else{
                 printf("Global Symbol defined: \n");
-                if(root->op == A_FUNCTION) parser_.displayGsymInfo(root->val.symindex);
-                else parser_.displayGsymInfo(root->left->val.symindex);
+                if(root->op == A_FUNCTION) parser_.displaySymInfo(root->val.symindex, NULL);
+                else parser_.displaySymInfo(root->left->val.symindex, NULL);
             }
             parser_.traverseAST(root);
             printf("\n");

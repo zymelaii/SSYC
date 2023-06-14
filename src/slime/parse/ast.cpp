@@ -100,6 +100,8 @@ const char *ast2str(int asttype) {
             return "<A_ASSIGN>";
         case (A_IDENT):
             return "<A_IDENT>";
+        case (A_BLOCK):
+            return "<A_BLOCK>";
         case (A_FUNCTION):
             return "<A_FUNCTION>";
         case (A_RETURN):
@@ -114,19 +116,6 @@ const char *ast2str(int asttype) {
     }
 }
 
-void inorder(ASTNode *n) {
-    if (!n) return;
-    if (n->left) inorder(n->left);
-    printf("%s", ast2str(n->op));
-    if (n->op == A_INTLIT)
-        printf(": %d", n->val.intvalue);
-    else if (n->op == A_FLTLIT)
-        printf(": %f", n->val.fltvalue);
-    else if (n->op == A_IDENT || n->op == A_FUNCTION)
-        printf(" index: %d", n->val.symindex);
-    printf("\n");
-    if (n->mid) inorder(n->mid);
-    if (n->right) inorder(n->right);
-}
+
 
 } // namespace slime

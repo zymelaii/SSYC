@@ -8,7 +8,7 @@
 namespace slime
 {
 
-    static symtable g_sym;
+    static symtable g_sym = {.symbols = NULL, .sym_num = 0};
 
     void Parser::next()
     {
@@ -63,7 +63,7 @@ namespace slime
     int Parser::enterfunc(int type)
     {
         int ret = 0;
-
+        assert(ps.cur_block == NULL);   //暂不支持局部函数声明
         if (ls.token.id != TOKEN::TK_IDENT)
         {
             fprintf(stderr, "Missing function name in enterfunc()!\n");
@@ -75,7 +75,7 @@ namespace slime
             fprintf(stderr, "Duplicate defined symbol:%s in enterfunc()!\n", ls.token.detail.data());
         }
 
-        ret = add_globalsym(ls, type, S_FUNCTION);
+        ret = add_globalsym(type, S_FUNCTION);
         next();
         if (ls.token.id != TOKEN::TK_LPAREN)
         {
@@ -95,10 +95,32 @@ namespace slime
     }
 
     //! 处理嵌套层数并初始化块环境
-    void Parser::enterblock() {}
+    void Parser::enterblock()
+    {
+        blockinfo *b = (blockinfo *)malloc(sizeof(blockinfo));
+        if(ps.cur_block && ps.cur_block->head == NULL)
+            ps.cur_block->head = b;
+        else if(ps.cur_block)
+        {
+            blockinfo *p = ps.cur_block->head;
+            while(p->next) p = p->next;
+            p->next = b;
+        }
+        else
+            b->head = NULL;
+
+        b->next      = NULL;
+        b->prev_head = ps.cur_block;
+        b->l_sym.symbols = NULL;
+        b->l_sym.sym_num = 0;
+        ps.cur_block = b;
+    }
 
     //! 清理块环境
-    void Parser::leaveblock() {}
+    void Parser::leaveblock() 
+    {
+        ps.cur_block = ps.cur_block->prev_head;
+    }
 
     /*!
      * decl ->
@@ -182,14 +204,10 @@ namespace slime
             return NULL;
         }
 
-        // 检查变量同名
-        if(find_globalsym(ls.token.detail.data()) != -1)
-        {
-            fprintf(stderr, "Duplicate defined symbol:%s!n", ls.token.detail.data());
-            return NULL;
-        }
-        // 处理变量名
-        val.symindex = add_globalsym(ls, type ,S_VARIABLE);
+        if(ps.cur_block == NULL)
+            val.symindex = add_globalsym(type ,S_VARIABLE);
+        else
+            val.symindex = add_localsym(type, S_VARIABLE);
 
         next();
         if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON)
@@ -520,12 +538,15 @@ namespace slime
             }
         }
         next();
+        s2 = mkastunary(A_BLOCK, s2, val);
+        s2->block = ps.cur_block;
         leaveblock();
         return s2;
     }
 
-    int Parser::add_globalsym(LexState &ls, int type, int stype)
+    int Parser::add_globalsym(int type, int stype)
     {
+        assert(ls.token.id == TOKEN::TK_IDENT);
         if(find_globalsym(ls.token.detail.data()) != -1){
             fprintf(
                 stderr,
@@ -533,7 +554,7 @@ namespace slime
                 ls.token.detail.data());
             return -1;
         }
-
+        g_sym.symbols = (syminfo *)realloc(g_sym.symbols, sizeof(syminfo) * (g_sym.sym_num+1));
         g_sym.symbols[g_sym.sym_num].name = strdup(ls.token.detail.data());
         g_sym.symbols[g_sym.sym_num].type = type;
         g_sym.symbols[g_sym.sym_num].stype = stype;
@@ -554,10 +575,56 @@ namespace slime
         return -1;
     }
 
-    void Parser::add_localsym()
+    int Parser::find_localsym(const char *name, blockinfo **pblock)
     {
-        //! TODO: add and update local symbol
-        assert("TODO: add local symbol support");
+        blockinfo *b = ps.cur_block;
+        while(b)
+        {
+            symtable *lsyms = &b->l_sym;
+            for(int i=0;i<lsyms->sym_num;i++)
+            {
+                if(!strcmp(name, lsyms->symbols[i].name))
+                {
+                    if(pblock != NULL)
+                        *pblock = b;
+                    return i;
+                }
+            }
+            if(b->next) b = b->next;
+            else b = b->prev_head;
+        }
+
+        //not found in any block
+        if(pblock) *pblock = NULL;
+        return find_globalsym(name);
+    }
+
+    int Parser::add_localsym(int type, int stype)
+    {
+        assert(ls.token.id == TOKEN::TK_IDENT);
+        blockinfo *b = ps.cur_block, **pblock;
+        pblock = (blockinfo **)malloc(sizeof(blockinfo *));
+        symtable *lsyms = &b->l_sym;
+        if(find_localsym(ls.token.detail.data(), pblock) != -1)
+        {
+            if(pblock && *pblock == b)
+            {
+                fprintf(
+                    stderr,
+                    "Duplicate definition of symbol %s          ---- add_globalsym()!\n",
+                    ls.token.detail.data());
+                free(pblock);
+                exit(-1);
+            }
+        }
+
+        lsyms->symbols = (syminfo *)realloc(lsyms->symbols, sizeof(syminfo) * (lsyms->sym_num + 1));
+        lsyms->symbols[lsyms->sym_num].name  = strdup(ls.token.detail.data());
+        lsyms->symbols[lsyms->sym_num].type  = type;
+        lsyms->symbols[lsyms->sym_num].stype = stype;
+        
+        free(pblock);
+        return lsyms->sym_num++;
     }
 
     /*!
@@ -591,12 +658,18 @@ namespace slime
         {
             case TOKEN::TK_IDENT:
             {
-                val.symindex = find_globalsym(ls.token.detail.data());
+                blockinfo **pblock = (blockinfo **)malloc(sizeof(blockinfo *));
+                if(!ps.cur_block)
+                    val.symindex = find_globalsym(ls.token.detail.data());
+                else
+                    val.symindex = find_localsym(ls.token.detail.data(), pblock);
                 if(val.symindex == -1){
                     fprintf(stderr, "undefined symbol %s in primaryexpr()!\n", ls.token.detail.data());
                     exit(-1);
                 }
                 n = mkastleaf(A_IDENT, val);
+                n->block = *pblock;
+                free(pblock);
                 next();
             }
             break;
@@ -859,12 +932,12 @@ namespace slime
         {
             switch (ls.token.id)
             {
-            tokentype = ls.token.id;
             case TOKEN::TK_LT:
             case TOKEN::TK_GT:
             case TOKEN::TK_LE:
             case TOKEN::TK_GE:
             {
+                tokentype = ls.token.id;
                 next();
                 right = shiftexpr();
                 left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
@@ -1076,18 +1149,44 @@ namespace slime
         return root;
     }
 
+    void Parser::inorder(ASTNode *n) {
+        if (!n) return;
+        if (n->left) inorder(n->left);
+        printf("%s", ast2str(n->op));
+        if (n->op == A_INTLIT)
+            printf(": %d", n->val.intvalue);
+        else if (n->op == A_FLTLIT)
+            printf(": %f", n->val.fltvalue);
+        else if (n->op == A_IDENT)
+            displaySymInfo(n->val.symindex, n->block);
+        printf("\n");
+        if (n->mid) inorder(n->mid);
+        if (n->right) inorder(n->right);
+    }
+
     void Parser::traverseAST(ASTNode *root)
     {
         inorder(root);
     }
 
-    void Parser::displayGsymInfo(int index)
+
+    void Parser::displaySymInfo(int index, blockinfo *block)
     {
-        if(g_sym.symbols[index].stype == S_FUNCTION)
-            printf("type: function ");
-        else
-            printf("type: variable ");
-        printf("name: %s\n", g_sym.symbols[index].name);    
+        if(!block)
+        {
+            if(g_sym.symbols[index].stype == S_FUNCTION)
+                printf("type: function ");
+            else
+                printf("type: variable ");
+            printf("name: %s\n", g_sym.symbols[index].name);    
+        }
+        else{
+            if(block->l_sym.symbols[index].stype == S_FUNCTION)
+                printf(": type: function ");
+            else
+                printf(": type: variable ");
+            printf("name: %s", block->l_sym.symbols[index].name);    
+        }
     }
 
 } // namespace slime

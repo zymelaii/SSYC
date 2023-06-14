@@ -8,6 +8,7 @@
 namespace slime {
 
 namespace detail {
+//!NOTE: unused now
 static constexpr size_t MAX_SYMTABLE_LENGTH = 512;
 } // namespace detail
 
@@ -20,6 +21,7 @@ struct node_type {
 struct ParseState {
     int cur_func; //<! index in gsym of current parsing function(-1 if not in a
                   // function)
+    blockinfo* cur_block;// pointer to current block
 };
 
 enum {
@@ -33,32 +35,20 @@ enum {
     TYPE_FLOAT
 };
 
-struct syminfo {
-    char* name;
-    int   type;    // 类型(void/int/float)
-    int   stype;   // var:0 function:1
-    int   arrsize; // 数组大小
-};
-
-struct symtable {
-    syminfo symbols[detail::MAX_SYMTABLE_LENGTH];
-    int     sym_num;
-};
-
 class Parser {
 public:
     LexState   ls;
-    ParseState ps;
+    ParseState ps{.cur_func = -1, .cur_block = NULL};
 
     void next();
     bool expect(TOKEN token, const char* msg = nullptr);
 
 protected:
-    void enterblock();
+    void enterblock();      //add a new blcok to b_info and return its index
     void leaveblock();
     void enterdecl();
     void leavedecl(int tag);
-    int  enterfunc(int type);
+    int  enterfunc(int type);   //add func symbol to g_sym and return its index
     void leavefunc();
 
 public:
@@ -78,12 +68,13 @@ public:
     ASTNode* block();
 
     int add_globalsym(
-        LexState& ls,
         int       type,
         int       stype); // add a symbol to g_sym list, return its index
     int find_globalsym(const char* name); // search a symbol in g_sym and return
                                           // its index(-1 if failed)
-    void add_localsym();
+    int find_localsym(const char *name, blockinfo **pblock); //search a local symbol in a block and return its index in l_sym.
+                                                            // pblock will point to that block if it is not NULL
+    int  add_localsym(int type, int stype);
 
     struct ASTNode* primaryexpr();
     struct ASTNode* postfixexpr();
@@ -104,7 +95,8 @@ public:
 
     void exprlist();
     void traverseAST(ASTNode* root);
-    void displayGsymInfo(int index);
+    void inorder(ASTNode *n);
+    void displaySymInfo(int index, blockinfo *block);
 
     // 输出AST（后序遍历）
 };

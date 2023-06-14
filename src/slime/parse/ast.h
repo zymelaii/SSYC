@@ -21,11 +21,35 @@ enum ASTNodeType {
     A_NOT,
     A_STMT,     // 连接多个语句
     A_ASSIGN,   // 15
-    A_IDENT,    // 16
-    A_FUNCTION, // 17
-    A_RETURN,   // 18
-    A_INTLIT,   // 19
-    A_FLTLIT    // 20
+    A_BLOCK,    // 16
+    A_IDENT,    // 17
+    A_FUNCTION, // 18
+    A_RETURN,   // 19
+    A_INTLIT,   // 20
+    A_FLTLIT    // 21
+};
+
+struct syminfo {
+    char* name;
+    int   type;    // 类型(void/int/float)
+    int   stype;   // var:0 function:1
+    union {
+        int arrsize;     // 数组大小ps.cur_block = 
+        int nrparam;     // 参数个数
+    }content;
+};
+
+struct symtable {
+    syminfo *symbols;
+    int     sym_num;
+};
+
+struct blockinfo{
+    symtable l_sym;
+    blockinfo *prev_head;// pointer to the block embedding the currentblock
+    blockinfo *head;    // pointer to the block embedded in it
+    blockinfo *next;    // pointer to the next block in current block
+    int block_num;      
 };
 
 union ASTVal32 {
@@ -39,6 +63,7 @@ struct ASTNode {
     struct ASTNode *left;
     struct ASTNode *mid;
     struct ASTNode *right;
+    blockinfo      *block;
     ASTVal32        val;
 };
 
@@ -49,6 +74,5 @@ struct ASTNode *mkastunary(int op, ASTNode *left, ASTVal32 val);
 
 int         tok2ast(TOKEN tok); //<! TOKEN类型转换为AST结点类型
 const char *ast2str(int asttype);
-void        inorder(ASTNode *n);
 
 } // namespace slime
