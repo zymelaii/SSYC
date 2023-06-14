@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "parser.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -108,7 +109,7 @@ const char *ast2str(int asttype) {
         case (A_FLTLIT):
             return "A_FLTLIT";
         default:
-            fprintf(stderr, "Unknown AST node type:%d!\n");
+            fprintf(stderr, "Unknown AST node type:%d!\n", asttype);
             return NULL;
     }
 }

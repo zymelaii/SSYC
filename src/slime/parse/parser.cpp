@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "ast.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -735,7 +736,7 @@ namespace slime
     {
         ASTNode *left, *right;
         ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype = ls.token.id;
+        TOKEN tokentype;
 
         left = unaryexpr();
         bool ok = false;
@@ -747,6 +748,7 @@ namespace slime
             case TOKEN::TK_DIV:
             case TOKEN::TK_MOD:
             {
+                tokentype = ls.token.id;
                 next();
                 right = unaryexpr();
                 left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
@@ -772,7 +774,7 @@ namespace slime
     {
         ASTNode *left, *right;
         ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype = ls.token.id;
+        TOKEN tokentype;
 
         left = mulexpr();
         bool ok = false;
@@ -780,9 +782,10 @@ namespace slime
         {
             switch (ls.token.id)
             {
-            case TOKEN::TK_ADD:
-            case TOKEN::TK_SUB:
+            case TOKEN::TK_ADD: 
+            case TOKEN::TK_SUB: 
             {
+                tokentype = ls.token.id;
                 next();
                 right = mulexpr();
                 left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
@@ -809,7 +812,7 @@ namespace slime
     {
         ASTNode *left, *right;
         ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype = ls.token.id;
+        TOKEN tokentype;
 
         left = addexpr();
         bool ok = false;
@@ -820,6 +823,7 @@ namespace slime
             case TOKEN::TK_SHL:
             case TOKEN::TK_SHR:
             {
+                tokentype = ls.token.id;
                 next();
                 right = addexpr();
                 left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
@@ -847,7 +851,7 @@ namespace slime
     {
         ASTNode *left, *right;
         ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype = ls.token.id;
+        TOKEN tokentype ;
 
         left = shiftexpr();
         bool ok = false;
@@ -855,6 +859,7 @@ namespace slime
         {
             switch (ls.token.id)
             {
+            tokentype = ls.token.id;
             case TOKEN::TK_LT:
             case TOKEN::TK_GT:
             case TOKEN::TK_LE:
@@ -885,7 +890,7 @@ namespace slime
     {
         ASTNode *left, *right;
         ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype = ls.token.id;
+        TOKEN tokentype;
 
         left = relexpr();
         bool ok = false;
@@ -897,6 +902,7 @@ namespace slime
             case TOKEN::TK_NE:
             case TOKEN::TK_LE:
             {
+                tokentype = ls.token.id;
                 next();
                 right = relexpr();
                 left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
@@ -1073,6 +1079,15 @@ namespace slime
     void Parser::traverseAST(ASTNode *root)
     {
         inorder(root);
+    }
+
+    void Parser::displayGsymInfo(int index)
+    {
+        if(g_sym.symbols[index].stype == S_FUNCTION)
+            printf("type: function ");
+        else
+            printf("type: variable ");
+        printf("name: %s\n", g_sym.symbols[index].name);    
     }
 
 } // namespace slime

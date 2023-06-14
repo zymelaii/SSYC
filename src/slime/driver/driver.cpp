@@ -54,7 +54,15 @@ void Driver::execute() {
         ASTNode* root;
         while (ls.token.id != TOKEN::TK_EOF) {
             root = parser_.global_parse();
+            //!TODO: display info of uninitialised symbol
+            if(!root) printf("Uninitialised global symbol defined.\n");
+            else{
+                printf("Global Symbol defined: \n");
+                if(root->op == A_FUNCTION) parser_.displayGsymInfo(root->val.symindex);
+                else parser_.displayGsymInfo(root->left->val.symindex);
+            }
             parser_.traverseAST(root);
+            printf("\n");
         }
     }
 

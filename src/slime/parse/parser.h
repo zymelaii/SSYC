@@ -104,6 +104,7 @@ public:
 
     void exprlist();
     void traverseAST(ASTNode* root);
+    void displayGsymInfo(int index);
 
     // 输出AST（后序遍历）
 };
