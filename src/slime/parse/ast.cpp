@@ -15,6 +15,7 @@ ASTNode *mkastnode(int op, ASTNode *left, ASTNode *mid, ASTNode *right, ASTVal32
     }
     n->op    = op;
     n->left  = left;
+    n->mid   = mid;
     n->right = right;
     n->val   = val;
 
@@ -96,6 +97,7 @@ const char *ast2str(int asttype)
 
 void inorder(ASTNode *n)
 {
+    if(!n) return ;
     if(n->left)
         inorder(n->left);
     printf("%s", ast2str(n->op));
@@ -103,6 +105,8 @@ void inorder(ASTNode *n)
         printf(": %d", n->val.intvalue);
     else if(n->op == A_FLTLIT)
         printf(": %f", n->val.fltvalue);
+    else if(n->op == A_IDENT || n->op == A_FUNCTION)
+        printf(" index: %d", n->val.symindex);
     printf("\n");
     if(n->mid)
         inorder(n->mid);

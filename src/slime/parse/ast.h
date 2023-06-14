@@ -5,7 +5,7 @@
 namespace slime {
 
 enum ASTNodeType {
-    A_ADD,
+    A_ADD,           
     A_SUBTRACT,
     A_MULTIPLY,
     A_DIVIDE,
@@ -20,12 +20,12 @@ enum ASTNodeType {
     A_INV,
     A_NOT,
     A_STMT,     //连接多个语句
-    A_ASSIGN,
-    A_IDENT,
-    A_FUNCTION,
-    A_RETURN,
-    A_INTLIT,
-    A_FLTLIT
+    A_ASSIGN,   // 15
+    A_IDENT,    // 16
+    A_FUNCTION, // 17
+    A_RETURN,   // 18
+    A_INTLIT,   // 19
+    A_FLTLIT    // 20
 };
 
 union ASTVal32 {
@@ -36,7 +36,6 @@ union ASTVal32 {
 
 struct ASTNode {
     int             op;
-    int             id;     //符号在符号表中的位置
     struct ASTNode *left;
     struct ASTNode *mid;
     struct ASTNode *right;

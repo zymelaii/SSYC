@@ -19,6 +19,7 @@ struct node_type{
 };
 
 struct ParseState {
+    int cur_func;       //<! index in gsym of current parsing function(-1 if not in a function)
 };
 
 enum{
@@ -71,9 +72,8 @@ public:
     ASTNode* returnstat();
     ASTNode* block();
 
-    //! 添加一个全局变量符号到gsym，返回下标
-    int  add_globalsym(LexState& ls, int type, int stype);
-    int  find_globalsym(const char *name);
+    int  add_globalsym(LexState& ls, int type, int stype);      //add a symbol to g_sym list, return its index
+    int  find_globalsym(const char *name);                      //search a symbol in g_sym and return its index(-1 if failed)
     void add_localsym();
 
     struct ASTNode* primaryexpr();

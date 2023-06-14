@@ -108,6 +108,7 @@ namespace slime
     //! 结束函数定义
     void Parser::leavefunc()
     {
+        ps.cur_func = -1;
         //! TODO: 检查并处理函数体
     }
 
@@ -124,7 +125,7 @@ namespace slime
     ASTNode *Parser::decl()
     {
         enterdecl();
-        ASTNode *root;
+        ASTNode *root = NULL;
         bool err = false;
         int type;
 
@@ -180,7 +181,8 @@ namespace slime
      */
     ASTNode *Parser::vardef(int type)
     {
-        ASTNode *root = NULL;
+        ASTNode *root = NULL, *left = NULL;
+        ASTVal32 val = {.intvalue = 0};
 
         if (ls.token.id != TOKEN::TK_IDENT)
         {
@@ -190,13 +192,13 @@ namespace slime
         }
 
         // 检查变量同名
-        if(find_globalsym(ls.token.detail.data()))
+        if(find_globalsym(ls.token.detail.data()) != -1)
         {
             fprintf(stderr, "Duplicate defined symbol:%s!n", ls.token.detail.data());
             return NULL;
         }
         // 处理变量名
-        add_globalsym(ls, type ,S_VARIABLE);
+        val.symindex = add_globalsym(ls, type ,S_VARIABLE);
 
         next();
         if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON)
@@ -220,7 +222,7 @@ namespace slime
         }
         if (ls.token.id == TOKEN::TK_ASS)
         {
-
+            left = mkastleaf(A_IDENT, val);   
             next();
             if (ls.token.id == TOKEN::TK_LBRACE)
             {
@@ -228,7 +230,9 @@ namespace slime
             }
             else
             {
+                val.intvalue = 0;
                 root = expr();
+                root = mkastnode(A_ASSIGN, left, NULL, root, val);
             }
             //! TODO: 获取并处理初始化赋值
         }
@@ -281,10 +285,10 @@ namespace slime
 
     ASTNode *Parser::func()
     {
-        int id;
         ASTNode *tree;
         ASTVal32 val = {.intvalue = 0};
         val.symindex = enterfunc();
+        ps.cur_func = val.symindex;
         //! NOTE: 暂时不允许只声明不定义
         tree = block();
         if(!tree){
@@ -488,6 +492,7 @@ namespace slime
     ASTNode *Parser::returnstat()
     {
         assert(ls.token.id == TOKEN::TK_RETURN);
+        assert(ps.cur_func != -1);
         ASTNode *tree = NULL;
         ASTVal32 val = {.intvalue = 0};
         next();
@@ -498,6 +503,10 @@ namespace slime
         }
         
         //! TODO: 返回值检验
+        if(!tree->left && g_sym.symbols[ps.cur_func].type != TYPE_VOID){
+            fprintf(stderr, "error: Missing return value in non-void function %s!\n", g_sym.symbols[ps.cur_func].name);
+            exit(-1);
+        }
         expect(TOKEN::TK_SEMICOLON, "expect ';' after return statement");
         return tree;
     }
@@ -516,7 +525,7 @@ namespace slime
                 if(!s2)
                     s2 = s1;
                 else
-                    s1 = mkastnode(A_STMT, s2, NULL, s1, val);
+                    s2 = mkastnode(A_STMT, s2, NULL, s1, val);
             }
         }
         next();
@@ -584,7 +593,7 @@ namespace slime
      */
     ASTNode *Parser::primaryexpr()
     {
-        ASTNode *n;
+        ASTNode *n = NULL;
         ASTVal32 val;
 
         switch (ls.token.id)
@@ -593,8 +602,8 @@ namespace slime
             {
                 val.symindex = find_globalsym(ls.token.detail.data());
                 if(val.symindex == -1){
-                    fprintf(stderr, "undefined symbol:%s in primaryexpr!\n", ls.token.detail.data());
-                    return NULL;
+                    fprintf(stderr, "undefined symbol %s in primaryexpr()!\n", ls.token.detail.data());
+                    exit(-1);
                 }
                 n = mkastleaf(A_IDENT, val);
                 next();
@@ -1058,6 +1067,10 @@ namespace slime
     {
         ASTNode *root;
         root = assignexpr();
+        if(!root){
+            fprintf(stderr, "Missing expression before comma!\n");
+            exit(-1);
+        }
         while (ls.token.id == TOKEN::TK_COMMA)
         {
             next();
