@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <assert.h>
+#include <string.h>
 #include <type_traits>
 #include <utility>
 
@@ -25,15 +26,9 @@ public:
         return size_;
     }
 
-    node_type *head() {
-        auto node = headGuard()->next_;
-        return node == tailGuard() ? nullptr : node;
-    }
+    node_type *head();
 
-    node_type *tail() {
-        auto node = tailGuard()->next_;
-        return node == headGuard() ? nullptr : node;
-    }
+    node_type *tail();
 
 protected:
     virtual node_type *headGuard() = 0;
@@ -48,6 +43,7 @@ class ListNode {
 public:
     using value_type = T;
 
+    friend AbstractListTrait<value_type>;
     friend ListTrait<value_type>;
 
     ListNode()
@@ -142,10 +138,7 @@ public:
         auto node          = list.headGuard();
         node->next_->prev_ = this;
         node->next_        = this;
-        if (parent_ != &list) {
-            removeFromList();
-            parent_ = &list;
-        }
+        parent_            = &list;
         ++list.size_;
     }
 
@@ -154,10 +147,7 @@ public:
         auto node          = list.tailGuard();
         node->prev_->next_ = this;
         node->prev_        = this;
-        if (parent_ != &list) {
-            removeFromList();
-            parent_ = &list;
-        }
+        parent_            = &list;
         ++list.size_;
     }
 
@@ -207,6 +197,17 @@ public:
         guard_[1].prev_   = &guard_[0];
     }
 
+    ListTrait(ListTrait &&list)
+        : ListTrait() {
+        auto head = list.headGuard()->next_;
+        auto tail = list.tailGuard();
+        while (head != tail) {
+            auto node = head->next_;
+            head->insertToTail(*this);
+            head = node;
+        }
+    }
+
     template <typename... Args>
     void insertToHead(Args &&...args) {
         value_type e(std::forward<Args>(args)...);
@@ -233,5 +234,17 @@ private:
 private:
     node_type guard_[2];
 };
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() {
+    auto node = headGuard()->next_;
+    return node == tailGuard() ? nullptr : node;
+}
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() {
+    auto node = tailGuard()->next_;
+    return node == headGuard() ? nullptr : node;
+}
 
 } // namespace slime::utils
