@@ -67,8 +67,9 @@ struct NoneType : Type {
     NoneType()
         : Type(TypeID::None) {}
 
-    static NoneType* create() {
-        return new NoneType;
+    static NoneType* get() {
+        static NoneType singleton;
+        return &singleton;
     }
 };
 
@@ -76,8 +77,9 @@ struct UnresolvedType : Type {
     UnresolvedType()
         : Type(TypeID::Unresolved) {}
 
-    static UnresolvedType* create() {
-        return new UnresolvedType;
+    static UnresolvedType* get() {
+        static UnresolvedType singleton;
+        return &singleton;
     }
 };
 
@@ -86,20 +88,33 @@ struct BuiltinType : public Type {
         : Type(TypeID::Builtin)
         , type{type} {}
 
-    static BuiltinType* create(BuiltinTypeID type) {
-        return new BuiltinType(type);
+    static BuiltinType* get(BuiltinTypeID type) {
+        switch (type) {
+            case BuiltinTypeID::Int: {
+                return getIntType();
+            } break;
+            case BuiltinTypeID::Float: {
+                return getFloatType();
+            } break;
+            case BuiltinTypeID::Void: {
+                return getVoidType();
+            } break;
+        }
     }
 
     static BuiltinType* getIntType() {
-        return create(BuiltinTypeID::Int);
+        static BuiltinType singleton(BuiltinTypeID::Int);
+        return &singleton;
     }
 
     static BuiltinType* getFloatType() {
-        return create(BuiltinTypeID::Float);
+        static BuiltinType singleton(BuiltinTypeID::Float);
+        return &singleton;
     }
 
     static BuiltinType* getVoidType() {
-        return create(BuiltinTypeID::Void);
+        static BuiltinType singleton(BuiltinTypeID::Void);
+        return &singleton;
     }
 
     bool isInt() const {
