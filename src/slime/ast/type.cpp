@@ -43,4 +43,22 @@ Type* Type::getElementType(Type* type) {
     }
 }
 
+Type* Type::extendIntoArrayType(Expr* length) {
+    switch (typeId) {
+        case TypeID::None:
+        case TypeID::Unresolved: {
+            return NoneType::get();
+        } break;
+        case TypeID::Builtin:
+        case TypeID::FunctionProto:
+        case TypeID::IncompleteArray: {
+            return ArrayType::create(this, length);
+        } break;
+        case TypeID::Array: {
+            asArray()->insertToTail(length);
+            return this;
+        } break;
+    }
+}
+
 } // namespace slime::ast

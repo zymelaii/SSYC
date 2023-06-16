@@ -60,6 +60,8 @@ struct Type {
         return reinterpret_cast<FunctionProtoType*>(this);
     }
 
+    Type* extendIntoArrayType(Expr* length);
+
     TypeID typeId;
 };
 
