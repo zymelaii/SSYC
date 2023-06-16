@@ -19,6 +19,7 @@ ASTNode *mkastnode(
     n->left  = left;
     n->mid   = mid;
     n->right = right;
+    n->block = NULL;
     n->val   = val;
 
     return n;
@@ -104,6 +105,8 @@ const char *ast2str(int asttype) {
             return "<A_BLOCK>";
         case (A_FUNCTION):
             return "<A_FUNCTION>";
+        case (A_FUNCCALL):
+            return "<A_FUNCALL>";
         case (A_RETURN):
             return "<A_RETURN>";
         case (A_INTLIT):

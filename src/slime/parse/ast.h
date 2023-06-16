@@ -19,29 +19,44 @@ enum ASTNodeType {
     A_MINUS,
     A_INV,
     A_NOT,
+    A_EXPR,
     A_STMT,     // 连接多个语句
-    A_ASSIGN,   // 15
-    A_BLOCK,    // 16
-    A_IDENT,    // 17
-    A_FUNCTION, // 18
-    A_RETURN,   // 19
-    A_INTLIT,   // 20
-    A_FLTLIT    // 21
+    A_ASSIGN,   // 16
+    A_BLOCK,    // 17
+    A_IDENT,    // 18
+    A_FUNCTION, // 19
+    A_RETURN,   // 20
+    A_FUNCCALL, // 21
+    A_INTLIT,   // 22
+    A_FLTLIT    // 23
 };
+
+struct ASTNode;
+struct symtable;
+struct paramtable;
 
 struct syminfo {
     char* name;
     int   type;    // 类型(void/int/float)
     int   stype;   // var:0 function:1
     union {
-        int arrsize;     // 数组大小ps.cur_block = 
-        int nrparam;     // 参数个数
+        paramtable *funcparams;
+        ASTNode  *initlist;
     }content;
+};
+
+struct paraminfo : syminfo{
+    int lsym_index;
 };
 
 struct symtable {
     syminfo *symbols;
     int     sym_num;
+};
+
+struct paramtable {
+    paraminfo *params;
+    int param_num;
 };
 
 struct blockinfo{

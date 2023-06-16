@@ -1,4 +1,5 @@
 //test local var define
+int a;
 int main(){
     int a, b0, _c;
     a = 1;

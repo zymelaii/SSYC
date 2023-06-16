@@ -54,8 +54,10 @@ namespace slime
     void Parser::leavedecl(int tag)
     {
         if(tag == S_VARIABLE)
+        {
             assert(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_COMMA);
-        next();
+            next();
+        }
         //! TODO: 清理操作
     }
 
@@ -82,7 +84,8 @@ namespace slime
             //! TODO: 处理错误：丢失参数列表
             fprintf(stderr, "Missing argument list of function %s!\n", g_sym.symbols[g_sym.sym_num-1].name);
         }
-        funcargs();
+        g_sym.symbols[ret].content.funcparams = funcargs();
+        ps.cur_funcparam = g_sym.symbols[ret].content.funcparams;
         //! TODO: 解析函数原型
         return ret;
     }
@@ -91,6 +94,7 @@ namespace slime
     void Parser::leavefunc()
     {
         ps.cur_func = -1;
+        ps.cur_funcparam = NULL;
         //! TODO: 检查并处理函数体
     }
 
@@ -129,7 +133,8 @@ namespace slime
     ASTNode *Parser::decl()
     {
         enterdecl();
-        ASTNode *root = NULL;
+        ASTNode *left = NULL, *right = NULL;
+        ASTVal32 val = {.intvalue = 0};
         bool err = false;
         int type, tag;
 
@@ -167,16 +172,21 @@ namespace slime
                 if(ls.lookahead() == TOKEN::TK_LPAREN)
                 {
                     tag  = S_FUNCTION;
-                    root = func(type);
+                    right = func(type);
+                    break;
                 }
                 else{
                     if(type == TYPE_VOID)
                     {
-                        fprintf(stderr, "Variable %s declared declared void.\n", ls.token.detail.data());
+                        fprintf(stderr, "Variable %s declared void.\n", ls.token.detail.data());
                         exit(-1);
                     }
                     tag  = S_VARIABLE;
-                    root = vardef(type);
+                    left = vardef(type);
+                    if(!right)
+                        right = left;
+                    else if(left)
+                        right = mkastnode(A_STMT, left, NULL, right, val);
                     if (ls.token.id == TOKEN::TK_SEMICOLON)
                     {
                         break;
@@ -193,7 +203,7 @@ namespace slime
             }
         }
         leavedecl(tag);
-        return root;
+        return right;
     }
 
     /*!
@@ -320,40 +330,57 @@ namespace slime
         return tree;
     }
 
-    void Parser::funcargs()
+    paramtable *Parser::funcargs()
     {
         assert(ls.token.id == TOKEN::TK_LPAREN);
         next();
+        paramtable *params = (paramtable *)malloc(sizeof(paramtable));
+        params->params = NULL;
+        params->param_num = 0;
+        int type = -1;
         while (ls.token.id != TOKEN::TK_RPAREN)
         {
             //! FIXME: 可能死循环
-            //! TODO: 支持带参数的函数
+            
+            params->params = (paraminfo *)realloc(params->params, (params->param_num + 1) * sizeof(paraminfo));
             switch (ls.token.id)
             {
+            case TOKEN::TK_VOID:
+            {
+                fprintf(stderr, "Void type is invalid in function parameters!\n");
+                exit(-1);
+            }
             case TOKEN::TK_INT:
             {
-                //! TODO: 标记参数基本类型
+                type = TYPE_INT;
                 next();
             }
             break;
             case TOKEN::TK_FLOAT:
             {
-                //! TODO: 标记参数基本类型
+                type = TYPE_FLOAT;
                 next();
             }
             break;
             default:
             {
-                //! TODO: 处理错误：未知的参数类型
+                fprintf(stderr, "Unknown parameter type: %s", ls.token.detail.data());
+                exit(-1);
             }
             break;
             }
             if (ls.token.id != TOKEN::TK_IDENT)
             {
-                //! TODO: 处理错误：缺少参数名
+                fprintf(stderr, "Missing parameter's name in funcargs()!\n");
+                exit(-1);
             }
-            //! TODO: 处理参数名
+            params->params[params->param_num].name  = strdup(ls.token.detail.data());
+            params->params[params->param_num].stype = S_VARIABLE;
+            params->params[params->param_num].type  = type;
+            params->param_num++; 
             next();
+
+            //!TODO: 支持数组作为参数传入
             if (ls.token.id == TOKEN::TK_LBRACKET)
             {
                 //! 处理数组参数类型
@@ -379,16 +406,20 @@ namespace slime
             {
                 if (ls.lookahead() == TOKEN::TK_RPAREN)
                 {
-                    //! TODO: 处理错误：参数列表不允许有 trailing-comma
+                    fprintf(stderr, "Unexpected comma in funcargs()!\n");
+                    exit(-1);
                 }
+                
                 next();
             }
-            else
+            else if(ls.token.id != TOKEN::TK_RPAREN)
             {
-                //! TODO: 处理错误：非法的终止符
+                fprintf(stderr, "Invalid terminator in function parameters' definition!\n");
+                exit(-1);
             }
         }
         next();
+        return params;
     }
 
     /*!
@@ -535,6 +566,20 @@ namespace slime
         enterblock();
         ASTNode *s1, *s2 = NULL;
         ASTVal32 val = {.intvalue = 0};
+
+        if(ps.cur_funcparam)        //add parameter to lsymtable
+        {
+            paramtable *p = ps.cur_funcparam;
+            for(int i=0;i<p->param_num;i++)
+            {
+                p->params[i].lsym_index = add_localsym(
+                    p->params[i].type,
+                    p->params[i].stype,
+                    p->params[i].name,
+                    ps.cur_block
+                );
+            }
+        }
         assert(ls.token.id == TOKEN::TK_LBRACE);
         next();
         while (ls.token.id != TOKEN::TK_RBRACE)
@@ -600,11 +645,10 @@ namespace slime
                     return i;
                 }
             }
-            if(b->next) b = b->next;
-            else b = b->prev_head;
+            b = b->prev_head;
         }
-
         //not found in any block
+        
         if(pblock) *pblock = NULL;
         return find_globalsym(name);
     }
@@ -617,11 +661,11 @@ namespace slime
         symtable *lsyms = &b->l_sym;
         if(find_localsym(ls.token.detail.data(), pblock) != -1)
         {
-            if(pblock && *pblock == b)
+            if(*pblock && *pblock == b)
             {
                 fprintf(
                     stderr,
-                    "Duplicate definition of symbol %s          ---- add_globalsym()!\n",
+                    "Duplicate definition of symbol %s          ---- add_localsym()!\n",
                     ls.token.detail.data());
                 free(pblock);
                 exit(-1);
@@ -637,18 +681,72 @@ namespace slime
         return lsyms->sym_num++;
     }
 
+    int Parser::add_localsym(int type, int stype, char *name, blockinfo *block)
+    {
+        symtable *lsyms = &block->l_sym;
+        for(int i=0;i<block->l_sym.sym_num;i++)
+        {
+            if(strcmp(name, lsyms->symbols[i].name))
+            {
+                fprintf(
+                    stderr,
+                    "Duplicate definition of symbol %s          ---- add_localsym()!\n",
+                    name);
+                exit(-1);
+            }
+        }
+
+        lsyms->symbols = (syminfo *)realloc(lsyms->symbols, sizeof(syminfo) * (lsyms->sym_num + 1));
+        lsyms->symbols[lsyms->sym_num].name  = strdup(name);
+        lsyms->symbols[lsyms->sym_num].type  = type;
+        lsyms->symbols[lsyms->sym_num].stype = stype;
+        
+        return lsyms->sym_num++;
+    }
+
     /*!
      * expr-list ->
      *      expr { ',' expr-list }
      */
-    void Parser::exprlist()
+    ASTNode *Parser::exprlist(int funcindex)
     {
-        expr();
+        paraminfo *params = g_sym.symbols[funcindex].content.funcparams->params;
+        int param_num = g_sym.symbols[funcindex].content.funcparams->param_num, num = 0;
+        ASTVal32 val = {.intvalue = 0};
+        ASTNode *root, *left, *right;
+
+        right = assignexpr();
+        assert(right->op == A_INTLIT || right->op == A_FLTLIT || right->op == A_FUNCCALL || right->op == A_IDENT);
+        val.symindex = params[num].lsym_index;
+        left  = mkastleaf(A_IDENT, val);
+        root  = mkastnode(A_ASSIGN, left, NULL, right, val);
+        num++;
+
         while (ls.token.id == TOKEN::TK_COMMA)
         {
             next();
-            expr();
+            right = assignexpr();
+            val.symindex = num;
+            left  = mkastleaf(A_IDENT, val);
+            root  = mkastnode(A_ASSIGN, left, NULL, right, val);
+            num++;
         }
+
+        if(num < param_num)
+        {
+            fprintf(stderr, "Too few arguments when calling function %s. Expected %d, got %d.\n",
+                g_sym.symbols[funcindex].name, param_num, num
+            );
+            exit(-1);
+        }
+        else if(num > param_num){
+            fprintf(stderr, "Too many arguments when calling function %s. Expected %d, got %d.\n",
+                g_sym.symbols[funcindex].name, param_num, num
+            );
+            exit(-1);
+        }
+
+        return root;
     }
 
     /*!
@@ -731,7 +829,7 @@ namespace slime
      */
     ASTNode *Parser::postfixexpr()
     {
-        ASTNode *left, *right;
+        ASTNode *left, *right = NULL;
         ASTVal32 val = {.intvalue = 0};
 
         left = primaryexpr();
@@ -748,8 +846,25 @@ namespace slime
             break;
             case TOKEN::TK_LPAREN:
             { //<! function call
-                exprlist();
-                expect(TOKEN::TK_RBRACKET, "expect ')'");
+                if(left->op != A_IDENT)
+                {
+                    fprintf(stderr, "Missing identifier when calling a function!\n");
+                    exit(-1);
+                }
+                else if(left->block != NULL)
+                {
+                    fprintf(stderr, "Definition of a local function is not supported!\n");
+                    exit(-1);
+                }
+                
+                assert(g_sym.symbols[left->val.symindex].stype == S_FUNCTION);
+                if(ls.lookahead() != TOKEN::TK_RPAREN)
+                {
+                    next();
+                    right = exprlist(left->val.symindex);
+                }
+                left = mkastnode(A_FUNCCALL, left, NULL, right, val);
+                expect(TOKEN::TK_RPAREN, "expect ')'");
             }
             break;
             default:
@@ -1129,6 +1244,11 @@ namespace slime
 
         if (ls.token.id == TOKEN::TK_ASS)
         {
+            if(left->op != A_IDENT)
+            {
+                fprintf(stderr, "Missing identifier on the left of assignment!\n");
+                exit(-1);
+            }
             next();
             right = assignexpr();
             left = mkastnode(A_ASSIGN, left, NULL, right, v);

@@ -21,6 +21,7 @@ struct node_type {
 struct ParseState {
     int cur_func; //<! index in gsym of current parsing function(-1 if not in a
                   // function)
+    paramtable *cur_funcparam;  // point to current function's parameter table
     blockinfo* cur_block;// pointer to current block
 };
 
@@ -38,7 +39,7 @@ enum {
 class Parser {
 public:
     LexState   ls;
-    ParseState ps{.cur_func = -1, .cur_block = NULL};
+    ParseState ps{.cur_func = -1, .cur_funcparam = NULL,.cur_block = NULL};
 
     void next();
     bool expect(TOKEN token, const char* msg = nullptr);
@@ -58,7 +59,7 @@ public:
     ASTNode* vardef(int type);
     void     initlist();
     ASTNode* func(int type);
-    void     funcargs();
+    paramtable* funcargs();
     ASTNode* statement();
     void     ifstat();
     void     whilestat();
@@ -75,6 +76,8 @@ public:
     int find_localsym(const char *name, blockinfo **pblock); //search a local symbol in a block and return its index in l_sym.
                                                             // pblock will point to that block if it is not NULL
     int  add_localsym(int type, int stype);
+    int  add_localsym(int type, int stype, char *name, blockinfo *block);
+
 
     struct ASTNode* primaryexpr();
     struct ASTNode* postfixexpr();
@@ -93,7 +96,7 @@ public:
     struct ASTNode* assignexpr();
     struct ASTNode* expr();
 
-    void exprlist();
+    ASTNode *exprlist(int funcindex);
     void traverseAST(ASTNode* root);
     void inorder(ASTNode *n);
     void displaySymInfo(int index, blockinfo *block);
