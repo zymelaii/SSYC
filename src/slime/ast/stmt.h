@@ -148,7 +148,6 @@ struct NullStmt : public Stmt {
 
 struct DeclStmt
     : public Stmt
-    , public TopLevelVarDecl
     , public VarDeclList {
     DeclStmt()
         : Stmt(StmtID::Decl) {}

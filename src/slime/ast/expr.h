@@ -12,7 +12,7 @@ struct Expr;
 struct Stmt;
 struct ExprStmt;
 struct CompoundStmt;
-struct DeclaratorDecl;
+struct NamedDecl;
 
 using ExprList = slime::utils::ListTrait<Expr *>;
 
@@ -60,10 +60,9 @@ struct Expr : public ExprStmt {
     Type *valueType;
 };
 
-//! 1. variable
-//! 2. function (not support yet)
+//! variable or function
 struct DeclRefExpr : public Expr {
-    DeclaratorDecl *declSource;
+    NamedDecl *source;
 };
 
 struct ConstantExpr : public Expr {

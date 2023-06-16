@@ -13,15 +13,12 @@ struct CompoundStmt;
 struct ParamVarDecl;
 struct VarDecl;
 struct FunctionDecl;
-struct DeclStmt;
-struct TopLevelVarDecl;
 
 using ParamVarDeclList = slime::utils::ListTrait<ParamVarDecl *>;
 
 enum class DeclID {
     Var,
     ParamVar,
-    TopLevelVar,
     Function,
 };
 
@@ -86,11 +83,6 @@ struct Decl {
         return reinterpret_cast<ParamVarDecl *>(this);
     }
 
-    TopLevelVarDecl *asTopLevelVarDecl() {
-        assert(declId == DeclID::TopLevelVar);
-        return reinterpret_cast<TopLevelVarDecl *>(this);
-    }
-
     FunctionDecl *asFunctionDecl() {
         assert(declId == DeclID::Function);
         return reinterpret_cast<FunctionDecl *>(this);
@@ -102,10 +94,6 @@ struct Decl {
 
     ParamVarDecl *tryIntoParamVarDecl() {
         return declId == DeclID::ParamVar ? asParamVarDecl() : nullptr;
-    }
-
-    TopLevelVarDecl *tryIntoTopLevelVarDecl() {
-        return declId == DeclID::TopLevelVar ? asTopLevelVarDecl() : nullptr;
     }
 
     FunctionDecl *tryIntoFunctionDecl() {
@@ -194,20 +182,6 @@ struct FunctionDecl
 
     FunctionProtoType *proto;
     CompoundStmt      *body;
-};
-
-//! adapt type derives DeclStmt
-struct TopLevelVarDecl : public Decl {
-    TopLevelVarDecl()
-        : Decl(DeclID::TopLevelVar) {}
-
-    static TopLevelVarDecl *from(DeclStmt *decl) {
-        return reinterpret_cast<TopLevelVarDecl *>(decl);
-    }
-
-    DeclStmt *unwrap() {
-        return reinterpret_cast<DeclStmt *>(this);
-    }
 };
 
 inline VarDecl *
