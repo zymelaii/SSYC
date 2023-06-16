@@ -174,6 +174,11 @@ struct FunctionProtoType
         : Type(TypeID::FunctionProto)
         , returnType{type} {}
 
+    FunctionProtoType(Type* type, TypeList& paramList)
+        : Type(TypeID::FunctionProto)
+        , TypeList(std::move(paramList))
+        , returnType{type} {}
+
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
@@ -190,6 +195,11 @@ struct FunctionProtoType
     FunctionProtoType(Type* type, const std::vector<Type*>& paramList)
         : FunctionProtoType(type) {
         for (auto& e : paramList) { insertToTail(e); }
+    }
+
+    template <typename... Args>
+    static FunctionProtoType* create(Type* returnType, Args... args) {
+        return new FunctionProtoType(returnType, args...);
     }
 
     Type* returnType;
