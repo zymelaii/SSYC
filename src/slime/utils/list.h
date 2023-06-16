@@ -27,8 +27,9 @@ public:
     }
 
     node_type *head();
-
+    node_type *head() const;
     node_type *tail();
+    node_type *tail() const;
 
 protected:
     virtual node_type *headGuard() = 0;
@@ -237,12 +238,22 @@ private:
 
 template <typename T>
 typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() {
+    return const_cast<AbstractListTrait<T> *>(this)->head();
+}
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() {
+    return const_cast<AbstractListTrait<T> *>(this)->tail();
+}
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() const {
     auto node = headGuard()->next_;
     return node == tailGuard() ? nullptr : node;
 }
 
 template <typename T>
-typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() {
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() const {
     auto node = tailGuard()->next_;
     return node == headGuard() ? nullptr : node;
 }
