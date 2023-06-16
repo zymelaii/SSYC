@@ -2,14 +2,23 @@
 
 #include "../utils/list.h"
 #include "type.h"
+#include "stmt.h"
+
+#include <type_traits>
 
 namespace slime::ast {
 
 struct Expr;
 struct Stmt;
+struct ExprStmt;
 struct CompoundStmt;
 
 using ExprList = slime::utils::ListTrait<Expr *>;
+
+enum class ConstantType {
+    i32,
+    f32,
+};
 
 enum class UnaryOperator {
     Pos,   //<! `+` positive
@@ -43,11 +52,50 @@ enum class BinaryOperator {
     Subscript, //<! `[]` (derived)
 };
 
-struct Expr {
+struct Expr : public ExprStmt {
     Expr(Type *valueType)
         : valueType{valueType} {}
 
     Type *valueType;
+};
+
+//! variable or function
+struct DeclRefExpr : public Expr {};
+
+struct ConstantExpr : public Expr {
+    template <typename T>
+    ConstantExpr(T data)
+        : Expr(UnresolvedType::get()) {
+        setData(data);
+    }
+
+    template <typename T>
+    void setData(T data) {
+        if constexpr (std::is_integral_v<T>) {
+            type = ConstantType::i32;
+            i32  = data;
+        } else if constexpr (std::is_floating_point_v<T>) {
+            type = ConstantType::f32;
+            f32  = data;
+        } else {
+            assert(false && "unsupport constant type");
+        }
+    }
+
+    static ConstantExpr *createF32(float data) {
+        return new ConstantExpr(data);
+    }
+
+    static ConstantExpr *createI32(int32_t data) {
+        return new ConstantExpr(data);
+    }
+
+    union {
+        int32_t i32;
+        float   f32;
+    };
+
+    ConstantType type;
 };
 
 //! BinaryExpr -> UnaryOperator Expr
@@ -183,8 +231,9 @@ struct NoInitExpr : public Expr {
     NoInitExpr()
         : Expr(UnresolvedType::get()) {}
 
-    static NoInitExpr *create() {
-        return new NoInitExpr;
+    static NoInitExpr *get() {
+        static NoInitExpr singleton;
+        return &singleton;
     }
 };
 
