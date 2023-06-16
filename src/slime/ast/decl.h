@@ -3,7 +3,7 @@
 #include "../utils/list.h"
 #include "type.h"
 
-#include <stddef.h>
+#include <stdint.h>
 #include <string_view>
 
 namespace slime::ast {
