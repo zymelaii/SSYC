@@ -9,4 +9,8 @@ ParamVarDecl::ParamVarDecl(std::string_view name, Type *type)
 ParamVarDecl::ParamVarDecl(Type *type)
     : VarDecl(DeclID::ParamVar, "", type, NoInitExpr::get()) {}
 
+VarDecl *DeclSpecifier::createVarDecl(std::string_view name) {
+    return VarDecl::create(name, type, NoInitExpr::get());
+}
+
 } // namespace slime::ast

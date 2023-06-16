@@ -60,7 +60,7 @@ struct DeclSpecifier {
         return haveSpecifier(NamedDeclSpecifier::Inline);
     }
 
-    inline VarDecl *createVarDecl(std::string_view name, Expr *initValue);
+    VarDecl *createVarDecl(std::string_view name);
 
     inline FunctionDecl *createFunctionDecl(
         std::string_view name, ParamVarDeclList &params, CompoundStmt *body);
@@ -183,11 +183,6 @@ struct FunctionDecl
     FunctionProtoType *proto;
     CompoundStmt      *body;
 };
-
-inline VarDecl *
-    DeclSpecifier::createVarDecl(std::string_view name, Expr *initValue) {
-    return VarDecl::create(name, type, initValue);
-}
 
 inline FunctionDecl *DeclSpecifier::createFunctionDecl(
     std::string_view name, ParamVarDeclList &params, CompoundStmt *body) {
