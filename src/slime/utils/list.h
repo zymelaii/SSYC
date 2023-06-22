@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <assert.h>
+#include <string.h>
 #include <type_traits>
 #include <utility>
 
@@ -9,6 +10,9 @@ namespace slime::utils {
 
 template <typename T>
 class ListNode;
+
+template <typename T>
+class ListTrait;
 
 template <typename T>
 class AbstractListTrait {
@@ -22,15 +26,10 @@ public:
         return size_;
     }
 
-    node_type *head() {
-        auto node = headGuard()->next_;
-        return node == tailGuard() ? nullptr : node;
-    }
-
-    node_type *tail() {
-        auto node = tailGuard()->next_;
-        return node == headGuard() ? nullptr : node;
-    }
+    node_type *head();
+    node_type *head() const;
+    node_type *tail();
+    node_type *tail() const;
 
 protected:
     virtual node_type *headGuard() = 0;
@@ -44,6 +43,9 @@ template <typename T>
 class ListNode {
 public:
     using value_type = T;
+
+    friend AbstractListTrait<value_type>;
+    friend ListTrait<value_type>;
 
     ListNode()
         : isPtr_{std::is_trivial_v<value_type>}
@@ -137,10 +139,7 @@ public:
         auto node          = list.headGuard();
         node->next_->prev_ = this;
         node->next_        = this;
-        if (parent_ != &list) {
-            removeFromList();
-            parent_ = &list;
-        }
+        parent_            = &list;
         ++list.size_;
     }
 
@@ -149,10 +148,7 @@ public:
         auto node          = list.tailGuard();
         node->prev_->next_ = this;
         node->prev_        = this;
-        if (parent_ != &list) {
-            removeFromList();
-            parent_ = &list;
-        }
+        parent_            = &list;
         ++list.size_;
     }
 
@@ -202,6 +198,31 @@ public:
         guard_[1].prev_   = &guard_[0];
     }
 
+    ListTrait(ListTrait &&list)
+        : ListTrait() {
+        auto head = list.headGuard()->next_;
+        auto tail = list.tailGuard();
+        while (head != tail) {
+            auto node = head->next_;
+            head->insertToTail(*this);
+            head = node;
+        }
+    }
+
+    template <typename... Args>
+    void insertToHead(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        node->insertToHead(*this);
+    }
+
+    template <typename... Args>
+    void insertToTail(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        node->insertToTail(*this);
+    }
+
 private:
     node_type *headGuard() override {
         return &guard_[0];
@@ -214,5 +235,27 @@ private:
 private:
     node_type guard_[2];
 };
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() {
+    return const_cast<AbstractListTrait<T> *>(this)->head();
+}
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() {
+    return const_cast<AbstractListTrait<T> *>(this)->tail();
+}
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() const {
+    auto node = headGuard()->next_;
+    return node == tailGuard() ? nullptr : node;
+}
+
+template <typename T>
+typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() const {
+    auto node = tailGuard()->next_;
+    return node == headGuard() ? nullptr : node;
+}
 
 } // namespace slime::utils

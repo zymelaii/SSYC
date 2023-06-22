@@ -1,12 +1,7 @@
 #pragma once
 
-/*!
- * \brief IR 单文件版
- *
- * 懒得边设计边调格式边实现，先把结果跑出来，以后再重构
- */
-
 #include <stdint.h>
+#include <assert.h>
 #include <list>
 #include <vector>
 #include <string_view>
@@ -45,6 +40,71 @@ enum class TypeID {
     Array,
     Function,
     Pointer, //<! NOTE: 暂未实现
+};
+
+enum class InstructionID {
+    Alloca,        //<! alloca
+    Load,          //<! load
+    Store,         //<! store
+    Ret,           //<! return
+    Br,            //<! branch
+    GetElementPtr, //<! getelementptr
+    Add,           //<! add
+    Sub,           //<! sub
+    Mul,           //<! mul
+    UDiv,          //<! div (unsigned)
+    SDiv,          //<! div (signed)
+    URem,          //<! remainder (unsigned)
+    SRem,          //<! remainder (signed)
+    FNeg,          //<! neg (float)
+    FAdd,          //<! add (float)
+    FSub,          //<! sub (float)
+    FMul,          //<! mul (float)
+    FDiv,          //<! div (float)
+    FRem,          //<! remainder (float)
+    Shl,           //<! shl
+    LShr,          //<! shr (logical)
+    AShr,          //<! shr (arithmetic)
+    And,           //<! bitwise and
+    Or,            //<! bitwise or
+    Xor,           //<! xor
+    FPToUI,        //<! floating point -> unsigned int
+    FPToSI,        //<! floating point -> signed int
+    UIToFP,        //<! unsigned int -> floating point
+    SIToFP,        //<! signed int -> floating point
+    ICmp,          //<! cmp (int)
+    FCmp,          //<! cmp (float)
+    Phi,           //<! Phi node instruction
+    Call,          //<! call
+};
+
+enum class ComparePredicationType {
+    EQ,    //<! equal
+    NE,    //<! not equal
+    UGT,   //<! 1. unsigned greater than (icmp)
+           //<! 2. unordered or greater than (fcmp)
+    UGE,   //<! 1. unsigned greater or equal (icmp)
+           //<! 2. unordered or greater than or equal (fcmp)
+    ULT,   //<! 1. unsigned less than (icmp)
+           //<! 2. unordered or less than (fcmp)
+    ULE,   //<! 1. unsigned less or equal (icmp)
+           //<! 2. unordered or less than or equal (fcmp)
+    SGT,   //<! signed greater than
+    SGE,   //<! signed greater or equal
+    SLT,   //<! signed less than
+    SLE,   //<! signed less or equal
+    FALSE, //<! no comparison, always returns false
+    OEQ,   //<! ordered and equal
+    OGT,   //<! ordered and greater than
+    OGE,   //<! ordered and greater than or equal
+    OLT,   //<! ordered and less than
+    OLE,   //<! ordered and less than or equal
+    ONE,   //<! ordered and not equal
+    ORD,   //<! ordered (no nans)
+    UEQ,   //<! unordered or equal
+    UNE,   //<! unordered or not equal
+    UNO,   //<! unordered (either nans)
+    TRUE,  //<! no comparison, always returns true
 };
 
 struct Type {
@@ -202,6 +262,189 @@ struct Function : public GlobalObject {
 
     std::vector<Parameter *> params; //<! 参数列表
     std::list<BasicBlock *>  blocks; //<! 基本块列表（顺序）
+};
+
+struct Instruction : public User {
+    Instruction(
+        Type         *type,
+        InstructionID instType,
+        size_t        totalUse,
+        Use          *useList = nullptr);
+
+    BasicBlock   *parent;   //<! 所属的基本块
+    InstructionID instType; //<! 指令类型
+};
+
+struct AllocaInst : public Instruction {
+    AllocaInst(Type *type)
+        : Instruction(Type::getPointerType(type), InstructionID::Alloca, 0) {}
+};
+
+struct LoadInst : public Instruction {
+    LoadInst(Type *type, Value *address)
+        : Instruction(type, InstructionID::Load, 1) {
+        useAt(0) = address;
+    }
+};
+
+struct StoreInst : public Instruction {
+    StoreInst(Value *value, Value *address)
+        : Instruction(Type::getVoidType(), InstructionID::Store, 2) {
+        useAt(0) = value;
+        useAt(1) = address;
+    }
+};
+
+struct ReturnInst : public Instruction {
+    ReturnInst(Value *returnValue)
+        : Instruction(
+            Type::getVoidType(), InstructionID::Ret, returnValue != nullptr) {
+        if (returnValue != nullptr) { useAt(0) = returnValue; }
+    }
+};
+
+struct BranchInst : public Instruction {
+    BranchInst(BasicBlock *dest)
+        : Instruction(Type::getVoidType(), InstructionID::Br, 1) {
+        useAt(0) = dest;
+    }
+
+    BranchInst(
+        Value *condition, BasicBlock *branchOnTrue, BasicBlock *branchOnFalse)
+        : Instruction(Type::getVoidType(), InstructionID::Br, 3) {
+        useAt(0) = condition;
+        useAt(1) = branchOnTrue;
+        useAt(2) = branchOnFalse;
+    }
+};
+
+struct GetElementPtrInst : public Instruction {
+    GetElementPtrInst(Value *address, Value *index)
+        : Instruction(
+            Type::getPointerType(getElementType(address)),
+            InstructionID::GetElementPtr,
+            3) {
+        useAt(0) = address;
+        useAt(1) = new ConstantInt(0);
+        useAt(2) = index;
+    }
+
+    static Type *getElementType(Value *value) {
+        auto ptr  = static_cast<PointerType *>(value->type);
+        auto type = static_cast<SequentialType *>(ptr->elementType());
+        return type->elementType();
+    }
+};
+
+struct BinaryOperatorInst : public Instruction {
+    BinaryOperatorInst(InstructionID op, Value *lhs, Value *rhs)
+        : Instruction(indicateResultType(lhs, rhs), op, 2) {
+        useAt(0) = lhs;
+        useAt(1) = rhs;
+    }
+
+    static Type *indicateResultType(Value *lhs, Value *rhs) {
+        assert(lhs->type->id == rhs->type->id);
+        switch (lhs->type->id) {
+            case TypeID::Integer: {
+                return Type::getIntegerType();
+            } break;
+            case TypeID::Float: {
+                return Type::getFloatType();
+            } break;
+            case TypeID::Token:
+            case TypeID::Label:
+            case TypeID::Void:
+            case TypeID::Array:
+            case TypeID::Function:
+            case TypeID::Pointer: {
+                assert(
+                    false
+                    && "binary-operator instruction accepts only float and "
+                       "i32");
+            } break;
+        }
+        return Type::getVoidType();
+    }
+};
+
+struct CmpInst : public Instruction {
+    CmpInst(
+        InstructionID          id,
+        ComparePredicationType predicate,
+        Value                 *lhs,
+        Value                 *rhs)
+        : Instruction(Type::getIntegerType(), id, 2)
+        , predicate{predicate} {
+        useAt(0) = lhs;
+        useAt(1) = rhs;
+    }
+
+    static std::string_view getPredicateName(ComparePredicationType predicate);
+
+    ComparePredicationType predicate;
+};
+
+struct ICmpInst : public CmpInst {
+    ICmpInst(ComparePredicationType predicate, Value *lhs, Value *rhs)
+        : CmpInst(InstructionID::ICmp, predicate, lhs, rhs) {}
+};
+
+struct FCmpInst : public CmpInst {
+    FCmpInst(ComparePredicationType predicate, Value *lhs, Value *rhs)
+        : CmpInst(InstructionID::FCmp, predicate, lhs, rhs) {}
+};
+
+struct PhiInst : public Instruction {
+    PhiInst(Value *firstValue, BasicBlock *block)
+        : Instruction(firstValue->type, InstructionID::Phi, 2)
+        , totalIncomings{1} {
+        useAt(0) = firstValue;
+        useAt(1) = block;
+    }
+
+    void addIncomingBlock(Value *value, BasicBlock *block) {
+        if (totalIncomings * 2 == totalUse) {
+            auto uses = new Use[totalUse + 2];
+            std::copy(useList, useList + totalUse, uses);
+            totalUse += 2;
+            delete[] useList;
+            useList = uses;
+        }
+        useAt(totalIncomings * 2)     = value;
+        useAt(totalIncomings * 2 + 1) = block;
+        ++totalIncomings;
+    }
+
+    void removeIncomingBlock(size_t index) {
+        assert(index < totalIncomings);
+        if (index + 1 == totalIncomings) {
+            useAt(index * 2).reset();
+            useAt(index * 2 + 1).reset();
+        } else {
+            auto &v              = useAt((totalIncomings - 1) * 2);
+            auto &b              = useAt((totalIncomings - 1) * 2 + 1);
+            useAt(index * 2)     = v.value;
+            useAt(index * 2 + 1) = b.value;
+            v.reset();
+            b.reset();
+        }
+        --totalIncomings;
+    }
+
+    size_t totalIncomings;
+};
+
+struct CallInst : public Instruction {
+    CallInst(Function *func, const std::vector<Value *> &args)
+        : Instruction(
+            static_cast<FunctionType *>(func->type)->returnType,
+            InstructionID::Call,
+            func->params.size() + 1) {
+        assert(totalUse - 1 == args.size());
+        useAt(0) = func;
+        for (int i = 0; i < args.size(); ++i) { useAt(i + 1) = args[i]; }
+    }
 };
 
 } // namespace slime::ir
