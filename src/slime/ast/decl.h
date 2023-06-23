@@ -2,6 +2,7 @@
 
 #include "../utils/list.h"
 #include "type.h"
+#include "scope.h"
 
 #include <stdint.h>
 #include <string_view>
@@ -106,8 +107,10 @@ struct Decl {
 struct NamedDecl : public Decl {
     NamedDecl(DeclID declId, std::string_view name)
         : Decl(declId)
-        , name{name} {}
+        , name{name}
+        , scope() {}
 
+    Scope            scope;
     std::string_view name;
 };
 
