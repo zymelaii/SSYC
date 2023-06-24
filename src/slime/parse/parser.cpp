@@ -26,6 +26,17 @@ bool Parser::expect(TOKEN token, const char *msg) {
     return false;
 }
 
+std::string_view Parser::lookupStringLiteral(std::string_view s) {
+    const char *raw = s.data();
+    if (sharedStringLiteralSet.count(raw) == 0) {
+        auto s       = strdup(raw);
+        auto [_, ok] = sharedStringLiteralSet.insert(s);
+        return s;
+    } else {
+        return *sharedStringLiteralSet.find(raw);
+    }
+}
+
 //! 初始化声明环境
 void Parser::enterdecl() {
     if (ls.token.id == TOKEN::TK_CONST) {

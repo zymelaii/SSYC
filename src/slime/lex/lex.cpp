@@ -608,6 +608,10 @@ TOKEN LexState::lookahead() {
     return nexttoken.id;
 }
 
+std::set<const char*>& LexState::sharedStringLiteralSet() {
+    return d->strtable;
+}
+
 //! format token into string buffer
 const char* tok2str(TOKEN token, char* buffer, size_t len) {
     auto itok = static_cast<int>(token);

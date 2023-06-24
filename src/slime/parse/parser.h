@@ -25,11 +25,16 @@ struct symtable {
 
 class Parser {
 public:
-    LexState   ls;
-    ParseState ps;
+    LexState              ls;
+    ParseState            ps;
+    std::set<const char*> sharedStringLiteralSet;
 
-    void next();
-    bool expect(TOKEN token, const char* msg = nullptr);
+    Parser()
+        : sharedStringLiteralSet{ls.sharedStringLiteralSet()} {}
+
+    void             next();
+    bool             expect(TOKEN token, const char* msg = nullptr);
+    std::string_view lookupStringLiteral(std::string_view s);
 
 protected:
     void enterblock();
