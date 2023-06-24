@@ -26,13 +26,35 @@ public:
         return size_;
     }
 
-    node_type *head();
-    node_type *head() const;
-    node_type *tail();
-    node_type *tail() const;
+    node_type *head() {
+        auto node = headGuard()->next_;
+        return node == tailGuard() ? nullptr : node;
+    }
+
+    node_type *tail() {
+        auto node = tailGuard()->next_;
+        return node == headGuard() ? nullptr : node;
+    }
+
+    node_type *head() const {
+        return const_cast<AbstractListTrait<T> *>(this)->head();
+    }
+
+    node_type *tail() const {
+        return const_cast<AbstractListTrait<T> *>(this)->tail();
+    }
 
 protected:
+    node_type *headGuard() const {
+        return const_cast<AbstractListTrait<T> *>(this)->headGuard();
+    }
+
+    node_type *tailGuard() const {
+        return const_cast<AbstractListTrait<T> *>(this)->tailGuard();
+    }
+
     virtual node_type *headGuard() = 0;
+
     virtual node_type *tailGuard() = 0;
 
 private:
@@ -235,27 +257,5 @@ private:
 private:
     node_type guard_[2];
 };
-
-template <typename T>
-typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() {
-    return const_cast<AbstractListTrait<T> *>(this)->head();
-}
-
-template <typename T>
-typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() {
-    return const_cast<AbstractListTrait<T> *>(this)->tail();
-}
-
-template <typename T>
-typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::head() const {
-    auto node = headGuard()->next_;
-    return node == tailGuard() ? nullptr : node;
-}
-
-template <typename T>
-typename AbstractListTrait<T>::node_type *AbstractListTrait<T>::tail() const {
-    auto node = tailGuard()->next_;
-    return node == headGuard() ? nullptr : node;
-}
 
 } // namespace slime::utils

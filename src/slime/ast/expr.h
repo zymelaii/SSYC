@@ -3,6 +3,7 @@
 #include "../utils/list.h"
 #include "type.h"
 #include "stmt.h"
+#include "operators.def"
 
 #include <type_traits>
 
@@ -19,38 +20,6 @@ using ExprList = slime::utils::ListTrait<Expr *>;
 enum class ConstantType {
     i32,
     f32,
-};
-
-enum class UnaryOperator {
-    Pos,   //<! `+` positive
-    Neg,   //<! `-` negative
-    Not,   //<! `!` logical not
-    Inv,   //<! `~` bitwise inverse
-    Paren, //<! `()` (derived)
-};
-
-enum class BinaryOperator {
-    Assign,    //<! `=` assign
-    Add,       //<! `+` add
-    Sub,       //<! `-` sub
-    Mul,       //<! `*` mul
-    Div,       //<! `/` div
-    Mod,       //<! `%` remainder
-    And,       //<! `&` bitwise and
-    Or,        //<! `|` bitwise or
-    Xor,       //<! `^` xor
-    LAnd,      //<! `&&` logical and
-    LOr,       //<! `||` logical or
-    LT,        //<! `<` less than
-    LE,        //<! `<=` less than or equal
-    GT,        //<! `>` greater than
-    GE,        //<! `>=` greater than or equal
-    EQ,        //<! `==` equal
-    NE,        //<! `!=` not equal
-    Shl,       //<! `<<` bitwise shift left
-    Shr,       //<! `>>` bitwise shift right
-    Comma,     //<! `,` (derived)
-    Subscript, //<! `[]` (derived)
 };
 
 struct Expr : public ExprStmt {

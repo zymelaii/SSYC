@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/list.h"
+#include "cast.def"
 
 #include <vector>
 #include <assert.h>
@@ -40,25 +41,10 @@ struct Type {
 
     static Type* getElementType(Type* type);
 
-    BuiltinType* asBuiltin() {
-        assert(typeId == TypeID::Builtin);
-        return reinterpret_cast<BuiltinType*>(this);
-    }
-
-    ArrayType* asArray() {
-        assert(typeId == TypeID::Array);
-        return reinterpret_cast<ArrayType*>(this);
-    }
-
-    IncompleteArrayType* asIncompleteArray() {
-        assert(typeId == TypeID::IncompleteArray);
-        return reinterpret_cast<IncompleteArrayType*>(this);
-    }
-
-    FunctionProtoType* asFunctionProto() {
-        assert(typeId == TypeID::FunctionProto);
-        return reinterpret_cast<FunctionProtoType*>(this);
-    }
+    RegisterCastWithoutSuffix(typeId, Builtin, Type, TypeID);
+    RegisterCastWithoutSuffix(typeId, Array, Type, TypeID);
+    RegisterCastWithoutSuffix(typeId, IncompleteArray, Type, TypeID);
+    RegisterCastWithoutSuffix(typeId, FunctionProto, Type, TypeID);
 
     Type* extendIntoArrayType(Expr* length);
 

@@ -2,6 +2,8 @@
 
 #include "../utils/list.h"
 #include "type.h"
+#include "scope.h"
+#include "cast.def"
 
 #include <stdint.h>
 #include <string_view>
@@ -33,6 +35,18 @@ struct DeclSpecifier {
         : type{nullptr}
         , specifiers{0} {}
 
+    DeclSpecifier(const DeclSpecifier &specifier)
+        : type{specifier.type}
+        , specifiers{specifier.specifiers} {}
+
+    static DeclSpecifier *create() {
+        return new DeclSpecifier;
+    }
+
+    DeclSpecifier *clone() {
+        return new DeclSpecifier(*this);
+    }
+
     DeclSpecifier &addSpecifier(NamedDeclSpecifier specifier) {
         specifiers |= static_cast<uint8_t>(specifier);
         return *this;
@@ -62,7 +76,9 @@ struct DeclSpecifier {
 
     VarDecl *createVarDecl(std::string_view name);
 
-    inline FunctionDecl *createFunctionDecl(
+    ParamVarDecl *createParamVarDecl(std::string_view name = "");
+
+    FunctionDecl *createFunctionDecl(
         std::string_view name, ParamVarDeclList &params, CompoundStmt *body);
 
     Type   *type;
@@ -73,78 +89,66 @@ struct Decl {
     Decl(DeclID declId)
         : declId{declId} {}
 
-    VarDecl *asVarDecl() {
-        assert(declId == DeclID::Var);
-        return reinterpret_cast<VarDecl *>(this);
-    }
-
-    ParamVarDecl *asParamVarDecl() {
-        assert(declId == DeclID::ParamVar);
-        return reinterpret_cast<ParamVarDecl *>(this);
-    }
-
-    FunctionDecl *asFunctionDecl() {
-        assert(declId == DeclID::Function);
-        return reinterpret_cast<FunctionDecl *>(this);
-    }
-
-    VarDecl *tryIntoVarDecl() {
-        return declId == DeclID::Var ? asVarDecl() : nullptr;
-    }
-
-    ParamVarDecl *tryIntoParamVarDecl() {
-        return declId == DeclID::ParamVar ? asParamVarDecl() : nullptr;
-    }
-
-    FunctionDecl *tryIntoFunctionDecl() {
-        return declId == DeclID::Function ? asFunctionDecl() : nullptr;
-    }
+    RegisterCast(declId, Var, Decl, DeclID);
+    RegisterCast(declId, ParamVar, Decl, DeclID);
+    RegisterCast(declId, Function, Decl, DeclID);
 
     DeclID declId;
 };
 
 struct NamedDecl : public Decl {
-    NamedDecl(DeclID declId, std::string_view name)
+    NamedDecl(DeclID declId, std::string_view name, DeclSpecifier *specifier)
         : Decl(declId)
-        , name{name} {}
+        , name{name}
+        , specifier{specifier} {}
+
+    Type *type() {
+        return specifier->type;
+    }
 
     std::string_view name;
+    Scope            scope;
+    DeclSpecifier   *specifier;
 };
 
 struct DeclaratorDecl : public NamedDecl {
-    DeclaratorDecl(DeclID declId, std::string_view name)
-        : NamedDecl(declId, name) {}
+    DeclaratorDecl(
+        DeclID declId, std::string_view name, DeclSpecifier *specifier)
+        : NamedDecl(declId, name, specifier) {}
 };
 
 struct VarDecl : public DeclaratorDecl {
-    VarDecl(DeclID declId, std::string_view name, Type *type, Expr *initValue)
-        : DeclaratorDecl(declId, name)
-        , type{type}
+    VarDecl(
+        DeclID           declId,
+        std::string_view name,
+        DeclSpecifier   *specifier,
+        Expr            *initValue)
+        : DeclaratorDecl(declId, name, specifier)
         , initValue{initValue} {}
 
-    VarDecl(std::string_view name, Type *type, Expr *initValue)
-        : DeclaratorDecl(DeclID::Var, name)
-        , type{type}
+    VarDecl(std::string_view name, DeclSpecifier *specifier, Expr *initValue)
+        : DeclaratorDecl(DeclID::Var, name, specifier)
         , initValue{initValue} {}
 
-    static VarDecl *create(std::string_view name, Type *type, Expr *initValue) {
-        return new VarDecl(name, type, initValue);
+    static VarDecl *create(
+        std::string_view name, DeclSpecifier *specifier, Expr *initValue) {
+        return new VarDecl(name, specifier, initValue);
     }
 
-    Type *type;
     Expr *initValue;
 };
 
 struct ParamVarDecl : public VarDecl {
-    ParamVarDecl(std::string_view name, Type *type);
-    ParamVarDecl(Type *type);
+    ParamVarDecl(std::string_view name, DeclSpecifier *specifier);
+    ParamVarDecl(DeclSpecifier *specifier);
 
-    static ParamVarDecl *create(std::string_view name, Type *type) {
-        return new ParamVarDecl(name, type);
+    static ParamVarDecl *
+        create(std::string_view name, DeclSpecifier *specifier) {
+        return new ParamVarDecl(name, specifier);
     }
 
-    static ParamVarDecl *create(Type *type) {
-        return new ParamVarDecl(type);
+    static ParamVarDecl *create(DeclSpecifier *specifier) {
+        return new ParamVarDecl(specifier);
     }
 
     bool isNoEffectParam() {
@@ -160,33 +164,62 @@ struct FunctionDecl
         Type             *returnType,
         ParamVarDeclList &params,
         CompoundStmt     *body)
-        : DeclaratorDecl(DeclID::Function, name)
+        : DeclaratorDecl(DeclID::Function, name, DeclSpecifier::create())
         , ParamVarDeclList(std::move(params))
-        , proto{nullptr}
         , body{body} {
+        TypeList list;
+        extractTypeListFromParams(&list, params);
+        specifier->type =
+            FunctionProtoType::create(returnType, std::move(list));
+    }
+
+    FunctionDecl(
+        std::string_view  name,
+        DeclSpecifier    *specifier,
+        ParamVarDeclList &params,
+        CompoundStmt     *body)
+        : DeclaratorDecl(DeclID::Function, name, specifier)
+        , ParamVarDeclList(std::move(params))
+        , body{body} {}
+
+    static void extractTypeListFromParams(
+        TypeList *typeListPtr, const ParamVarDeclList &params) {
         TypeList list;
         for (auto param = params.head(); param != nullptr;
              param      = param->next()) {
-            list.insertToTail(param->value()->type);
+            list.insertToTail(param->value()->type());
         }
-        proto = FunctionProtoType::create(returnType, std::move(list));
+        new (typeListPtr) TypeList(std::move(list));
     }
 
     static FunctionDecl *create(
         std::string_view  name,
-        Type             *returnType,
+        DeclSpecifier    *specifier,
         ParamVarDeclList &params,
         CompoundStmt     *body) {
-        return new FunctionDecl(name, returnType, params, body);
+        TypeList list;
+        extractTypeListFromParams(&list, params);
+        specifier = specifier->clone();
+        specifier->type =
+            FunctionProtoType::create(specifier->type, std::move(list));
+        return new FunctionDecl(name, specifier, params, body);
     }
 
-    FunctionProtoType *proto;
-    CompoundStmt      *body;
+    FunctionProtoType *proto() {
+        return type()->asFunctionProto();
+    }
+
+    CompoundStmt *body;
 };
+
+inline ParamVarDecl *DeclSpecifier::createParamVarDecl(std::string_view name) {
+    return ParamVarDecl::create(name, this);
+}
 
 inline FunctionDecl *DeclSpecifier::createFunctionDecl(
     std::string_view name, ParamVarDeclList &params, CompoundStmt *body) {
-    return FunctionDecl::create(name, type, params, body);
+    //! FIXME: here assume returnType == specifier->type
+    return FunctionDecl::create(name, this, params, body);
 }
 
 } // namespace slime::ast
