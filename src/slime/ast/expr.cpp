@@ -2,6 +2,55 @@
 
 namespace slime::ast {
 
+bool Expr::isNoEffectExpr() {
+    switch (exprId) {
+        case ExprID::DeclRef:
+        case ExprID::Constant: {
+            return true;
+        } break;
+        case ExprID::Unary: {
+            return asUnary()->operand->isNoEffectExpr();
+        } break;
+        case ExprID::Binary: {
+            auto e = asBinary();
+            return e->op != BinaryOperator::Assign && e->lhs->isNoEffectExpr()
+                && e->rhs->isNoEffectExpr();
+        } break;
+        case ExprID::Comma: {
+            auto node = asComma()->head();
+            while (node != nullptr) {
+                if (!node->value()->isNoEffectExpr()) { return false; }
+                node = node->next();
+            }
+            return true;
+        } break;
+        case ExprID::Paren: {
+            return asParen()->inner->isNoEffectExpr();
+        } break;
+        case ExprID::Stmt: {
+            //! FIXME: unsupport StmtExpr now
+            return false;
+        } break;
+        case ExprID::Call: {
+            return false;
+        } break;
+        case ExprID::Subscript: {
+            return false;
+        } break;
+        case ExprID::InitList: {
+            auto node = asInitList()->head();
+            while (node != nullptr) {
+                if (!node->value()->isNoEffectExpr()) { return false; }
+                node = node->next();
+            }
+            return true;
+        } break;
+        case ExprID::NoInit: {
+            return false;
+        } break;
+    }
+}
+
 Type *UnaryExpr::resolveType(UnaryOperator op, Type *type) {
     switch (op) {
         case UnaryOperator::Pos:

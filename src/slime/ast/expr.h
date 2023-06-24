@@ -3,7 +3,9 @@
 #include "../utils/list.h"
 #include "type.h"
 #include "stmt.h"
+#include "cast.def"
 #include "operators.def"
+#include "expr.def"
 
 #include <type_traits>
 
@@ -14,6 +16,17 @@ struct Stmt;
 struct ExprStmt;
 struct CompoundStmt;
 struct NamedDecl;
+struct DeclRefExpr;
+struct ConstantExpr;
+struct UnaryExpr;
+struct BinaryExpr;
+struct CommaExpr;
+struct ParenExpr;
+struct StmtExpr;
+struct CallExpr;
+struct SubscriptExpr;
+struct InitListExpr;
+struct NoInitExpr;
 
 using ExprList = slime::utils::ListTrait<Expr *>;
 
@@ -23,21 +36,45 @@ enum class ConstantType {
 };
 
 struct Expr : public ExprStmt {
-    Expr(Type *valueType)
-        : valueType{valueType} {}
+    Expr(ExprID exprId, Type *valueType)
+        : exprId{exprId}
+        , valueType{valueType} {}
 
-    Type *valueType;
+    RegisterCastWithoutSuffix(exprId, DeclRef, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Constant, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Unary, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Binary, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Comma, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Paren, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Stmt, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Call, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, Subscript, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, InitList, Expr, ExprID);
+    RegisterCastWithoutSuffix(exprId, NoInit, Expr, ExprID);
+
+    bool isNoEffectExpr();
+
+    ExprID exprId;
+    Type  *valueType;
 };
 
 //! variable or function
 struct DeclRefExpr : public Expr {
+    DeclRefExpr()
+        : Expr(ExprID::DeclRef, UnresolvedType::get()) {}
+
+    void setSource(NamedDecl *source) {
+        this->source = source;
+        valueType    = this->source->type();
+    }
+
     NamedDecl *source;
 };
 
 struct ConstantExpr : public Expr {
     template <typename T>
     ConstantExpr(T data)
-        : Expr(UnresolvedType::get()) {
+        : Expr(ExprID::Constant, UnresolvedType::get()) {
         setData(data);
     }
 
@@ -73,7 +110,7 @@ struct ConstantExpr : public Expr {
 //! BinaryExpr -> UnaryOperator Expr
 struct UnaryExpr : public Expr {
     UnaryExpr(UnaryOperator op, Expr *operand)
-        : Expr(resolveType(op, operand->valueType))
+        : Expr(ExprID::Unary, resolveType(op, operand->valueType))
         , op{op}
         , operand{operand} {}
 
@@ -86,7 +123,7 @@ struct UnaryExpr : public Expr {
 //! BinaryExpr -> Expr BinaryOperator Expr
 struct BinaryExpr : public Expr {
     BinaryExpr(Type *type, BinaryOperator op, Expr *lhs, Expr *rhs)
-        : Expr(type)
+        : Expr(ExprID::Binary, type)
         , op{op}
         , lhs{lhs}
         , rhs{rhs} {}
@@ -103,10 +140,10 @@ struct CommaExpr
     : public Expr
     , public ExprList {
     CommaExpr()
-        : Expr(NoneType::get()) {}
+        : Expr(ExprID::Comma, NoneType::get()) {}
 
     CommaExpr(ExprList &list)
-        : Expr(NoneType::get())
+        : Expr(ExprID::Comma, NoneType::get())
         , ExprList(std::move(list)) {
         if (tail() != nullptr) { valueType = tail()->value()->valueType; }
     }
@@ -120,7 +157,7 @@ struct CommaExpr
 //! ParenExpr -> '(' Expr ')'
 struct ParenExpr : public Expr {
     ParenExpr(Expr *inner)
-        : Expr(inner->valueType)
+        : Expr(ExprID::Paren, inner->valueType)
         , inner{inner} {}
 
     static ParenExpr *create(Expr *inner) {
@@ -142,11 +179,11 @@ struct StmtExpr : public Expr {
 //! CallExpr -> Expr '(' { Expr } ')'
 struct CallExpr : public Expr {
     CallExpr(Expr *callable)
-        : Expr(callable->valueType->asFunctionProto()->returnType)
+        : Expr(ExprID::Call, callable->valueType->asFunctionProto()->returnType)
         , callable{callable} {}
 
     CallExpr(Expr *callable, ExprList &argList)
-        : Expr(callable->valueType->asFunctionProto()->returnType)
+        : Expr(ExprID::Call, callable->valueType->asFunctionProto()->returnType)
         , callable{callable}
         , argList(std::move(argList)) {}
 
@@ -165,10 +202,10 @@ struct CallExpr : public Expr {
 //! SubscriptExpr -> Expr '[' Expr ']'
 struct SubscriptExpr : public Expr {
     SubscriptExpr()
-        : Expr(UnresolvedType::get()) {}
+        : Expr(ExprID::Subscript, UnresolvedType::get()) {}
 
     SubscriptExpr(Expr *lhs, Expr *rhs)
-        : Expr(Type::getElementType(lhs->valueType)) {}
+        : Expr(ExprID::Subscript, Type::getElementType(lhs->valueType)) {}
 
     static SubscriptExpr *create(Expr *lhs, Expr *rhs) {
         return new SubscriptExpr(lhs, rhs);
@@ -183,10 +220,10 @@ struct InitListExpr
     : public Expr
     , public ExprList {
     InitListExpr()
-        : Expr(UnresolvedType::get()) {}
+        : Expr(ExprID::InitList, UnresolvedType::get()) {}
 
     InitListExpr(ExprList &list)
-        : Expr(UnresolvedType::get())
+        : Expr(ExprID::InitList, UnresolvedType::get())
         , ExprList(std::move(list)) {}
 
     static InitListExpr *create() {
@@ -201,7 +238,7 @@ struct InitListExpr
 //! sugar expr to mark up var decl without init
 struct NoInitExpr : public Expr {
     NoInitExpr()
-        : Expr(UnresolvedType::get()) {}
+        : Expr(ExprID::NoInit, UnresolvedType::get()) {}
 
     static NoInitExpr *get() {
         static NoInitExpr singleton;
