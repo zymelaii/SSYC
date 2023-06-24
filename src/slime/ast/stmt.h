@@ -3,6 +3,8 @@
 #include "../utils/list.h"
 #include "type.h"
 #include "decl.h"
+#include "statements.def"
+#include "cast.def"
 
 namespace slime::ast {
 
@@ -23,112 +25,20 @@ struct ReturnStmt;
 using StmtList    = slime::utils::ListTrait<Stmt*>;
 using VarDeclList = slime::utils::ListTrait<VarDecl*>;
 
-enum class StmtID {
-    Null,
-    Decl,
-    Expr,
-    Compound,
-    If,
-    Do,
-    While,
-    Break,
-    Continue,
-    Return,
-};
-
 struct Stmt {
     Stmt(StmtID stmtId)
         : stmtId{stmtId} {}
 
-    NullStmt* asNullStmt() {
-        assert(stmtId == StmtID::Null);
-        return reinterpret_cast<NullStmt*>(this);
-    }
-
-    DeclStmt* asDeclStmt() {
-        assert(stmtId == StmtID::Decl);
-        return reinterpret_cast<DeclStmt*>(this);
-    }
-
-    ExprStmt* asExprStmt() {
-        assert(stmtId == StmtID::Expr);
-        return reinterpret_cast<ExprStmt*>(this);
-    }
-
-    CompoundStmt* asCompoundStmt() {
-        assert(stmtId == StmtID::Compound);
-        return reinterpret_cast<CompoundStmt*>(this);
-    }
-
-    IfStmt* asIfStmt() {
-        assert(stmtId == StmtID::If);
-        return reinterpret_cast<IfStmt*>(this);
-    }
-
-    DoStmt* asDoStmt() {
-        assert(stmtId == StmtID::Do);
-        return reinterpret_cast<DoStmt*>(this);
-    }
-
-    WhileStmt* asWhileStmt() {
-        assert(stmtId == StmtID::While);
-        return reinterpret_cast<WhileStmt*>(this);
-    }
-
-    BreakStmt* asBreakStmt() {
-        assert(stmtId == StmtID::Break);
-        return reinterpret_cast<BreakStmt*>(this);
-    }
-
-    ContinueStmt* asContinueStmt() {
-        assert(stmtId == StmtID::Continue);
-        return reinterpret_cast<ContinueStmt*>(this);
-    }
-
-    ReturnStmt* asReturnStmt() {
-        assert(stmtId == StmtID::Return);
-        return reinterpret_cast<ReturnStmt*>(this);
-    }
-
-    NullStmt* tryIntoNullStmt() {
-        return stmtId == StmtID::Null ? asNullStmt() : nullptr;
-    }
-
-    DeclStmt* tryIntoDeclStmt() {
-        return stmtId == StmtID::Decl ? asDeclStmt() : nullptr;
-    }
-
-    ExprStmt* tryIntoExprStmt() {
-        return stmtId == StmtID::Expr ? asExprStmt() : nullptr;
-    }
-
-    CompoundStmt* tryIntoCompoundStmt() {
-        return stmtId == StmtID::Compound ? asCompoundStmt() : nullptr;
-    }
-
-    IfStmt* tryIntoIfStmt() {
-        return stmtId == StmtID::If ? asIfStmt() : nullptr;
-    }
-
-    DoStmt* tryIntoDoStmt() {
-        return stmtId == StmtID::Do ? asDoStmt() : nullptr;
-    }
-
-    WhileStmt* tryIntoWhileStmt() {
-        return stmtId == StmtID::While ? asWhileStmt() : nullptr;
-    }
-
-    BreakStmt* tryIntoBreakStmt() {
-        return stmtId == StmtID::Break ? asBreakStmt() : nullptr;
-    }
-
-    ContinueStmt* tryIntoContinueStmt() {
-        return stmtId == StmtID::Continue ? asContinueStmt() : nullptr;
-    }
-
-    ReturnStmt* tryIntoReturnStmt() {
-        return stmtId == StmtID::Return ? asReturnStmt() : nullptr;
-    }
+    RegisterCast(stmtId, Null, Stmt, StmtID);
+    RegisterCast(stmtId, Decl, Stmt, StmtID);
+    RegisterCast(stmtId, Expr, Stmt, StmtID);
+    RegisterCast(stmtId, Compound, Stmt, StmtID);
+    RegisterCast(stmtId, If, Stmt, StmtID);
+    RegisterCast(stmtId, Do, Stmt, StmtID);
+    RegisterCast(stmtId, While, Stmt, StmtID);
+    RegisterCast(stmtId, Break, Stmt, StmtID);
+    RegisterCast(stmtId, Continue, Stmt, StmtID);
+    RegisterCast(stmtId, Return, Stmt, StmtID);
 
     Type* implicitValueType();
 

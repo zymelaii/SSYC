@@ -1,0 +1,33 @@
+#pragma once
+
+#include <assert.h>
+
+#define RegisterAsCastWithoutSuffix(typeId, name, suffix, enumScope) \
+ name##suffix *as##name() {                                          \
+  assert(typeId == enumScope::name);                                 \
+  return reinterpret_cast<name##suffix *>(this);                     \
+ }
+
+#define RegisterTryIntoCastWithoutSuffix(typeId, name, suffix, enumScope) \
+ name##suffix *tryInto##name() {                                          \
+  return typeId == enumScope::name ? as##name() : nullptr;        \
+ }
+
+#define RegisterCastWithoutSuffix(typeId, name, suffix, enumScope) \
+ RegisterAsCastWithoutSuffix(typeId, name, suffix, enumScope)      \
+     RegisterTryIntoCastWithoutSuffix(typeId, name, suffix, enumScope)
+
+#define RegisterAsCast(typeId, name, suffix, enumScope) \
+ name##suffix *as##name##suffix() {                     \
+  assert(typeId == enumScope::name);                    \
+  return reinterpret_cast<name##suffix *>(this);        \
+ }
+
+#define RegisterTryIntoCast(typeId, name, suffix, enumScope)       \
+ name##suffix *tryInto##name##suffix() {                           \
+  return typeId == enumScope::name ? as##name##suffix() : nullptr; \
+ }
+
+#define RegisterCast(typeId, name, suffix, enumScope) \
+ RegisterAsCast(typeId, name, suffix, enumScope)      \
+     RegisterTryIntoCast(typeId, name, suffix, enumScope)
