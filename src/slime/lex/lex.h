@@ -2,6 +2,7 @@
 
 #include "token.h"
 
+#include <set>
 #include <memory>
 #include <istream>
 
@@ -47,6 +48,8 @@ public:
     //! lookahead one token
     //! FIXME: lookahead() changes column as well
     TOKEN lookahead();
+
+    std::set<const char *> &sharedStringSet();
 
 protected:
     void resetstream(std::istream *input);

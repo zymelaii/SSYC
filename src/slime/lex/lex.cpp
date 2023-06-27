@@ -11,12 +11,10 @@
 namespace slime {
 
 #ifndef __STDC_LIB_EXT1__
-static void strcpy_s(char *dest, size_t n, const char *src) {
-    char *p = dest;
-    const char *q = src;
-    while (--n >= 0 && *q != '\0') {
-        *p++ = *q++;
-    }
+static void strcpy_s(char* dest, size_t n, const char* src) {
+    char*       p = dest;
+    const char* q = src;
+    while (--n >= 0 && *q != '\0') { *p++ = *q++; }
 }
 #endif
 
@@ -583,6 +581,10 @@ LexState::LexState()
     : d{std::make_unique<LexStatePrivate>()} {}
 
 LexState::~LexState() = default;
+
+std::set<const char*>& LexState::sharedStringSet() {
+    return d->strtable;
+}
 
 void LexState::resetstream(std::istream* input) {
     assert(!input->eof());

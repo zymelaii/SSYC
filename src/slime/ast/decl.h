@@ -25,9 +25,10 @@ enum class DeclID {
 };
 
 enum class NamedDeclSpecifier {
-    Extern = 0b001,
-    Static = 0b010,
-    Inline = 0b100,
+    Extern = 0b0001,
+    Static = 0b0010,
+    Inline = 0b0100,
+    Const  = 0b1000,
 };
 
 struct DeclSpecifier {
@@ -72,6 +73,10 @@ struct DeclSpecifier {
 
     bool isInline() const {
         return haveSpecifier(NamedDeclSpecifier::Inline);
+    }
+
+    bool isConst() const {
+        return haveSpecifier(NamedDeclSpecifier::Const);
     }
 
     VarDecl *createVarDecl(std::string_view name);

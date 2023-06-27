@@ -3,7 +3,7 @@
 #include "../utils/list.h"
 #include "type.h"
 #include "decl.h"
-#include "statements.def"
+#include "stmt.def"
 #include "cast.def"
 
 namespace slime::ast {
