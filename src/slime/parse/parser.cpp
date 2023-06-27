@@ -1,1322 +1,959 @@
 #include "parser.h"
-#include "ast.h"
 
+#include <map>
+#include <array>
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string_view>
 
-namespace slime
-{
+namespace slime {
 
-    static symtable g_sym = {.symbols = NULL, .sym_num = 0};
+struct OperatorPriority {
+    constexpr OperatorPriority(int priority, bool assoc)
+        : priority{priority}
+        , assoc{assoc} {}
 
-    void Parser::next()
-    {
-        do
-        {
-            ls.next();
-        } while (ls.token.id == TOKEN::TK_COMMENT || ls.token.id == TOKEN::TK_MLCOMMENT);
+    //! 优先级
+    int priority;
+
+    //! 结核性
+    //! false: 右结合
+    //! true: 左结合
+    bool assoc;
+};
+
+static constexpr size_t TOTAL_OPERATORS = 25;
+static constexpr std::array<OperatorPriority, TOTAL_OPERATORS> PRIORITIES{
+    //! Subscript '[]'
+    OperatorPriority(0, true),
+
+    //! UnaryOperator (except Paren)
+    OperatorPriority(1, false),
+    OperatorPriority(1, false),
+    OperatorPriority(1, false),
+    OperatorPriority(1, false),
+    //! BinaryOperator
+    //! Mul Div Mod
+    OperatorPriority(2, true),
+    OperatorPriority(2, true),
+    OperatorPriority(2, true),
+
+    //! Add Sub
+    OperatorPriority(3, true),
+    OperatorPriority(3, true),
+
+    //! Shl Shr
+    OperatorPriority(4, true),
+    OperatorPriority(4, true),
+
+    //! Comparaison Operator
+    OperatorPriority(5, true),
+    OperatorPriority(5, true),
+    OperatorPriority(5, true),
+    OperatorPriority(5, true),
+
+    //! EQ NE
+    OperatorPriority(6, true),
+    OperatorPriority(6, true),
+
+    //! And
+    OperatorPriority(7, true),
+
+    //! Xor
+    OperatorPriority(8, true),
+
+    //! Or
+    OperatorPriority(9, true),
+
+    //! Logic And
+    OperatorPriority(10, true),
+
+    //! Logic Or
+    OperatorPriority(11, true),
+
+    //! Assign
+    OperatorPriority(12, false),
+
+    // Comma
+    OperatorPriority(13, true),
+
+};
+
+inline OperatorPriority lookupOperatorPriority(UnaryOperator op) {
+    assert(op != UnaryOperator::Paren);
+    return PRIORITIES[static_cast<int>(op)];
+}
+
+inline OperatorPriority lookupOperatorPriority(BinaryOperator op) {
+    return PRIORITIES
+        [static_cast<int>(op) + static_cast<int>(UnaryOperator::Paren) - 1];
+}
+
+void Parser::next() {
+    do {
+        ls.next();
+    } while (ls.token.id == TOKEN::TK_COMMENT
+             || ls.token.id == TOKEN::TK_MLCOMMENT);
+}
+
+bool Parser::expect(TOKEN token, const char *msg) {
+    if (ls.token.id == token) {
+        ls.next();
+        return true;
     }
+    //! TODO: prettify display message
+    if (msg != nullptr) { fprintf(stderr, "%s", msg); }
+    //! TODO: raise an error
+    return false;
+}
 
-    bool Parser::expect(TOKEN token, const char *msg)
-    {
-        if (ls.token.id == token)
-        {
-            ls.next();
-            return true;
-        }
-        //! TODO: prettify display message
-        if (msg != nullptr)
-        {
-            fprintf(stderr, "%s", msg);
-        }
-        //! TODO: raise an error
-        return false;
+const char *Parser::lookupStringLiteral(std::string_view s) {
+    const char *result = *sharedStringSet.find(s.data());
+    if (result == nullptr) {
+        result       = strdup(s.data());
+        auto [_, ok] = sharedStringSet.insert(s.data());
+        assert(ok);
     }
+    return result;
+}
 
-    ASTNode *Parser::global_parse()
-    {
-        return decl();
-    }
+TranslationUnit *Parser::parse() {
+    ps.tu = new TranslationUnit();
+    symbolTable.insertToHead(new SymbolTable);
+    ps.cur_specifs.type         = BuiltinType::getIntType();
+    while (ls.token.id != TOKEN::TK_EOF) global_decl();
+    return ps.tu;
+}
 
-    //! 初始化声明环境
-    void Parser::enterdecl()
-    {
-        if (ls.token.id == TOKEN::TK_CONST)
-        {
-            //! TODO: 标记声明环境为 const
-            next();
-        }
-        //! TODO: 初始化操作
-    }
-
-    //! 结束声明并清理声明环境
-    void Parser::leavedecl(int tag)
-    {
-        if(tag == S_VARIABLE)
-        {
-            assert(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_COMMA);
-            next();
-        }
-        //! TODO: 清理操作
-    }
-
-    // 标记函数类型，处理函数参数列表
-    int Parser::enterfunc(int type)
-    {
-        int ret = 0;
-        assert(ps.cur_block == NULL);   //暂不支持局部函数声明
-        if (ls.token.id != TOKEN::TK_IDENT)
-        {
-            fprintf(stderr, "Missing function name in enterfunc()!\n");
-            exit(-1);
-            //! TODO: 处理错误：函数名缺失
-        }
-        //! TODO: 检查并处理函数名
-        if(find_globalsym(ls.token.detail.data()) != -1){
-            fprintf(stderr, "Duplicate defined symbol:%s in enterfunc()!\n", ls.token.detail.data());
-        }
-
-        ret = add_globalsym(type, S_FUNCTION);
+//! 初始化声明环境
+void Parser::enterdecl() {
+    if (ls.token.id == TOKEN::TK_CONST) {
+        ps.cur_specifs.addSpecifier(NamedDeclSpecifier::Const);
         next();
-        if (ls.token.id != TOKEN::TK_LPAREN)
-        {
-            //! TODO: 处理错误：丢失参数列表
-            fprintf(stderr, "Missing argument list of function %s!\n", g_sym.symbols[g_sym.sym_num-1].name);
-        }
-        g_sym.symbols[ret].content.funcparams = funcargs();
-        ps.cur_funcparam = g_sym.symbols[ret].content.funcparams;
-        //! TODO: 解析函数原型
-        return ret;
     }
 
-    //! 结束函数定义
-    void Parser::leavefunc()
-    {
-        ps.cur_func = -1;
-        ps.cur_funcparam = NULL;
-        //! TODO: 检查并处理函数体
-    }
-
-    //! 处理嵌套层数并初始化块环境
-    void Parser::enterblock()
-    {
-        blockinfo *b = (blockinfo *)malloc(sizeof(blockinfo));
-        if(ps.cur_block && ps.cur_block->head == NULL)
-            ps.cur_block->head = b;
-        else if(ps.cur_block)
-        {
-            blockinfo *p = ps.cur_block->head;
-            while(p->next) p = p->next;
-            p->next = b;
-        }
-        else
-            b->head = NULL;
-
-        b->next      = NULL;
-        b->prev_head = ps.cur_block;
-        b->l_sym.symbols = NULL;
-        b->l_sym.sym_num = 0;
-        ps.cur_block = b;
-    }
-
-    //! 清理块环境
-    void Parser::leaveblock() 
-    {
-        ps.cur_block = ps.cur_block->prev_head;
-    }
-
-    /*!
-     * decl ->
-     *      [ 'const' ] type vardef { ',' vardef } ';'
-     */
-    ASTNode *Parser::decl()
-    {
-        enterdecl();
-        ASTNode *left = NULL, *right = NULL;
-        ASTVal32 val = {.intvalue = 0};
-        bool err = false;
-        int type, tag;
-
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_VOID:
-        {
-            type = TYPE_VOID;
+    switch (ls.token.id) {
+        case TOKEN::TK_VOID: {
+            ps.cur_specifs.type = BuiltinType::getVoidType();
             next();
         }
-        case TOKEN::TK_INT:
-        {
-            type = TYPE_INT;
+        case TOKEN::TK_INT: {
+            ps.cur_specifs.type = BuiltinType::getIntType();
             next();
-        }
-        break;
-        case TOKEN::TK_FLOAT:
-        {
-            type = TYPE_FLOAT;
+        } break;
+        case TOKEN::TK_FLOAT: {
+            ps.cur_specifs.type = BuiltinType::getFloatType();
             next();
-        }
-        break;
-        default:
-        {
-            //! TODO: 处理报错
-            fprintf(stderr, "Unknown declare type:%s in decl()!\n", ls.token.detail.data());
-            err = true;
-        }
-        break;
-        }
-        if (!err)
-        {
-            while (ls.token.id != TOKEN::TK_EOF)
-            {
-                if(ls.lookahead() == TOKEN::TK_LPAREN)
-                {
-                    tag  = S_FUNCTION;
-                    right = func(type);
-                    break;
-                }
-                else{
-                    if(type == TYPE_VOID)
-                    {
-                        fprintf(stderr, "Variable %s declared void.\n", ls.token.detail.data());
-                        exit(-1);
-                    }
-                    tag  = S_VARIABLE;
-                    left = vardef(type);
-                    if(!right)
-                        right = left;
-                    else if(left)
-                        right = mkastnode(A_STMT, left, NULL, right, val);
-                    if (ls.token.id == TOKEN::TK_SEMICOLON)
-                    {
-                        break;
-                    }
-                    else if (ls.token.id == TOKEN::TK_COMMA)
-                    {
-                        next();
-                    }
-                    else
-                    {
-                        //! TODO: 处理报错
-                    }
-                }
+        } break;
+        default: {
+            fprintf(
+                stderr,
+                "Unknown declare type:%s in global_decl()!\n",
+                ls.token.detail.data());
+            exit(-1);
+        } break;
+    }
+    //! TODO: 初始化操作
+}
+
+//! 结束声明并清理声明环境
+void Parser::leavedecl(DeclID tag) {
+    if (tag == DeclID::Var) {
+        assert(
+            ls.token.id == TOKEN::TK_SEMICOLON
+            || ls.token.id == TOKEN::TK_COMMA);
+        next();
+    }
+    //! TODO: 清理操作
+
+    ps.cur_specifs.removeSpecifier(NamedDeclSpecifier::Const);
+    ps.cur_specifs.type->typeId = TypeID::None;
+}
+
+// 标记函数类型，处理函数参数列表
+FunctionDecl *Parser::enterfunc() {
+    FunctionDecl *ret;
+    const char   *funcname = ls.token.detail.data();
+
+    assert(ps.cur_depth == 0); // 暂不支持局部函数声明
+
+    //! 处理错误：函数名缺失
+    if (ls.token.id != TOKEN::TK_IDENT) {
+        fprintf(stderr, "Missing function name in enterfunc()!\n");
+        exit(-1);
+    }
+    //! 检查并处理函数名
+    std::map<std::string_view, NamedDecl *> *gsyms =
+        symbolTable.head()->value();
+    if (gsyms->find(ls.token.detail.data()) != gsyms->end()) {
+        fprintf(
+            stderr,
+            "Duplicate defined symbol:%s in enterfunc()!\n",
+            ls.token.detail.data());
+    }
+
+    next();
+    //! 处理错误：丢失参数列表
+    if (ls.token.id != TOKEN::TK_LPAREN) {
+        fprintf(stderr, "Missing argument list of function %s!\n", funcname);
+    }
+
+    ParamVarDeclList funcparams = funcargs();
+    bool shouldClear = false;
+    bool             err        = false;
+
+    for (auto param : funcparams) {
+        auto name = param->name;
+        auto is_type_void = param->type()->asBuiltin()->isVoid();
+        if (is_type_void && name.empty()) {
+            if (funcparams.size() == 1) {
+                shouldClear = true;
+                break;
+            } else {
+                fprintf(stderr, "Void type parameter is invalid.\n");
+                exit(-1);
             }
         }
-        leavedecl(tag);
-        return right;
+    }
+    //! NOTE: function body will be added later.
+    if (shouldClear) {
+        funcparams.head()->removeFromList();
+    }
+    //! FIXME: SIGSEV here
+    ret = FunctionDecl::create(funcname, ps.cur_specifs.clone(), funcparams, NULL);
+    return ret;
+}
+
+//! 结束函数定义
+void Parser::leavefunc() {
+    ps.cur_func = NULL;
+    //! TODO: 检查并处理函数体
+}
+
+//! 处理嵌套层数并初始化块环境
+void Parser::enterblock() {
+    ps.cur_depth++;
+    symbolTable.insertToTail(new SymbolTable);
+}
+
+//! 清理块环境
+void Parser::leaveblock() {
+    symbolTable.tail()->removeFromList();
+    ps.cur_depth--;
+    assert(ps.cur_depth >= 0);
+    assert(symbolTable.size() != 0);
+}
+
+void Parser::global_decl() {
+    assert(ps.tu != NULL);
+    assert(symbolTable.size() != 0);
+    assert(ps.cur_specifs.type != NULL);
+
+    bool   err = false;
+    DeclID tag;
+    enterdecl();
+
+
+
+    while (ls.token.id != TOKEN::TK_EOF) {
+        if (ls.lookahead() == TOKEN::TK_LPAREN) {
+            tag = DeclID::Function;
+            ps.tu->insertToTail(func());
+            break;
+        } else {
+            if (ps.cur_specifs.type->asBuiltin()->isVoid()) {
+                fprintf(
+                    stderr,
+                    "Variable %s declared void.\n",
+                    ls.token.detail.data());
+                exit(-1);
+            }
+            tag = DeclID::Var;
+            ps.tu->insertToTail(vardef());
+            if (ls.token.id == TOKEN::TK_SEMICOLON) {
+                next();
+                break;
+            } else if (ls.token.id == TOKEN::TK_COMMA) {
+                next();
+            } else {
+                //! TODO: 处理报错
+            }
+        }
+    }
+}
+
+/*!
+ * decl ->
+ *      [ 'const' ] type vardef { ',' vardef } ';'
+ */
+ast::DeclStmt *Parser::decl() {
+    bool      err = false;
+    DeclID    tag;
+    DeclStmt *ret = new DeclStmt();
+    enterdecl();
+
+    while (ls.token.id != TOKEN::TK_EOF) {
+        if (ls.lookahead() == TOKEN::TK_LPAREN) {
+            fprintf(stderr, "Unsupport definition of local funtion.\n");
+            exit(-1);
+            break;
+        } else {
+            if (ps.cur_specifs.type->asBuiltin()->isVoid()) {
+                fprintf(
+                    stderr,
+                    "Variable %s declared void.\n",
+                    ls.token.detail.data());
+                exit(-1);
+            }
+            tag = DeclID::Var;
+            ret->insertToTail(vardef());
+            if (ls.token.id == TOKEN::TK_SEMICOLON) {
+                break;
+            } else if (ls.token.id == TOKEN::TK_COMMA) {
+                next();
+            } else {
+                //! TODO: 处理报错
+            }
+        }
     }
 
-    /*!
-     * vardef ->
-     *      ident { '[' expr ']' }
-     *      ident '='
-     */
-    ASTNode *Parser::vardef(int type)
-    {
-        ASTNode *root = NULL, *left = NULL;
-        ASTVal32 val = {.intvalue = 0};
+    leavedecl(tag);
+    return ret;
+}
 
-        if (ls.token.id != TOKEN::TK_IDENT)
-        {
-            //! TODO: 处理错误
-            fprintf(stderr, "No TK_IDENT found in vardef()!\n");
-            exit(-1);
-            return NULL;
-        }
+/*!
+ * vardef ->
+ *      ident { '[' expr ']' }
+ *      ident '='
+ */
+VarDecl *Parser::vardef() {
+    if (ls.token.id != TOKEN::TK_IDENT) {
+        //! TODO: 处理错误
+        fprintf(stderr, "No TK_IDENT found in vardef()!\n");
+        exit(-1);
+        return NULL;
+    }
 
-        if(ps.cur_block == NULL)
-            val.symindex = add_globalsym(type ,S_VARIABLE);
-        else
-            val.symindex = add_localsym(type, S_VARIABLE);
+    Expr       *initexpr = new NoInitExpr();
+    const char *varname  = lookupStringLiteral(ls.token.detail.data());
+    ArrayType  *arrType  = NULL;
+    VarDecl    *ret      = NULL;
+    next();
+    if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON) {
+        return NULL;
+    }
 
-        next();
-        if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON)
-        {
-            return NULL;
-        }
-        while (ls.token.id == TOKEN::TK_LBRACKET)
-        { //<! 数组长度声明
+    //! TODO: 支持数组
+    if (ls.token.id == TOKEN::TK_LBRACKET) {
+        arrType = ArrayType::create(
+            BuiltinType::get(ps.cur_specifs.type->asBuiltin()->type));
+        while (ls.token.id == TOKEN::TK_LBRACKET) { //<! 数组长度声明
             next();
             //! NOTE: 目前不支持数组长度推断
-            expr();
-            //! TODO: 获取并处理数组长度
-            if (ls.token.id == TOKEN::TK_RBRACKET)
-            {
+            arrType->insertToTail(expr());
+            if (ls.token.id == TOKEN::TK_RBRACKET) {
                 next();
-            }
-            else
-            {
-                //! TODO: 处理错误：括号未闭合
+            } else {
+                fprintf(stderr, "Missing ']' when defining an array.\n");
+                exit(-1);
             }
         }
-        if (ls.token.id == TOKEN::TK_ASS)
-        {
-            left = mkastleaf(A_IDENT, val);   
+    }
+
+    if (ls.token.id == TOKEN::TK_ASS) {
+        next();
+        //! TODO: 支持数组
+        if (ls.token.id == TOKEN::TK_LBRACE) {
+            initexpr = initlist();
+        } else {
+            initexpr = expr();
+        }
+        //! TODO: 获取并处理初始化赋值
+    }
+    if (!(ls.token.id == TOKEN::TK_COMMA
+          || ls.token.id == TOKEN::TK_SEMICOLON)) {
+        fprintf(stderr, "Missing ';' in vardef()!\n");
+        exit(-1);
+    }
+
+    if (arrType) {
+        auto e              = ps.cur_specifs.type;
+        ps.cur_specifs.type = arrType;
+        ret = VarDecl::create(varname, ps.cur_specifs.clone(), initexpr);
+        ps.cur_specifs.type = e;
+    } else
+        ret = VarDecl::create(varname, ps.cur_specifs.clone(), initexpr);
+
+    if (ps.cur_depth) {
+        assert(ps.cur_func != NULL);
+        assert(ps.cur_depth == symbolTable.size() - 1);
+        ret->scope.scope = lookupStringLiteral(ps.cur_func->name);
+        ret->scope.depth = ps.cur_depth;
+        std::map<std::string_view, NamedDecl *> *lsym =
+            symbolTable.tail()->value();
+        lsym->insert(std::pair<std::string_view, NamedDecl *>(varname, ret));
+    } else {
+        std::map<std::string_view, NamedDecl *> *gsym =
+            symbolTable.head()->value();
+        gsym->insert(std::pair<std::string_view, NamedDecl *>(varname, ret));
+    }
+    return ret;
+}
+
+/*!
+ * init-list ->
+ *      '{' '}' |
+ *      '{' (expr | init-list) { ',' (expr | init-list) } [ ',' ] '}'
+ */
+InitListExpr *Parser::initlist() {
+    //! NOTE: 初始化列表必须有类型约束，由 ParseState 提供
+    assert(ls.token.id == TOKEN::TK_LBRACE);
+    InitListExpr *ret = new InitListExpr();
+    next();
+    bool has_more = true; //<! 是否允许存在下一个值
+    while (ls.token.id != TOKEN::TK_RBRACE) {
+        //! TODO: 处理可能出现的错误
+        //! TODO: 处理初始化的值过多的情况
+        if (ls.token.id == TOKEN::TK_LBRACE) {
+            ret->insertToTail(initlist());
+        } else {
+            ret->insertToTail(expr());
+        }
+        has_more = false;
+        if (ls.token.id == TOKEN::TK_COMMA) {
+            //! NOTE: 允许 trailing-comma
+            has_more = true;
             next();
-            if (ls.token.id == TOKEN::TK_LBRACE)
-            {
-                initlist();
-            }
-            else
-            {
-                val.intvalue = 0;
-                root = expr();
-                root = mkastnode(A_ASSIGN, left, NULL, root, val);
-            }
-            //! TODO: 获取并处理初始化赋值
         }
-        if (!(ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON))
-        {
-            fprintf(stderr, "Missing ';' in vardef()!\n");
-            //! TODO: 处理错误：丢失的变量定义终止符
-        }
-
-        return root;
     }
+    next();
+    return ret;
+    //! TODO: 处理并存储初始化列表的值
+}
 
-    /*!
-     * init-list ->
-     *      '{' '}' |
-     *      '{' (expr | init-list) { ',' (expr | init-list) } [ ',' ] '}'
-     */
-    void Parser::initlist()
-    {
-        //! NOTE: 初始化列表必须有类型约束，由 ParseState 提供
-        assert(ls.token.id == TOKEN::TK_LBRACE);
-        next();
-        bool has_more = true; //<! 是否允许存在下一个值
-        while (ls.token.id != TOKEN::TK_RBRACE)
-        {
-            if (!has_more)
-            {
-                //! TODO: 处理错误
-            }
-            //! TODO: 处理可能出现的错误
-            if (ls.token.id == TOKEN::TK_LBRACE)
-            {
-                initlist();
-            }
-            else
-            {
-                expr();
-            }
-            has_more = false;
-            if (ls.token.id == TOKEN::TK_COMMA)
-            {
-                //! NOTE: 允许 trailing-comma
-                has_more = true;
-                next();
-            }
-        }
-        next();
-        //! TODO: 处理并存储初始化列表的值
-    }
+FunctionDecl *Parser::func() {
+    FunctionDecl *ret      = enterfunc();
+    ps.cur_func            = ret;
+    CompoundStmt *funcbody = block();
+    //! NOTE: 暂时不允许只声明不定义
+    ret->body = funcbody;
+    leavefunc();
+    return ret;
+}
 
-    ASTNode *Parser::func(int type)
-    {
-        ASTNode *tree;
-        ASTVal32 val = {.intvalue = 0};
-        val.symindex = enterfunc(type);
-        ps.cur_func = val.symindex;
-        //! NOTE: 暂时不允许只声明不定义
-        tree = block();
-        if(!tree){
-            fprintf(stderr, "Missing statements in function!\n");
-            return NULL;
-        }
-        tree = mkastunary(A_FUNCTION, tree, val);
-        //! TODO: 处理函数体
-        leavefunc();
-        return tree;
-    }
-
-    paramtable *Parser::funcargs()
-    {
-        assert(ls.token.id == TOKEN::TK_LPAREN);
-        next();
-        paramtable *params = (paramtable *)malloc(sizeof(paramtable));
-        params->params = NULL;
-        params->param_num = 0;
-        int type = -1;
-        while (ls.token.id != TOKEN::TK_RPAREN)
-        {
-            //! FIXME: 可能死循环
-            
-            params->params = (paraminfo *)realloc(params->params, (params->param_num + 1) * sizeof(paraminfo));
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_VOID:
-            {
-                fprintf(stderr, "Void type is invalid in function parameters!\n");
+ParamVarDeclList Parser::funcargs() {
+    assert(ls.token.id == TOKEN::TK_LPAREN);
+    next();
+    ParamVarDeclList params;
+    DeclSpecifier   *specif = DeclSpecifier::create();
+    while (ls.token.id != TOKEN::TK_RPAREN) {
+        //! FIXME: 可能死循环
+        const char *paramname = NULL;
+        switch (ls.token.id) {
+            case TOKEN::TK_VOID: {
+                fprintf(
+                    stderr, "Void type is invalid in function parameters!\n");
                 exit(-1);
             }
-            case TOKEN::TK_INT:
-            {
-                type = TYPE_INT;
+            case TOKEN::TK_INT: {
+                specif->type = BuiltinType::getIntType();
                 next();
-            }
-            break;
-            case TOKEN::TK_FLOAT:
-            {
-                type = TYPE_FLOAT;
+            } break;
+            case TOKEN::TK_FLOAT: {
+                specif->type = BuiltinType::getFloatType();
                 next();
-            }
-            break;
-            default:
-            {
-                fprintf(stderr, "Unknown parameter type: %s", ls.token.detail.data());
+            } break;
+            default: {
+                fprintf(
+                    stderr,
+                    "Unknown parameter type: %s",
+                    ls.token.detail.data());
                 exit(-1);
-            }
-            break;
-            }
-            if (ls.token.id != TOKEN::TK_IDENT)
-            {
-                fprintf(stderr, "Missing parameter's name in funcargs()!\n");
-                exit(-1);
-            }
-            params->params[params->param_num].name  = strdup(ls.token.detail.data());
-            params->params[params->param_num].stype = S_VARIABLE;
-            params->params[params->param_num].type  = type;
-            params->param_num++; 
+            } break;
+        }
+        if (ls.token.id != TOKEN::TK_IDENT) {
+            fprintf(
+                stderr, "Warning: Missing parameter's name in funcargs()!\n");
+        } 
+
+        if (ls.token.id == TOKEN::TK_LBRACKET) {
+            //! 处理数组参数类型
+            specif->type = IncompleteArrayType::create(
+                BuiltinType::get(specif->type->asBuiltin()->type));
             next();
-
-            //!TODO: 支持数组作为参数传入
-            if (ls.token.id == TOKEN::TK_LBRACKET)
-            {
-                //! 处理数组参数类型
-                next();
-                if (ls.token.id != TOKEN::TK_RBRACKET)
-                {
-                    //! TODO: 处理错误：数组作为参数第一个下标必须为空
-                }
-                next();
-                while (ls.token.id == TOKEN::TK_LBRACKET)
-                {
-                    expr();
-                    //! NOTE: 处理并存储长度值
-                    if (ls.token.id != TOKEN::TK_RBRACKET)
-                    {
-                        //! TODO: 处理错误：数组长度声明括号未闭合
-                    }
-                    next();
-                }
+            if (ls.token.id != TOKEN::TK_RBRACKET) {
+                //! 处理错误：数组作为参数第一个下标必须为空
+                fprintf(
+                    stderr,
+                    "The first index of array must be empty as function "
+                    "parameter.\n");
+                exit(-1);
             }
-            //! TODO: 完成参数类型并写入函数原型
-            if (ls.token.id == TOKEN::TK_COMMA)
-            {
-                if (ls.lookahead() == TOKEN::TK_RPAREN)
-                {
-                    fprintf(stderr, "Unexpected comma in funcargs()!\n");
+            specif->type->asArray()->insertToTail(NoInitExpr::get());
+            next();
+            while (ls.token.id == TOKEN::TK_LBRACKET) {
+                specif->type->asArray()->insertToTail(expr());
+                //! NOTE: 处理并存储长度值
+                if (ls.token.id != TOKEN::TK_RBRACKET) {
+                    //! 处理错误：数组长度声明括号未闭合
+                    fprintf(stderr, "Missing ']' in array parameter.\n");
                     exit(-1);
                 }
-                
                 next();
             }
-            else if(ls.token.id != TOKEN::TK_RPAREN)
-            {
-                fprintf(stderr, "Invalid terminator in function parameters' definition!\n");
-                exit(-1);
-            }
         }
-        next();
-        return params;
-    }
 
-    /*!
-     * statement ->
-     *      ';' |
-     *      'if' '(' cond-expr ')' statement [ 'else' statement ] |
-     *      'while' '(' cond-expr ')' statement |
-     *      'break' ';' |
-     *      'continue' ';' |
-     *      'return' [ expr ] ';' |
-     *      block |
-     *      expr ';'
-     */
-    ASTNode *Parser::statement()
-    {
-        ASTNode *tree = NULL;
-        switch (ls.token.id)
-        {
-        case TOKEN::TK_SEMICOLON:
-        {
+        if (ls.token.id == TOKEN::TK_IDENT) 
+            paramname = lookupStringLiteral(ls.token.detail.data());
+        params.insertToTail(ParamVarDecl::create(paramname, specif));
+        next();
+
+        //! 完成参数类型并写入函数原型
+        if (ls.token.id == TOKEN::TK_COMMA) {
+            if (ls.lookahead() == TOKEN::TK_RPAREN) {
+                fprintf(stderr, "Unexpected comma in funcargs()!\n");
+                exit(-1);
+        }
+
+        } else if (ls.token.id != TOKEN::TK_RPAREN) {
+            fprintf(
+                stderr,
+                "Invalid terminator in function parameters' definition!\n");
+            exit(-1);
+        }
+    }
+    next();
+    return params;
+}
+
+/*!
+ * statement ->
+ *      ';' |
+ *      'if' '(' cond-expr ')' statement [ 'else' statement ] |
+ *      'while' '(' cond-expr ')' statement |
+ *      'break' ';' |
+ *      'continue' ';' |
+ *      'return' [ expr ] ';' |
+ *      block |
+ *      expr ';'
+ */
+Stmt *Parser::statement() {
+    Stmt *ret;
+    switch (ls.token.id) {
+        case TOKEN::TK_SEMICOLON: {
             next();
-        }
-        break;
-        case TOKEN::TK_IF:
-        {
-            ifstat();
-            //!TODO: if statement
-        }
-        break;
-        case TOKEN::TK_WHILE:
-        {
-            whilestat();
-            //!TODO: while statement
-        }
-        break;
-        case TOKEN::TK_BREAK:
-        {
-            breakstat();
-            //!TODO: break statement;
-        }
-        break;
-        case TOKEN::TK_CONTINUE:
-        {
-            continuestat();
-            //!TODO: continue statement;
-        }
-        break;
-        case TOKEN::TK_RETURN:
-        {
-            tree = returnstat();
-            //!TODO: return statement;
-        }
-        break;
-        case TOKEN::TK_LBRACE:
-        {
-            tree = block();
-        }
-        break;
+        } break;
+        case TOKEN::TK_IF: {
+            ret = ifstat();
+        } break;
+        case TOKEN::TK_WHILE: {
+            ret = whilestat();
+        } break;
+        case TOKEN::TK_BREAK: {
+            ret = breakstat();
+        } break;
+        case TOKEN::TK_CONTINUE: {
+            ret = continuestat();
+        } break;
+        case TOKEN::TK_RETURN: {
+            ret = returnstat();
+        } break;
+        case TOKEN::TK_LBRACE: {
+            ret = block();
+        } break;
         case TOKEN::TK_CONST:
         case TOKEN::TK_INT:
         case TOKEN::TK_FLOAT:
-            tree = decl();
+            ret = decl();
             break;
-        default:
-        {
-            tree = expr();
+        default: {
+            ret = ExprStmt::from(expr());
             expect(TOKEN::TK_SEMICOLON, "expect ';' after expression");
+        } break;
+    }
+    return ret;
+}
+
+IfStmt *Parser::ifstat() {
+    assert(ls.token.id == TOKEN::TK_IF);
+    IfStmt *ret = new IfStmt();
+    next();
+    expect(TOKEN::TK_LPAREN, "expect '(' after 'if'");
+    ret->condition = expr();
+    //! TODO: 检查 expr 是否为条件表达式
+    expect(TOKEN::TK_RPAREN, "expect ')'");
+
+    ret->branchIf = statement();
+    if (ls.token.id == TOKEN::TK_ELSE) {
+        next();
+        ret->branchElse = statement();
+    } else
+        ret->branchElse = new NullStmt();
+    return ret;
+}
+
+WhileStmt *Parser::whilestat() {
+    assert(ls.token.id == TOKEN::TK_WHILE);
+    WhileStmt *ret = new WhileStmt();
+    next();
+    //! TODO: 提升嵌套层次
+    expect(TOKEN::TK_WHILE, "expect '(' after 'while'");
+    ret->condition = expr();
+    //! TODO: 检查 expr 是否为条件表达式
+    expect(TOKEN::TK_WHILE, "expect ')'");
+    WhileStmt *upper_loop = ps.cur_loop;
+    ps.cur_loop           = ret;
+    ret->loopBody         = statement();
+    ps.cur_loop           = upper_loop;
+    return ret;
+}
+
+BreakStmt *Parser::breakstat() {
+    assert(ls.token.id == TOKEN::TK_BREAK);
+    next();
+    if (!ps.cur_loop) {
+        fprintf(stderr, "Invalid break statement out of a loop\n");
+        exit(-1);
+    }
+    expect(TOKEN::TK_SEMICOLON, "expect ';' after break statement");
+    return new BreakStmt();
+}
+
+ContinueStmt *Parser::continuestat() {
+    assert(ls.token.id == TOKEN::TK_CONTINUE);
+    next();
+    //! TODO: 外层环境检查
+    if (!ps.cur_loop) {
+        fprintf(stderr, "Invalid break statement out of a loop\n");
+        exit(-1);
+    }
+    expect(TOKEN::TK_SEMICOLON, "expect ';' after continue statement");
+    return new ContinueStmt();
+}
+
+ReturnStmt *Parser::returnstat() {
+    assert(ls.token.id == TOKEN::TK_RETURN);
+    assert(ps.cur_func != NULL);
+    next();
+    ReturnStmt *ret = new ReturnStmt();
+    if (ls.token.id != TOKEN::TK_SEMICOLON) {
+        ret->returnValue = ExprStmt::from(expr());
+    } else
+        ret->returnValue = new NullStmt();
+
+    //! TODO: 返回值检验
+    auto builtin = ret->typeOfReturnValue()->tryIntoBuiltin();
+    if (builtin == nullptr) {
+        fprintf(stderr, "Invalid return type.");
+        exit(-1);
+    }
+    if (ret->typeOfReturnValue()->asBuiltin()->isVoid()
+        && !ps.cur_func->type()->asBuiltin()->isVoid()) {
+        fprintf(
+            stderr,
+            "error: Missing return value in non-void function %s!\n",
+            ps.cur_func->name.data());
+        exit(-1);
+    }
+    expect(TOKEN::TK_SEMICOLON, "expect ';' after return statement");
+    return ret;
+}
+
+CompoundStmt *Parser::block() {
+    enterblock();
+    assert(ls.token.id == TOKEN::TK_LBRACE);
+    next();
+    CompoundStmt *ret = new CompoundStmt();
+    while (ls.token.id != TOKEN::TK_RBRACE) { ret->insertToTail(statement()); }
+    next();
+    leaveblock();
+    return ret;
+}
+
+NamedDecl *Parser::findSymbol(std::string_view name, DeclID declID) {
+    if (declID == DeclID::Var || declID == DeclID::ParamVar) {
+        auto node = symbolTable.tail();
+        while (node != symbolTable.head()) {
+            SymbolTable *syms = node->value();
+            auto         it   = syms->find(name);
+            if (it != syms->end() && it->second->declId != DeclID::Function)
+                return it->second;
+            node = node->prev();
         }
-        break;
-        }
-
-        return tree;
+    } else if (declID == DeclID::Function) {
+        SymbolTable *gsyms = symbolTable.head()->value();
+        auto         it    = gsyms->find(name);
+        if (it != gsyms->end() && it->second->declId == DeclID::Function)
+            return it->second;
     }
+    return NULL;
+}
 
-    void Parser::ifstat()
-    {
-        assert(ls.token.id == TOKEN::TK_IF);
-        next();
-        //! TODO: 提升嵌套层次
-        expect(TOKEN::TK_LPAREN, "expect '(' after 'if'");
-        expr();
-        //! TODO: 检查 expr 是否为条件表达式
-        expect(TOKEN::TK_RPAREN, "expect ')'");
-        statement();
-        if (ls.token.id == TOKEN::TK_ELSE)
-        {
-            next();
-            statement();
-        }
-    }
-
-    void Parser::whilestat()
-    {
-        assert(ls.token.id == TOKEN::TK_WHILE);
-        next();
-        //! TODO: 提升嵌套层次
-        expect(TOKEN::TK_WHILE, "expect '(' after 'while'");
-        expr();
-        //! TODO: 检查 expr 是否为条件表达式
-        expect(TOKEN::TK_WHILE, "expect ')'");
-        statement();
-    }
-
-    void Parser::breakstat()
-    {
-        assert(ls.token.id == TOKEN::TK_BREAK);
-        next();
-        //! TODO: 外层环境检查
-        expect(TOKEN::TK_SEMICOLON, "expect ';' after break statement");
-    }
-
-    void Parser::continuestat()
-    {
-        assert(ls.token.id == TOKEN::TK_CONTINUE);
-        next();
-        //! TODO: 外层环境检查
-        expect(TOKEN::TK_SEMICOLON, "expect ';' after continue statement");
-    }
-
-    ASTNode *Parser::returnstat()
-    {
-        assert(ls.token.id == TOKEN::TK_RETURN);
-        assert(ps.cur_func != -1);
-        ASTNode *tree = NULL;
-        ASTVal32 val = {.intvalue = 0};
-        next();
-        if (ls.token.id != TOKEN::TK_SEMICOLON)
-        {
-            tree = expr();
-            tree = mkastunary(A_RETURN, tree, val);
-        }
-        
-        //! TODO: 返回值检验
-        if(!tree->left && g_sym.symbols[ps.cur_func].type != TYPE_VOID){
-            fprintf(stderr, "error: Missing return value in non-void function %s!\n", g_sym.symbols[ps.cur_func].name);
+BinaryOperator Parser::binastop(TOKEN token) {
+    switch (ls.token.id) {
+        case TOKEN::TK_ASS:
+            return BinaryOperator::Assign;
+        case TOKEN::TK_AND:
+            return BinaryOperator::And;
+        case TOKEN::TK_OR:
+            return BinaryOperator::Or;
+        case TOKEN::TK_XOR:
+            return BinaryOperator::Xor;
+        case TOKEN::TK_LAND:
+            return BinaryOperator::LAnd;
+        case TOKEN::TK_LOR:
+            return BinaryOperator::LOr;
+        case TOKEN::TK_EQ:
+            return BinaryOperator::EQ;
+        case TOKEN::TK_NE:
+            return BinaryOperator::NE;
+        case TOKEN::TK_LT:
+            return BinaryOperator::LT;
+        case TOKEN::TK_LE:
+            return BinaryOperator::LE;
+        case TOKEN::TK_GT:
+            return BinaryOperator::GT;
+        case TOKEN::TK_GE:
+            return BinaryOperator::GE;
+        case TOKEN::TK_SHL:
+            return BinaryOperator::Shl;
+        case TOKEN::TK_SHR:
+            return BinaryOperator::Shr;
+        case TOKEN::TK_ADD:
+            return BinaryOperator::Add;
+        case TOKEN::TK_SUB:
+            return BinaryOperator::Sub;
+        case TOKEN::TK_MUL:
+            return BinaryOperator::Mul;
+        case TOKEN::TK_DIV:
+            return BinaryOperator::Div;
+        case TOKEN::TK_MOD:
+            return BinaryOperator::Mod;
+        default:
+            fprintf(stderr, "Unknown binary operator:%d\n", token);
             exit(-1);
-        }
-        expect(TOKEN::TK_SEMICOLON, "expect ';' after return statement");
-        return tree;
+    }
+}
+
+/*!
+ * expr-list ->
+ *      expr { ',' expr-list }
+ */
+ExprList *Parser::exprlist() {
+    ExprList *args = new ExprList();
+    args->insertToTail(binexpr(PRIORITIES.size()));
+    while (ls.token.id == TOKEN::TK_COMMA) {
+        next();
+        args->insertToTail(binexpr(PRIORITIES.size()));
     }
 
-    ASTNode *Parser::block()
-    {
-        enterblock();
-        ASTNode *s1, *s2 = NULL;
-        ASTVal32 val = {.intvalue = 0};
+    return args;
+}
 
-        if(ps.cur_funcparam)        //add parameter to lsymtable
-        {
-            paramtable *p = ps.cur_funcparam;
-            for(int i=0;i<p->param_num;i++)
-            {
-                p->params[i].lsym_index = add_localsym(
-                    p->params[i].type,
-                    p->params[i].stype,
-                    p->params[i].name,
-                    ps.cur_block
-                );
-            }
-        }
-        assert(ls.token.id == TOKEN::TK_LBRACE);
-        next();
-        while (ls.token.id != TOKEN::TK_RBRACE)
-        {
-            s1 = statement();
-            if(s1){
-                if(!s2)
-                    s2 = s1;
-                else
-                    s2 = mkastnode(A_STMT, s2, NULL, s1, val);
-            }
-        }
-        next();
-        s2 = mkastunary(A_BLOCK, s2, val);
-        s2->block = ps.cur_block;
-        leaveblock();
-        return s2;
-    }
+/*!
+ * primary-expr ->
+ *      ident |
+ *      integer-constant |
+ *      floating-constant |
+ *      string-literal |
+ *      '(' expr ')'
+ */
+Expr *Parser::primaryexpr() {
+    Expr *ret;
 
-    int Parser::add_globalsym(int type, int stype)
-    {
-        assert(ls.token.id == TOKEN::TK_IDENT);
-        if(find_globalsym(ls.token.detail.data()) != -1){
+    switch (ls.token.id) {
+        case TOKEN::TK_IDENT: {
+            NamedDecl *ident = findSymbol(ls.token.detail.data(), DeclID::Var);
+            if (!ident) {
+                ident = findSymbol(ls.token.detail.data(), DeclID::Function);
+                if (!ident) {
+                    fprintf(
+                        stderr,
+                        "undefined symbol %s in primaryexpr()!\n",
+                        ls.token.detail.data());
+                    exit(-1);
+                }
+            }
+            switch (ls.lookahead()) {
+                //! array
+                case TOKEN::TK_LBRACKET: {
+                    if (ident->declId == DeclID::Function) {
+                        fprintf(stderr, "Can't use function as array.\n");
+                        exit(-1);
+                    }
+                    auto e = new DeclRefExpr;
+                    e->setSource(ident);
+                    ret = e;
+                } break;
+                case TOKEN::TK_LPAREN: {
+                    if (ident->declId != DeclID::Function) {
+                        fprintf(
+                            stderr,
+                            "%s is not a function!\n",
+                            ls.token.detail.data());
+                        exit(-1);
+                    }
+                    auto e = new DeclRefExpr;
+                    e->setSource(ident);
+                    ret = e;
+                } break;
+                default: {
+                    auto e = new DeclRefExpr;
+                    e->setSource(ident);
+                    ret = e;
+                } break;
+            }
+            next();
+        } break;
+        case TOKEN::TK_INTVAL: {
+            ret = ConstantExpr::createI32(atoi(ls.token.detail.data()));
+            next();
+        } break;
+        case TOKEN::TK_FLTVAL: {
+            ret = ConstantExpr::createF32(atof(ls.token.detail.data()));
+            next();
+        } break;
+        case TOKEN::TK_STRING: {
+            //! NOTE: #featrue(string)
             fprintf(
                 stderr,
-                "Duplicate definition of symbol %s          ---- add_globalsym()!\n",
+                "The preceding properties will be done later! (ref. string)\n");
+            next();
+            exit(-1);
+        } break;
+        case TOKEN::TK_LPAREN: {
+            next();
+            ret = new ParenExpr(expr());
+            expect(TOKEN::TK_RPAREN, "expect ')' after expression");
+        } break;
+        default: {
+            fprintf(
+                stderr,
+                "Unknown type of primary expression:%s\n",
                 ls.token.detail.data());
-            return -1;
-        }
-        g_sym.symbols = (syminfo *)realloc(g_sym.symbols, sizeof(syminfo) * (g_sym.sym_num+1));
-        g_sym.symbols[g_sym.sym_num].name = strdup(ls.token.detail.data());
-        g_sym.symbols[g_sym.sym_num].type = type;
-        g_sym.symbols[g_sym.sym_num].stype = stype;
-
-        return g_sym.sym_num++;
-    }
-
-    int Parser::find_globalsym(const char *name)
-    {
-        for (int i = 0; i < g_sym.sym_num; i++)
-        {
-            if (!strcmp(ls.token.detail.data(), g_sym.symbols[i].name))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-
-    int Parser::find_localsym(const char *name, blockinfo **pblock)
-    {
-        blockinfo *b = ps.cur_block;
-        while(b)
-        {
-            symtable *lsyms = &b->l_sym;
-            for(int i=0;i<lsyms->sym_num;i++)
-            {
-                if(!strcmp(name, lsyms->symbols[i].name))
-                {
-                    if(pblock != NULL)
-                        *pblock = b;
-                    return i;
-                }
-            }
-            b = b->prev_head;
-        }
-        //not found in any block
-        
-        if(pblock) *pblock = NULL;
-        return find_globalsym(name);
-    }
-
-    int Parser::add_localsym(int type, int stype)
-    {
-        assert(ls.token.id == TOKEN::TK_IDENT);
-        blockinfo *b = ps.cur_block, **pblock;
-        pblock = (blockinfo **)malloc(sizeof(blockinfo *));
-        symtable *lsyms = &b->l_sym;
-        if(find_localsym(ls.token.detail.data(), pblock) != -1)
-        {
-            if(*pblock && *pblock == b)
-            {
-                fprintf(
-                    stderr,
-                    "Duplicate definition of symbol %s          ---- add_localsym()!\n",
-                    ls.token.detail.data());
-                free(pblock);
-                exit(-1);
-            }
-        }
-
-        lsyms->symbols = (syminfo *)realloc(lsyms->symbols, sizeof(syminfo) * (lsyms->sym_num + 1));
-        lsyms->symbols[lsyms->sym_num].name  = strdup(ls.token.detail.data());
-        lsyms->symbols[lsyms->sym_num].type  = type;
-        lsyms->symbols[lsyms->sym_num].stype = stype;
-        
-        free(pblock);
-        return lsyms->sym_num++;
-    }
-
-    int Parser::add_localsym(int type, int stype, char *name, blockinfo *block)
-    {
-        symtable *lsyms = &block->l_sym;
-        for(int i=0;i<block->l_sym.sym_num;i++)
-        {
-            if(strcmp(name, lsyms->symbols[i].name))
-            {
-                fprintf(
-                    stderr,
-                    "Duplicate definition of symbol %s          ---- add_localsym()!\n",
-                    name);
-                exit(-1);
-            }
-        }
-
-        lsyms->symbols = (syminfo *)realloc(lsyms->symbols, sizeof(syminfo) * (lsyms->sym_num + 1));
-        lsyms->symbols[lsyms->sym_num].name  = strdup(name);
-        lsyms->symbols[lsyms->sym_num].type  = type;
-        lsyms->symbols[lsyms->sym_num].stype = stype;
-        
-        return lsyms->sym_num++;
-    }
-
-    /*!
-     * expr-list ->
-     *      expr { ',' expr-list }
-     */
-    ASTNode *Parser::exprlist(int funcindex)
-    {
-        paraminfo *params = g_sym.symbols[funcindex].content.funcparams->params;
-        int param_num = g_sym.symbols[funcindex].content.funcparams->param_num, num = 0;
-        ASTVal32 val = {.intvalue = 0};
-        ASTNode *root, *left, *right;
-
-        right = assignexpr();
-        assert(right->op == A_INTLIT || right->op == A_FLTLIT || right->op == A_FUNCCALL || right->op == A_IDENT);
-        val.symindex = params[num].lsym_index;
-        left  = mkastleaf(A_IDENT, val);
-        root  = mkastnode(A_ASSIGN, left, NULL, right, val);
-        num++;
-
-        while (ls.token.id == TOKEN::TK_COMMA)
-        {
-            next();
-            right = assignexpr();
-            val.symindex = num;
-            left  = mkastleaf(A_IDENT, val);
-            root  = mkastnode(A_ASSIGN, left, NULL, right, val);
-            num++;
-        }
-
-        if(num < param_num)
-        {
-            fprintf(stderr, "Too few arguments when calling function %s. Expected %d, got %d.\n",
-                g_sym.symbols[funcindex].name, param_num, num
-            );
             exit(-1);
-        }
-        else if(num > param_num){
-            fprintf(stderr, "Too many arguments when calling function %s. Expected %d, got %d.\n",
-                g_sym.symbols[funcindex].name, param_num, num
-            );
-            exit(-1);
-        }
-
-        return root;
+        } break;
     }
 
-    /*!
-     * primary-expr ->
-     *      ident |
-     *      integer-constant |
-     *      floating-constant |
-     *      string-literal |
-     *      '(' expr ')'
-     */
-    ASTNode *Parser::primaryexpr()
-    {
-        ASTNode *n = NULL;
-        ASTVal32 val;
+    return ret;
+}
 
-        switch (ls.token.id)
-        {
-            case TOKEN::TK_IDENT:
-            {
-                blockinfo **pblock = (blockinfo **)malloc(sizeof(blockinfo *));
-                if(!ps.cur_block)
-                    val.symindex = find_globalsym(ls.token.detail.data());
-                else
-                    val.symindex = find_localsym(ls.token.detail.data(), pblock);
-                if(val.symindex == -1){
-                    fprintf(stderr, "undefined symbol %s in primaryexpr()!\n", ls.token.detail.data());
+/*!
+ * postfix-expr ->
+ *      primary-expr |
+ *      postfix-expr '[' expr ']' |
+ *      postfix-expr '(' [ expr-list ] ')'
+ */
+Expr *Parser::postfixexpr() {
+    Expr *ret = primaryexpr();
+    bool  ok  = false;
+    while (!ok) {
+        switch (ls.token.id) {
+            case TOKEN::TK_LBRACKET: { //<! array index
+                if (ret->valueType->typeId != TypeID::Array) {
+                    fprintf(stderr, "Invalid array name.\n");
                     exit(-1);
                 }
-                n = mkastleaf(A_IDENT, val);
-                n->block = *pblock;
-                free(pblock);
-                next();
-            }
-            break;
-            case TOKEN::TK_INTVAL:
-            {
-                val.intvalue = atoi(ls.token.detail.data());
-                n = mkastleaf(A_INTLIT, val);
-                next();
-            }
-            break;
-            case TOKEN::TK_FLTVAL:
-            {
-                val.fltvalue = atof(ls.token.detail.data());
-                n = mkastleaf(A_FLTLIT, val);
-                next();
-            }
-            break;
-            case TOKEN::TK_STRING:
-            {
-                //! NOTE: #feature(string)
-                fprintf(
-                    stderr,
-                    "The preceding properties will be done later! (ref. string)\n");
-                next();
-            }
-            break;
-            case TOKEN::TK_LPAREN:
-            {
-                next();
-                expr();
-                expect(TOKEN::TK_RPAREN, "expect ')' after expression");
-            }
-            break;
-            default:
-            {
-                //! FIXME: 错误处理
-            }
-            break;
-        }
-
-        return n;
-    }
-
-    /*!
-     * postfix-expr ->
-     *      primary-expr |
-     *      postfix-expr '[' expr ']' |
-     *      postfix-expr '(' [ expr-list ] ')'
-     */
-    ASTNode *Parser::postfixexpr()
-    {
-        ASTNode *left, *right = NULL;
-        ASTVal32 val = {.intvalue = 0};
-
-        left = primaryexpr();
-        bool ok = false;
-        while (!ok)
-        {
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_LBRACKET:
-            { //<! array index
-                expr();
+                ret = SubscriptExpr::create(ret, expr());
                 expect(TOKEN::TK_RBRACKET, "expect ']'");
-            }
-            break;
-            case TOKEN::TK_LPAREN:
-            { //<! function call
-                if(left->op != A_IDENT)
-                {
-                    fprintf(stderr, "Missing identifier when calling a function!\n");
+            } break;
+            case TOKEN::TK_LPAREN: { //<! function call
+                if (ret->valueType->typeId != TypeID::FunctionProto) {
+                    fprintf(stderr, "Invalid function name.\n");
                     exit(-1);
                 }
-                else if(left->block != NULL)
-                {
-                    fprintf(stderr, "Definition of a local function is not supported!\n");
-                    exit(-1);
-                }
-                
-                assert(g_sym.symbols[left->val.symindex].stype == S_FUNCTION);
-                if(ls.lookahead() != TOKEN::TK_RPAREN)
-                {
+                if (ls.lookahead() != TOKEN::TK_RPAREN) {
                     next();
-                    right = exprlist(left->val.symindex);
-                }
-                left = mkastnode(A_FUNCCALL, left, NULL, right, val);
+                    ret = CallExpr::create(ret, *exprlist());
+                } else
+                    ret = CallExpr::create(ret);
                 expect(TOKEN::TK_RPAREN, "expect ')'");
-            }
-            break;
-            default:
-            {
+            } break;
+            default: {
                 ok = true;
-            }
-            break;
-            }
+            } break;
         }
-
-        //! TODO: support array index, function call
-        return left;
     }
 
-    /*!
-     * unary-expr ->
-     *      postfix-expr |
-     *      '+' unary-expr |
-     *      '-' unary-expr |
-     *      '~' unary-expr |
-     *      '!' unary-expr
-     */
-    ASTNode *Parser::unaryexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-        int nodetype = 0;
+    //! TODO: support array index, function call
+    return ret;
+}
 
-        left = NULL;
-
-        switch (ls.token.id)
-        {
+/*!
+ * unary-expr ->
+ *      postfix-expr |
+ *      '+' unary-expr |
+ *      '-' unary-expr |
+ *      '~' unary-expr |
+ *      '!' unary-expr
+ */
+Expr *Parser::unaryexpr() {
+    Expr *ret = postfixexpr();
+    switch (ls.token.id) {
         case TOKEN::TK_ADD:
-            nodetype = A_PLUS;
-            goto handle;
+            ret = new UnaryExpr(UnaryOperator::Pos, ret);
+            next();
+            break;
         case TOKEN::TK_SUB:
-            nodetype = A_MINUS;
-            goto handle;
+            ret = new UnaryExpr(UnaryOperator::Neg, ret);
+            next();
+            break;
         case TOKEN::TK_INV:
+            ret = new UnaryExpr(UnaryOperator::Inv, ret);
+            next();
+            break;
         case TOKEN::TK_NOT:
-        {
-            nodetype = tok2ast(ls.token.id);
-        handle:
+            ret = new UnaryExpr(UnaryOperator::Not, ret);
             next();
-            left = unaryexpr();
-            left = mkastunary(nodetype, left, val);
-        }
-        break;
-        default:
-        {
-            left = postfixexpr();
-        }
-        break;
-        }
-
-        return left;
-    }
-
-    /*!
-     * mul-expr ->
-     *      unary-expr |
-     *      mul-expr '*' unary-expr |
-     *      mul-expr '/' unary-expr |
-     *      mul-expr '%' unary-expr
-     */
-    ASTNode *Parser::mulexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype;
-
-        left = unaryexpr();
-        bool ok = false;
-        while (!ok)
-        {
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_MUL:
-            case TOKEN::TK_DIV:
-            case TOKEN::TK_MOD:
-            {
-                tokentype = ls.token.id;
-                next();
-                right = unaryexpr();
-                left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
-            }
             break;
-            default:
-            {
-                ok = true;
-            }
-            break;
-            }
-        }
-        return left;
+        default: {
+            // postfixexpr();
+        } break;
     }
 
-    /*!
-     * add-expr ->
-     *      mul-expr |
-     *      add-expr '+' mul-expr |
-     *      add-expr '-' mul-expr
-     */
-    ASTNode *Parser::addexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype;
+    return ret;
+}
 
-        left = mulexpr();
-        bool ok = false;
-        while (!ok)
-        {
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_ADD: 
-            case TOKEN::TK_SUB: 
-            {
-                tokentype = ls.token.id;
-                next();
-                right = mulexpr();
-                left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
-            }
-            break;
-            default:
-            {
-                ok = true;
-            }
-            break;
-            }
-        }
+Expr *Parser::binexpr(int priority) {
+    Expr *left, *right;
+    left                         = unaryexpr();
+    BinaryOperator   op          = binastop(ls.token.id);
+    OperatorPriority curPriority = lookupOperatorPriority(op);
+    while (curPriority.priority < priority
+           || (curPriority.priority == priority && !curPriority.assoc)) {
+        next();
+        right = binexpr(curPriority.priority);
+        left  = new BinaryExpr(
+            BinaryExpr::resolveType(op, left->valueType, right->valueType),
+            op,
+            left,
+            right);
 
-        return left;
+        //! TODO: 赋值时的类型检查
     }
 
-    /*!
-     * shift-expr ->
-     *      add-expr |
-     *      shift-expr '<<' add-expr |
-     *      shift-expr '>>' add-expr
-     */
-    ASTNode *Parser::shiftexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype;
+    return left;
+}
 
-        left = addexpr();
-        bool ok = false;
-        while (!ok)
-        {
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_SHL:
-            case TOKEN::TK_SHR:
-            {
-                tokentype = ls.token.id;
-                next();
-                right = addexpr();
-                left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
-            }
-            break;
-            default:
-            {
-                ok = true;
-            }
-            break;
-            }
-        }
-        return left;
+/*!
+ * expr ->
+ *      assign-expr |
+ *      expr ',' assign-expr
+ */
+Expr *Parser::expr() {
+    Expr *ret = binexpr(PRIORITIES.size());
+    if (!ret) {
+        fprintf(stderr, "Missing expression before comma!\n");
+        exit(-1);
+    }
+    if (ls.token.id == TOKEN::TK_COMMA) {
+        Expr *tmp = ret;
+        ret       = new CommaExpr(*exprlist());
+        static_cast<CommaExpr *>(ret)->insertToHead(tmp);
     }
 
-    /*!
-     * rel-expr ->
-     *      shift-expr |
-     *      rel-expr '<' shift-expr |
-     *      rel-expr '>' shift-expr |
-     *      rel-expr '<=' shift-expr |
-     *      rel-expr '>=' shift-expr
-     */
-    ASTNode *Parser::relexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype ;
-
-        left = shiftexpr();
-        bool ok = false;
-        while (!ok)
-        {
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_LT:
-            case TOKEN::TK_GT:
-            case TOKEN::TK_LE:
-            case TOKEN::TK_GE:
-            {
-                tokentype = ls.token.id;
-                next();
-                right = shiftexpr();
-                left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
-            }
-            break;
-            default:
-            {
-                ok = true;
-            }
-            break;
-            }
-        }
-        return left;
-    }
-
-    /*!
-     * eq-expr ->
-     *      rel-expr |
-     *      eq-expr '==' rel-expr |
-     *      eq-expr '!=' rel-expr
-     */
-    ASTNode *Parser::eqexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-        TOKEN tokentype;
-
-        left = relexpr();
-        bool ok = false;
-        while (!ok)
-        {
-            switch (ls.token.id)
-            {
-            case TOKEN::TK_EQ:
-            case TOKEN::TK_NE:
-            case TOKEN::TK_LE:
-            {
-                tokentype = ls.token.id;
-                next();
-                right = relexpr();
-                left = mkastnode(tok2ast(tokentype), left, NULL, right, val);
-            }
-            break;
-            default:
-            {
-                ok = true;
-            }
-            break;
-            }
-        }
-
-        return left;
-    }
-
-    /*!
-     * and-expr ->
-     *      eq-expr |
-     *      and-expr '&' eq-expr
-     */
-    ASTNode *Parser::andexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-
-        left = eqexpr();
-        while (ls.token.id == TOKEN::TK_AND)
-        {
-            next();
-            right = eqexpr();
-            mkastnode(tok2ast(TOKEN::TK_AND), left, NULL, right, val);
-        }
-
-        return left;
-    }
-
-    /*!
-     * xor-expr ->
-     *      and-expr |
-     *      xor-expr '^' and-expr
-     */
-    ASTNode *Parser::xorexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-
-        left = andexpr();
-        while (ls.token.id == TOKEN::TK_XOR)
-        {
-            next();
-            right = andexpr();
-            mkastnode(tok2ast(TOKEN::TK_XOR), left, NULL, right, val);
-        }
-
-        return left;
-    }
-
-    /*!
-     * or-expr ->
-     *      xor-expr |
-     *      or-expr '|' xor-expr
-     */
-    ASTNode *Parser::orexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-
-        left = xorexpr();
-        while (ls.token.id == TOKEN::TK_OR)
-        {
-            next();
-            right = xorexpr();
-            mkastnode(tok2ast(TOKEN::TK_OR), left, NULL, right, val);
-        }
-
-        return left;
-    }
-
-    /*!
-     * land-expr ->
-     *      or-expr |
-     *      land-expr '&&' or-expr
-     */
-    ASTNode *Parser::landexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-
-        left = orexpr();
-        while (ls.token.id == TOKEN::TK_LAND)
-        {
-            next();
-            right = orexpr();
-            mkastnode(tok2ast(TOKEN::TK_LAND), left, NULL, right, val);
-        }
-
-        return left;
-    }
-
-    /*!
-     * lor-expr ->
-     *      land-expr |
-     *      lor-expr '||' land-expr
-     */
-    ASTNode *Parser::lorexpr()
-    {
-        ASTNode *left, *right;
-        ASTVal32 val = {.intvalue = 0};
-
-        left = landexpr();
-        while (ls.token.id == TOKEN::TK_LOR)
-        {
-            next();
-            right = landexpr();
-            mkastnode(tok2ast(TOKEN::TK_LOR), left, NULL, right, val);
-        }
-
-        return left;
-    }
-
-    /*!
-     * cond-expr ->
-     *      lor-expr
-     */
-    ASTNode *Parser::condexpr()
-    {
-        return lorexpr();
-    }
-
-    /*!
-     * assign-expr ->
-     *      cond-expr |
-     *      unary-expr '=' assign-expr
-     */
-    ASTNode *Parser::assignexpr()
-    {
-        ASTNode *left, *right, *root;
-        ASTVal32 v = {.intvalue = 0};
-        left = condexpr();
-
-        if (ls.token.id == TOKEN::TK_ASS)
-        {
-            if(left->op != A_IDENT)
-            {
-                fprintf(stderr, "Missing identifier on the left of assignment!\n");
-                exit(-1);
-            }
-            next();
-            right = assignexpr();
-            left = mkastnode(A_ASSIGN, left, NULL, right, v);
-        }
-
-        return left;
-    }
-
-    /*!
-     * expr ->
-     *      assign-expr |
-     *      expr ',' assign-expr
-     */
-    ASTNode *Parser::expr()
-    {
-        ASTNode *root;
-        root = assignexpr();
-        if(!root){
-            fprintf(stderr, "Missing expression before comma!\n");
-            exit(-1);
-        }
-        while (ls.token.id == TOKEN::TK_COMMA)
-        {
-            next();
-            root = assignexpr();
-        }
-
-        return root;
-    }
-
-    void Parser::inorder(ASTNode *n) {
-        if (!n) return;
-        if (n->left) inorder(n->left);
-        printf("%s", ast2str(n->op));
-        if (n->op == A_INTLIT)
-            printf(": %d", n->val.intvalue);
-        else if (n->op == A_FLTLIT)
-            printf(": %f", n->val.fltvalue);
-        else if (n->op == A_IDENT)
-            displaySymInfo(n->val.symindex, n->block);
-        printf("\n");
-        if (n->mid) inorder(n->mid);
-        if (n->right) inorder(n->right);
-    }
-
-    void Parser::traverseAST(ASTNode *root)
-    {
-        inorder(root);
-    }
-
-
-    void Parser::displaySymInfo(int index, blockinfo *block)
-    {
-        if(!block)
-        {
-            if(g_sym.symbols[index].stype == S_FUNCTION)
-                printf("type: function ");
-            else
-                printf("type: variable ");
-            printf("name: %s\n", g_sym.symbols[index].name);    
-        }
-        else{
-            if(block->l_sym.symbols[index].stype == S_FUNCTION)
-                printf(": type: function ");
-            else
-                printf(": type: variable ");
-            printf("name: %s", block->l_sym.symbols[index].name);    
-        }
-    }
+    return ret;
+}
 
 } // namespace slime
