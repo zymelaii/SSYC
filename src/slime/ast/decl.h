@@ -185,9 +185,8 @@ struct FunctionDecl
     static void extractTypeListFromParams(
         TypeList *typeListPtr, const ParamVarDeclList &params) {
         TypeList list;
-        for (auto param = params.head(); param != nullptr;
-             param      = param->next()) {
-            list.insertToTail(param->value()->type());
+        for (auto param : *const_cast<ParamVarDeclList *>(&params)) {
+            list.insertToTail(param->type());
         }
         new (typeListPtr) TypeList(std::move(list));
     }
