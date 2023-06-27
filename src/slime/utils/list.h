@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <string.h>
 #include <type_traits>
+#include <iterator>
 #include <utility>
 
 namespace slime::utils {
@@ -203,7 +204,7 @@ private:
     ListNode             *prev_;
     ListNode             *next_;
     AbstractListTrait<T> *parent_;
-};
+}; // namespace slime::utils
 
 template <typename T>
 class ListTrait : public AbstractListTrait<T> {
@@ -211,6 +212,76 @@ public:
     using base_type  = AbstractListTrait<T>;
     using node_type  = typename base_type::node_type;
     using value_type = typename node_type::value_type;
+
+    class iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = value_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        iterator(const iterator &other)
+            : iterator(other.ptr_) {}
+
+        iterator &operator++() {
+            if (ptr_ != parent_->tailGuard()) { ptr_ = ptr_->next(); }
+            return *this;
+        }
+
+        const iterator &operator++() const {
+            return const_cast<iterator *>(this)->operator++();
+        }
+
+        iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        iterator operator++(int) const {
+            return (*const_cast<iterator *>(this))++;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->tailGuard());
+            return ptr_->value();
+        }
+
+        reference operator*() const {
+            return const_cast<iterator *>(this)->operator*();
+        }
+
+        pointer operator->() {
+            return ptr_->value();
+        }
+
+        bool operator==(const iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
+    iterator begin() {
+        return iterator(this->head());
+    }
+
+    iterator end() {
+        return iterator(this->tailGuard());
+    }
 
     ListTrait() {
         memset(guard_, 0, sizeof(node_type) * 2);
