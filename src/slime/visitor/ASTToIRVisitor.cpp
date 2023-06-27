@@ -24,24 +24,20 @@ ir::Type* ASTToIRVisitor::getIRTypeFromAstType(ast::Type* type) {
             }
         } break;
         case ast::TypeID::Array: {
-            auto e    = type->asArray();
-            auto t    = getIRTypeFromAstType(e->type);
-            auto node = e->head();
-            while (node != nullptr) {
+            auto e = type->asArray();
+            auto t = getIRTypeFromAstType(e->type);
+            for (auto value : *e) {
                 //! FIXME: check validity
-                t = ir::Type::getArrayType(t, node->value()->asConstant()->i32);
-                node = node->next();
+                t = ir::Type::getArrayType(t, value->asConstant()->i32);
             }
             return t;
         } break;
         case ast::TypeID::IncompleteArray: {
-            auto e    = type->asIncompleteArray();
-            auto t    = getIRTypeFromAstType(e->type);
-            auto node = e->head();
-            while (node != nullptr) {
+            auto e = type->asIncompleteArray();
+            auto t = getIRTypeFromAstType(e->type);
+            for (auto value : *e) {
                 //! FIXME: check validity
-                t = ir::Type::getArrayType(t, node->value()->asConstant()->i32);
-                node = node->next();
+                t = ir::Type::getArrayType(t, value->asConstant()->i32);
             }
             return ir::Type::getPointerType(t);
         } break;

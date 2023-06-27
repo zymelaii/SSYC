@@ -19,9 +19,7 @@ public:
     static ir::Constant* evaluateCompileTimeAstExpr(ast::Expr* expr);
 
     void visit(TranslationUnit* e) {
-        auto node = e->head();
-        while (node != nullptr) {
-            auto decl = node->value();
+        for (auto decl : *e) {
             switch (decl->declId) {
                 case DeclID::Var: {
                     insertToTail(
@@ -34,7 +32,6 @@ public:
                     assert(false && "unexpected ast node type");
                 } break;
             }
-            node = node->next();
         }
     }
 
@@ -62,13 +59,10 @@ protected:
     Function* visit(FunctionDecl* e) {
         std::vector<ir::Type*>  paramTypes;
         std::vector<Parameter*> params;
-        auto                    param = e->head();
-        while (param != nullptr) {
-            auto type = getIRTypeFromAstType(param->value()->type());
+        for (auto param : *e) {
+            auto type = getIRTypeFromAstType(param->type());
             paramTypes.push_back(type);
-            params.push_back(
-                new Parameter(type, nullptr, param->value()->name));
-            param = param->next();
+            params.push_back(new Parameter(type, nullptr, param->name));
         }
         auto proto = ir::Type::getFunctionType(
             getIRTypeFromAstType(e->proto()->returnType), paramTypes);
@@ -293,20 +287,17 @@ protected:
     }
 
     Value* visit(BasicBlock* block, CallExpr* e) {
-        auto fn   = e->asDeclRef()->source->asFunctionDecl()->name;
-        auto node = head();
-        while (node != nullptr) {
-            auto v = node->value();
-            if (v->type->id == ir::TypeID::Function && v->name == fn) {
+        auto fn = e->asDeclRef()->source->asFunctionDecl()->name;
+        for (auto value : *this) {
+            if (value->type->id == ir::TypeID::Function && value->name == fn) {
                 std::vector<Value*> argList;
                 auto                arg = e->argList.head();
                 while (arg != nullptr) {
                     argList.push_back(visit(block, arg->value()));
                     arg = arg->next();
                 }
-                return new CallInst(static_cast<Function*>(v), argList);
+                return new CallInst(static_cast<Function*>(value), argList);
             }
-            node = node->next();
         }
         return nullptr;
     }

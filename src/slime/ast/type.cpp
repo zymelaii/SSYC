@@ -18,6 +18,7 @@ Type* Type::getElementType(Type* type) {
                 return t->type;
             } else {
                 std::vector<Expr*> lengthList(t->size() - 1);
+                //! FIXME: why here is head()->next()?
                 auto               node = t->head()->next();
                 for (auto& e : lengthList) {
                     e    = node->value();
