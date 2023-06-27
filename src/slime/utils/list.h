@@ -276,7 +276,7 @@ public:
     };
 
     iterator begin() {
-        return iterator(this->head());
+        return iterator(this->headGuard()->next_);
     }
 
     iterator end() {
