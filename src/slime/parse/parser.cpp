@@ -121,7 +121,7 @@ const char *Parser::lookupStringLiteral(std::string_view s) {
 TranslationUnit *Parser::parse() {
     ps.tu = new TranslationUnit();
     symbolTable.insertToHead(new SymbolTable);
-    ps.cur_specifs.type         = BuiltinType::getIntType();
+    ps.cur_specifs.type = BuiltinType::getIntType();
     while (ls.token.id != TOKEN::TK_EOF) global_decl();
     return ps.tu;
 }
@@ -199,12 +199,12 @@ FunctionDecl *Parser::enterfunc() {
         fprintf(stderr, "Missing argument list of function %s!\n", funcname);
     }
 
-    ParamVarDeclList funcparams = funcargs();
-    bool shouldClear = false;
-    bool             err        = false;
+    ParamVarDeclList funcparams  = funcargs();
+    bool             shouldClear = false;
+    bool             err         = false;
 
     for (auto param : funcparams) {
-        auto name = param->name;
+        auto name         = param->name;
         auto is_type_void = param->type()->asBuiltin()->isVoid();
         if (is_type_void && name.empty()) {
             if (funcparams.size() == 1) {
@@ -217,11 +217,10 @@ FunctionDecl *Parser::enterfunc() {
         }
     }
     //! NOTE: function body will be added later.
-    if (shouldClear) {
-        funcparams.head()->removeFromList();
-    }
+    if (shouldClear) { funcparams.head()->removeFromList(); }
     //! FIXME: SIGSEV here
-    ret = FunctionDecl::create(funcname, ps.cur_specifs.clone(), funcparams, NULL);
+    ret = FunctionDecl::create(
+        funcname, ps.cur_specifs.clone(), funcparams, NULL);
     return ret;
 }
 
@@ -253,8 +252,6 @@ void Parser::global_decl() {
     bool   err = false;
     DeclID tag;
     enterdecl();
-
-
 
     while (ls.token.id != TOKEN::TK_EOF) {
         if (ls.lookahead() == TOKEN::TK_LPAREN) {
@@ -475,7 +472,7 @@ ParamVarDeclList Parser::funcargs() {
         if (ls.token.id != TOKEN::TK_IDENT) {
             fprintf(
                 stderr, "Warning: Missing parameter's name in funcargs()!\n");
-        } 
+        }
 
         if (ls.token.id == TOKEN::TK_LBRACKET) {
             //! 处理数组参数类型
@@ -504,9 +501,9 @@ ParamVarDeclList Parser::funcargs() {
             }
         }
 
-        if (ls.token.id == TOKEN::TK_IDENT) 
+        if (ls.token.id == TOKEN::TK_IDENT)
             paramname = lookupStringLiteral(ls.token.detail.data());
-        params.insertToTail(ParamVarDecl::create(paramname, specif));
+        params.insertToTail(ParamVarDecl::create(paramname, specif->clone()));
         next();
 
         //! 完成参数类型并写入函数原型
@@ -514,7 +511,7 @@ ParamVarDeclList Parser::funcargs() {
             if (ls.lookahead() == TOKEN::TK_RPAREN) {
                 fprintf(stderr, "Unexpected comma in funcargs()!\n");
                 exit(-1);
-        }
+            }
 
         } else if (ls.token.id != TOKEN::TK_RPAREN) {
             fprintf(
@@ -524,6 +521,7 @@ ParamVarDeclList Parser::funcargs() {
         }
     }
     next();
+    ps.cur_params = &params;
     return params;
 }
 
@@ -662,6 +660,16 @@ ReturnStmt *Parser::returnstat() {
 
 CompoundStmt *Parser::block() {
     enterblock();
+    //! add function params to symboltable
+    
+    if (ps.cur_params != NULL) {
+        auto lsyms = symbolTable.tail()->value();
+        for (auto param : *ps.cur_params) {
+            lsyms->insert(
+                std::pair<std::string_view, NamedDecl *>(param->name, param));
+        }
+        ps.cur_params = NULL;
+    }
     assert(ls.token.id == TOKEN::TK_LBRACE);
     next();
     CompoundStmt *ret = new CompoundStmt();
@@ -673,14 +681,14 @@ CompoundStmt *Parser::block() {
 
 NamedDecl *Parser::findSymbol(std::string_view name, DeclID declID) {
     if (declID == DeclID::Var || declID == DeclID::ParamVar) {
-        auto node = symbolTable.tail();
-        while (node != symbolTable.head()) {
-            SymbolTable *syms = node->value();
-            auto         it   = syms->find(name);
-            if (it != syms->end() && it->second->declId != DeclID::Function)
-                return it->second;
-            node = node->prev();
+        for (auto it = symbolTable.rbegin(); it != symbolTable.rend(); ++it) {
+            auto pair = (*it)->find(name);
+            if (pair != (*it)->end()
+                && pair->second->declId != DeclID::Function) {
+                return pair->second;
+            }
         }
+
     } else if (declID == DeclID::Function) {
         SymbolTable *gsyms = symbolTable.head()->value();
         auto         it    = gsyms->find(name);
