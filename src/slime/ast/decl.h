@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../utils/list.h"
+#include "../utils/cast.def"
 #include "type.h"
 #include "scope.h"
-#include "cast.def"
 
 #include <stdint.h>
 #include <string_view>

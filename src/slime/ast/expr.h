@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../utils/list.h"
+#include "../utils/cast.def"
 #include "type.h"
 #include "stmt.h"
-#include "cast.def"
 #include "operators.def"
 #include "expr.def"
 

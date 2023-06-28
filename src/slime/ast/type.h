@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../utils/list.h"
-#include "cast.def"
+#include "../utils/cast.def"
 
 #include <vector>
 #include <assert.h>

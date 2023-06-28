@@ -1,10 +1,10 @@
 #pragma once
 
 #include "../utils/list.h"
+#include "../utils/cast.def"
 #include "type.h"
 #include "decl.h"
 #include "stmt.def"
-#include "cast.def"
 
 namespace slime::ast {
 
