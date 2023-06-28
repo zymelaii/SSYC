@@ -33,7 +33,7 @@ public:
     }
 
     node_type *tail() {
-        auto node = tailGuard()->next_;
+        auto node = tailGuard()->prev_;
         return node == headGuard() ? nullptr : node;
     }
 
@@ -59,7 +59,7 @@ protected:
     virtual node_type *tailGuard() = 0;
 
 private:
-    size_t size_;
+    size_t size_ = 0;
 };
 
 template <typename T>
