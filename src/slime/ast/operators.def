@@ -11,27 +11,27 @@ enum class UnaryOperator {
 };
 
 enum class BinaryOperator {
-    Assign,    //<! `=` assign
-    Add,       //<! `+` add
-    Sub,       //<! `-` sub
+    Subscript, //<! `[]` (derived)
     Mul,       //<! `*` mul
     Div,       //<! `/` div
     Mod,       //<! `%` remainder
-    And,       //<! `&` bitwise and
-    Or,        //<! `|` bitwise or
-    Xor,       //<! `^` xor
-    LAnd,      //<! `&&` logical and
-    LOr,       //<! `||` logical or
+    Add,       //<! `+` add
+    Sub,       //<! `-` sub
+    Shl,       //<! `<<` bitwise shift left
+    Shr,       //<! `>>` bitwise shift right
     LT,        //<! `<` less than
     LE,        //<! `<=` less than or equal
     GT,        //<! `>` greater than
     GE,        //<! `>=` greater than or equal
     EQ,        //<! `==` equal
     NE,        //<! `!=` not equal
-    Shl,       //<! `<<` bitwise shift left
-    Shr,       //<! `>>` bitwise shift right
+    And,       //<! `&` bitwise and
+    Xor,       //<! `^` xor
+    Or,        //<! `|` bitwise or
+    LAnd,      //<! `&&` logical and
+    LOr,       //<! `||` logical or
+    Assign,    //<! `=` assign
     Comma,     //<! `,` (derived)
-    Subscript, //<! `[]` (derived)
 };
 
 } // namespace slime::ast

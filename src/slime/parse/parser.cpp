@@ -25,14 +25,15 @@ struct OperatorPriority {
 
 static constexpr size_t TOTAL_OPERATORS = 25;
 static constexpr std::array<OperatorPriority, TOTAL_OPERATORS> PRIORITIES{
-    //! Subscript '[]'
-    OperatorPriority(0, true),
 
     //! UnaryOperator (except Paren)
     OperatorPriority(1, false),
     OperatorPriority(1, false),
     OperatorPriority(1, false),
     OperatorPriority(1, false),
+    //! Subscript '[]'
+    OperatorPriority(0, true),
+
     //! BinaryOperator
     //! Mul Div Mod
     OperatorPriority(2, true),
@@ -87,7 +88,7 @@ inline OperatorPriority lookupOperatorPriority(UnaryOperator op) {
 
 inline OperatorPriority lookupOperatorPriority(BinaryOperator op) {
     return PRIORITIES
-        [static_cast<int>(op) + static_cast<int>(UnaryOperator::Paren) - 1];
+        [static_cast<int>(op) + static_cast<int>(UnaryOperator::Paren)];
 }
 
 void Parser::next() {
@@ -192,7 +193,6 @@ FunctionDecl *Parser::enterfunc() {
             "Duplicate defined symbol:%s in enterfunc()!\n",
             ls.token.detail.data());
     }
-
     next();
     //! 处理错误：丢失参数列表
     if (ls.token.id != TOKEN::TK_LPAREN) {
@@ -221,6 +221,7 @@ FunctionDecl *Parser::enterfunc() {
     //! FIXME: SIGSEV here
     ret = FunctionDecl::create(
         funcname, ps.cur_specifs.clone(), funcparams, NULL);
+    gsyms->insert(std::pair<std::string_view, NamedDecl*>(lookupStringLiteral(funcname), ret));
     return ret;
 }
 
@@ -337,9 +338,9 @@ VarDecl *Parser::vardef() {
     ArrayType  *arrType  = NULL;
     VarDecl    *ret      = NULL;
     next();
-    if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON) {
-        return NULL;
-    }
+    // if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON) {
+    //     return NULL;
+    // }
 
     //! TODO: 支持数组
     if (ls.token.id == TOKEN::TK_LBRACKET) {
@@ -503,7 +504,10 @@ ParamVarDeclList Parser::funcargs() {
 
         if (ls.token.id == TOKEN::TK_IDENT)
             paramname = lookupStringLiteral(ls.token.detail.data());
-        params.insertToTail(ParamVarDecl::create(paramname, specif->clone()));
+        auto new_param = ParamVarDecl::create(paramname, specif->clone());
+        new_param->scope.depth = 1;
+        new_param->scope.scope = paramname;
+        params.insertToTail(new_param);
         next();
 
         //! 完成参数类型并写入函数原型
@@ -898,27 +902,27 @@ Expr *Parser::postfixexpr() {
  */
 Expr *Parser::unaryexpr() {
     Expr *ret = postfixexpr();
-    switch (ls.token.id) {
-        case TOKEN::TK_ADD:
-            ret = new UnaryExpr(UnaryOperator::Pos, ret);
-            next();
-            break;
-        case TOKEN::TK_SUB:
-            ret = new UnaryExpr(UnaryOperator::Neg, ret);
-            next();
-            break;
-        case TOKEN::TK_INV:
-            ret = new UnaryExpr(UnaryOperator::Inv, ret);
-            next();
-            break;
-        case TOKEN::TK_NOT:
-            ret = new UnaryExpr(UnaryOperator::Not, ret);
-            next();
-            break;
-        default: {
-            // postfixexpr();
-        } break;
-    }
+    // switch (ls.token.id) {
+    //     case TOKEN::TK_ADD:
+    //         ret = new UnaryExpr(UnaryOperator::Pos, ret);
+    //         next();
+    //         break;
+    //     case TOKEN::TK_SUB:
+    //         ret = new UnaryExpr(UnaryOperator::Neg, ret);
+    //         next();
+    //         break;
+    //     case TOKEN::TK_INV:
+    //         ret = new UnaryExpr(UnaryOperator::Inv, ret);
+    //         next();
+    //         break;
+    //     case TOKEN::TK_NOT:
+    //         ret = new UnaryExpr(UnaryOperator::Not, ret);
+    //         next();
+    //         break;
+    //     default: {
+    //         // postfixexpr();
+    //     } break;
+    // }
 
     return ret;
 }
@@ -926,10 +930,13 @@ Expr *Parser::unaryexpr() {
 Expr *Parser::binexpr(int priority) {
     Expr *left, *right;
     left                         = unaryexpr();
+    if(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN)
+        return left;
     BinaryOperator   op          = binastop(ls.token.id);
     OperatorPriority curPriority = lookupOperatorPriority(op);
     while (curPriority.priority < priority
            || (curPriority.priority == priority && !curPriority.assoc)) {
+        
         next();
         right = binexpr(curPriority.priority);
         left  = new BinaryExpr(
@@ -937,7 +944,10 @@ Expr *Parser::binexpr(int priority) {
             op,
             left,
             right);
-
+        if(ls.token.id == TOKEN::TK_SEMICOLON)
+            return left;
+        op          = binastop(ls.token.id);
+        curPriority = lookupOperatorPriority(op);
         //! TODO: 赋值时的类型检查
     }
 
