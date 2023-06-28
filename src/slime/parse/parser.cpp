@@ -503,7 +503,7 @@ ParamVarDeclList Parser::funcargs() {
 
         if (ls.token.id == TOKEN::TK_IDENT)
             paramname = lookupStringLiteral(ls.token.detail.data());
-        params.insertToTail(ParamVarDecl::create(paramname, specif));
+        params.insertToTail(ParamVarDecl::create(paramname, specif->clone()));
         next();
 
         //! 完成参数类型并写入函数原型
@@ -521,6 +521,7 @@ ParamVarDeclList Parser::funcargs() {
         }
     }
     next();
+    ps.cur_params = &params;
     return params;
 }
 
@@ -659,6 +660,16 @@ ReturnStmt *Parser::returnstat() {
 
 CompoundStmt *Parser::block() {
     enterblock();
+    //! add function params to symboltable
+
+    if (ps.cur_params != NULL) {
+        auto lsyms = symbolTable.tail()->value();
+        for (auto param : *ps.cur_params) {
+            lsyms->insert(
+                std::pair<std::string_view, NamedDecl *>(param->name, param));
+        }
+        ps.cur_params = NULL;
+    }
     assert(ls.token.id == TOKEN::TK_LBRACE);
     next();
     CompoundStmt *ret = new CompoundStmt();
@@ -677,6 +688,7 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declID) {
                 return result->second;
             }
         }
+
     } else if (declID == DeclID::Function) {
         SymbolTable *gsyms = symbolTable.head()->value();
         auto         it    = gsyms->find(name);

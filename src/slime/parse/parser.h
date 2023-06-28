@@ -14,17 +14,18 @@ namespace slime {
 
 using namespace ast;
 
-using SymbolTable     = std::map<std::string_view , NamedDecl*>;
-using SymbolTableList = slime::utils::ListTrait<SymbolTable *>;
+using SymbolTable     = std::map<std::string_view, NamedDecl*>;
+using SymbolTableList = slime::utils::ListTrait<SymbolTable*>;
 
 struct ParseState {
     FunctionDecl*
         cur_func; //<! index in gsym of current parsing function(-1 if not in a
                   // function)
-    int              cur_depth;
-    DeclSpecifier    cur_specifs;
-    TranslationUnit* tu;
-    WhileStmt*       cur_loop;
+    int               cur_depth;
+    DeclSpecifier     cur_specifs;
+    ParamVarDeclList* cur_params;
+    TranslationUnit*  tu;
+    WhileStmt*        cur_loop;
 };
 
 class Parser {
@@ -36,7 +37,7 @@ public:
 
     Parser()
         : sharedStringSet{ls.sharedStringSet()}
-        , ps{NULL, 0, {}, NULL, NULL} {}
+        , ps{NULL, 0, {}, NULL, NULL, NULL} {}
 
     void        next();
     bool        expect(TOKEN token, const char* msg = nullptr);
