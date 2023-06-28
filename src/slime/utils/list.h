@@ -293,13 +293,7 @@ public:
 
     ListTrait(ListTrait &&list)
         : ListTrait() {
-        auto head = list.headGuard()->next_;
-        auto tail = list.tailGuard();
-        while (head != tail) {
-            auto node = head->next_;
-            head->insertToTail(*this);
-            head = node;
-        }
+        for (auto &e : list) { insertToTail(std::move(e)); }
     }
 
     template <typename... Args>
