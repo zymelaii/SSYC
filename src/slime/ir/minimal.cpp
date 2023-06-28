@@ -13,32 +13,32 @@ Type::Type(TypeID id)
     , containedTypes{nullptr}
     , totalContainedTypes{0} {}
 
-Type *getVoidType() {
+Type *Type::getVoidType() {
     return new Type(TypeID::Void);
 }
 
-Type *getLabelType() {
+Type *Type::getLabelType() {
     return new Type(TypeID::Label);
 }
 
-Type *getIntegerType() {
+Type *Type::getIntegerType() {
     return new Type(TypeID::Integer);
 }
 
-Type *getFloatType() {
+Type *Type::getFloatType() {
     return new Type(TypeID::Float);
 }
 
 FunctionType *
-    getFunctionType(Type *returnType, std::vector<Type *> &paramTypes) {
+    Type::getFunctionType(Type *returnType, std::vector<Type *> &paramTypes) {
     return new FunctionType(returnType, paramTypes);
 }
 
-ArrayType *getArrayType(Type *elementType, size_t length) {
+ArrayType *Type::getArrayType(Type *elementType, size_t length) {
     return new ArrayType(elementType, length);
 }
 
-PointerType *getPointerType(Type *elementType) {
+PointerType *Type::getPointerType(Type *elementType) {
     return new PointerType(elementType);
 }
 
