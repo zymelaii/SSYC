@@ -81,11 +81,13 @@ struct ConstantExpr : public Expr {
     template <typename T>
     void setData(T data) {
         if constexpr (std::is_integral_v<T>) {
-            type = ConstantType::i32;
-            i32  = data;
+            type      = ConstantType::i32;
+            i32       = data;
+            valueType = BuiltinType::getIntType();
         } else if constexpr (std::is_floating_point_v<T>) {
-            type = ConstantType::f32;
-            f32  = data;
+            type      = ConstantType::f32;
+            f32       = data;
+            valueType = BuiltinType::getFloatType();
         } else {
             assert(false && "unsupport constant type");
         }
