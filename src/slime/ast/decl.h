@@ -94,9 +94,9 @@ struct Decl {
     Decl(DeclID declId)
         : declId{declId} {}
 
-    RegisterCast(declId, Var, Decl, DeclID);
-    RegisterCast(declId, ParamVar, Decl, DeclID);
-    RegisterCast(declId, Function, Decl, DeclID);
+    RegisterCastDecl(declId, Var, Decl, DeclID);
+    RegisterCastDecl(declId, ParamVar, Decl, DeclID);
+    RegisterCastDecl(declId, Function, Decl, DeclID);
 
     DeclID declId;
 };
@@ -225,5 +225,9 @@ inline FunctionDecl *DeclSpecifier::createFunctionDecl(
     //! FIXME: here assume returnType == specifier->type
     return FunctionDecl::create(name, this, params, body);
 }
+
+RegisterCastImpl(declId, Var, Decl, DeclID);
+RegisterCastImpl(declId, ParamVar, Decl, DeclID);
+RegisterCastImpl(declId, Function, Decl, DeclID);
 
 } // namespace slime::ast

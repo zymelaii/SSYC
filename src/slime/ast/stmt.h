@@ -29,16 +29,16 @@ struct Stmt {
     Stmt(StmtID stmtId)
         : stmtId{stmtId} {}
 
-    RegisterCast(stmtId, Null, Stmt, StmtID);
-    RegisterCast(stmtId, Decl, Stmt, StmtID);
-    RegisterCast(stmtId, Expr, Stmt, StmtID);
-    RegisterCast(stmtId, Compound, Stmt, StmtID);
-    RegisterCast(stmtId, If, Stmt, StmtID);
-    RegisterCast(stmtId, Do, Stmt, StmtID);
-    RegisterCast(stmtId, While, Stmt, StmtID);
-    RegisterCast(stmtId, Break, Stmt, StmtID);
-    RegisterCast(stmtId, Continue, Stmt, StmtID);
-    RegisterCast(stmtId, Return, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Null, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Decl, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Expr, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Compound, Stmt, StmtID);
+    RegisterCastDecl(stmtId, If, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Do, Stmt, StmtID);
+    RegisterCastDecl(stmtId, While, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Break, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Continue, Stmt, StmtID);
+    RegisterCastDecl(stmtId, Return, Stmt, StmtID);
 
     Type* implicitValueType();
 
@@ -153,5 +153,16 @@ struct ReturnStmt : public Stmt {
 
     Stmt* returnValue; //<! always ExprStmt or NullStmt
 };
+
+RegisterCastImpl(stmtId, Null, Stmt, StmtID);
+RegisterCastImpl(stmtId, Decl, Stmt, StmtID);
+RegisterCastImpl(stmtId, Expr, Stmt, StmtID);
+RegisterCastImpl(stmtId, Compound, Stmt, StmtID);
+RegisterCastImpl(stmtId, If, Stmt, StmtID);
+RegisterCastImpl(stmtId, Do, Stmt, StmtID);
+RegisterCastImpl(stmtId, While, Stmt, StmtID);
+RegisterCastImpl(stmtId, Break, Stmt, StmtID);
+RegisterCastImpl(stmtId, Continue, Stmt, StmtID);
+RegisterCastImpl(stmtId, Return, Stmt, StmtID);
 
 } // namespace slime::ast
