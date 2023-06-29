@@ -122,29 +122,29 @@ const char *Parser::lookupStringLiteral(std::string_view s) {
 TranslationUnit *Parser::parse() {
     ps.tu = new TranslationUnit();
     symbolTable.insertToHead(new SymbolTable);
-    ps.cur_specifs.type = BuiltinType::getIntType();
     while (ls.token.id != TOKEN::TK_EOF) global_decl();
     return ps.tu;
 }
 
 //! 初始化声明环境
 void Parser::enterdecl() {
+    ps.cur_specifs = DeclSpecifier::create();
     if (ls.token.id == TOKEN::TK_CONST) {
-        ps.cur_specifs.addSpecifier(NamedDeclSpecifier::Const);
+        ps.cur_specifs->addSpecifier(NamedDeclSpecifier::Const);
         next();
     }
 
     switch (ls.token.id) {
         case TOKEN::TK_VOID: {
-            ps.cur_specifs.type = BuiltinType::getVoidType();
+            ps.cur_specifs->type = BuiltinType::getVoidType();
             next();
         }
         case TOKEN::TK_INT: {
-            ps.cur_specifs.type = BuiltinType::getIntType();
+            ps.cur_specifs->type = BuiltinType::getIntType();
             next();
         } break;
         case TOKEN::TK_FLOAT: {
-            ps.cur_specifs.type = BuiltinType::getFloatType();
+            ps.cur_specifs->type = BuiltinType::getFloatType();
             next();
         } break;
         default: {
@@ -167,9 +167,7 @@ void Parser::leavedecl(DeclID tag) {
         next();
     }
     //! TODO: 清理操作
-
-    ps.cur_specifs.removeSpecifier(NamedDeclSpecifier::Const);
-    ps.cur_specifs.type->typeId = TypeID::None;
+    ps.cur_specifs = NULL;
 }
 
 // 标记函数类型，处理函数参数列表
@@ -220,7 +218,7 @@ FunctionDecl *Parser::enterfunc() {
     if (shouldClear) { funcparams.head()->removeFromList(); }
     //! FIXME: SIGSEV here
     ret = FunctionDecl::create(
-        funcname, ps.cur_specifs.clone(), funcparams, NULL);
+        funcname, ps.cur_specifs->clone(), funcparams, NULL);
     gsyms->insert(std::pair<std::string_view, NamedDecl*>(lookupStringLiteral(funcname), ret));
     return ret;
 }
@@ -248,7 +246,6 @@ void Parser::leaveblock() {
 void Parser::global_decl() {
     assert(ps.tu != NULL);
     assert(symbolTable.size() != 0);
-    assert(ps.cur_specifs.type != NULL);
 
     bool   err = false;
     DeclID tag;
@@ -260,7 +257,7 @@ void Parser::global_decl() {
             ps.tu->insertToTail(func());
             break;
         } else {
-            if (ps.cur_specifs.type->asBuiltin()->isVoid()) {
+            if (ps.cur_specifs->type->asBuiltin()->isVoid()) {
                 fprintf(
                     stderr,
                     "Variable %s declared void.\n",
@@ -297,7 +294,7 @@ ast::DeclStmt *Parser::decl() {
             exit(-1);
             break;
         } else {
-            if (ps.cur_specifs.type->asBuiltin()->isVoid()) {
+            if (ps.cur_specifs->type->asBuiltin()->isVoid()) {
                 fprintf(
                     stderr,
                     "Variable %s declared void.\n",
@@ -345,7 +342,7 @@ VarDecl *Parser::vardef() {
     //! TODO: 支持数组
     if (ls.token.id == TOKEN::TK_LBRACKET) {
         arrType = ArrayType::create(
-            BuiltinType::get(ps.cur_specifs.type->asBuiltin()->type));
+            BuiltinType::get(ps.cur_specifs->type->asBuiltin()->type));
         while (ls.token.id == TOKEN::TK_LBRACKET) { //<! 数组长度声明
             next();
             //! NOTE: 目前不支持数组长度推断
@@ -376,12 +373,12 @@ VarDecl *Parser::vardef() {
     }
 
     if (arrType) {
-        auto e              = ps.cur_specifs.type;
-        ps.cur_specifs.type = arrType;
-        ret = VarDecl::create(varname, ps.cur_specifs.clone(), initexpr);
-        ps.cur_specifs.type = e;
+        auto e              = ps.cur_specifs->type;
+        ps.cur_specifs->type = arrType;
+        ret = VarDecl::create(varname, ps.cur_specifs->clone(), initexpr);
+        ps.cur_specifs->type = e;
     } else
-        ret = VarDecl::create(varname, ps.cur_specifs.clone(), initexpr);
+        ret = VarDecl::create(varname, ps.cur_specifs->clone(), initexpr);
 
     if (ps.cur_depth) {
         assert(ps.cur_func != NULL);

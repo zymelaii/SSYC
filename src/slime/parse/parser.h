@@ -22,7 +22,7 @@ struct ParseState {
         cur_func; //<! index in gsym of current parsing function(-1 if not in a
                   // function)
     int               cur_depth;
-    DeclSpecifier     cur_specifs;
+    DeclSpecifier*    cur_specifs;
     ParamVarDeclList* cur_params;
     TranslationUnit*  tu;
     WhileStmt*        cur_loop;
@@ -37,7 +37,7 @@ public:
 
     Parser()
         : sharedStringSet{ls.sharedStringSet()}
-        , ps{NULL, 0, {}, NULL, NULL, NULL} {}
+        , ps{NULL, 0, NULL, NULL, NULL, NULL} {}
 
     void        next();
     bool        expect(TOKEN token, const char* msg = nullptr);
