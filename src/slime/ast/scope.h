@@ -7,6 +7,10 @@
 namespace slime::ast {
 
 struct Scope {
+    Scope()
+        : scope()
+        , depth{0} {}
+
     bool isGlobal() const {
         return scope.empty();
     }
