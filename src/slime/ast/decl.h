@@ -204,6 +204,7 @@ struct FunctionDecl
         TypeList list;
         extractTypeListFromParams(&list, params);
         specifier = specifier->clone();
+        //! FIXME: returnType of FunctionProto is null here due to reassign of specifier->type 
         specifier->type =
             FunctionProtoType::create(specifier->type, std::move(list));
         return new FunctionDecl(name, specifier, params, body);

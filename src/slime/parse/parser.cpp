@@ -216,7 +216,6 @@ FunctionDecl *Parser::enterfunc() {
     }
     //! NOTE: function body will be added later.
     if (shouldClear) { funcparams.head()->removeFromList(); }
-    //! FIXME: SIGSEV here
     ret = FunctionDecl::create(
         funcname, ps.cur_specifs->clone(), funcparams, NULL);
     gsyms->insert(std::pair<std::string_view, NamedDecl*>(lookupStringLiteral(funcname), ret));
@@ -597,10 +596,10 @@ WhileStmt *Parser::whilestat() {
     WhileStmt *ret = new WhileStmt();
     next();
     //! TODO: 提升嵌套层次
-    expect(TOKEN::TK_WHILE, "expect '(' after 'while'");
+    expect(TOKEN::TK_LPAREN, "expect '(' after 'while'");
     ret->condition = expr();
     //! TODO: 检查 expr 是否为条件表达式
-    expect(TOKEN::TK_WHILE, "expect ')'");
+    expect(TOKEN::TK_RPAREN, "expect ')'");
     WhileStmt *upper_loop = ps.cur_loop;
     ps.cur_loop           = ret;
     ret->loopBody         = statement();
@@ -872,8 +871,9 @@ Expr *Parser::postfixexpr() {
                     fprintf(stderr, "Invalid function name.\n");
                     exit(-1);
                 }
-                if (ls.lookahead() != TOKEN::TK_RPAREN) {
-                    next();
+                //! TODO: 函数参数个数检查
+                next();
+                if (ls.token.id != TOKEN::TK_RPAREN) {
                     ret = CallExpr::create(ret, *exprlist());
                 } else
                     ret = CallExpr::create(ret);
@@ -941,7 +941,7 @@ Expr *Parser::binexpr(int priority) {
             op,
             left,
             right);
-        if(ls.token.id == TOKEN::TK_SEMICOLON)
+        if(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN)
             return left;
         op          = binastop(ls.token.id);
         curPriority = lookupOperatorPriority(op);
