@@ -131,8 +131,9 @@ protected:
     }
 
     Value* visit(BasicBlock* block, UnaryExpr* e) {
-        auto   type  = e->operand->valueType->asBuiltin();
-        Value* value = visit(block, e->operand);
+        auto         type  = e->operand->valueType->asBuiltin();
+        Value*       value = visit(block, e->operand);
+        Instruction* instr = nullptr;
         switch (e->op) {
             case UnaryOperator::Paren:
             case UnaryOperator::Pos: {
@@ -141,10 +142,10 @@ protected:
             case UnaryOperator::Neg: {
                 assert(!type->isVoid());
                 if (type->isInt()) {
-                    return new BinaryOperatorInst(
+                    instr = new BinaryOperatorInst(
                         InstructionID::Sub, new ConstantInt(0), value);
                 } else if (type->isFloat()) {
-                    return new BinaryOperatorInst(
+                    instr = new BinaryOperatorInst(
                         InstructionID::FSub, new ConstantFloat(0.f), value);
                 }
                 assert(false && "invalid void type");
@@ -152,10 +153,10 @@ protected:
             case UnaryOperator::Not: {
                 assert(!type->isVoid());
                 if (type->isInt()) {
-                    return new ICmpInst(
+                    instr = new ICmpInst(
                         ComparePredicationType::EQ, value, new ConstantInt(0));
                 } else if (type->isFloat()) {
-                    return new ICmpInst(
+                    instr = new ICmpInst(
                         ComparePredicationType::EQ,
                         value,
                         new ConstantFloat(0.f));
@@ -164,46 +165,50 @@ protected:
             } break;
             case UnaryOperator::Inv: {
                 assert(type->isInt());
-                return new BinaryOperatorInst(
+                instr = new BinaryOperatorInst(
                     InstructionID::Xor, value, new ConstantInt(-1));
             } break;
         }
-        return nullptr;
+        assert(instr != nullptr);
+        block->insertToTail(instr);
+        return instr;
     }
 
     Value* visit(BasicBlock* block, BinaryExpr* e) {
-        auto lhs  = visit(block, e->lhs);
-        auto rhs  = visit(block, e->rhs);
-        auto type = e->implicitValueType()->asBuiltin();
+        auto         lhs   = visit(block, e->lhs);
+        auto         rhs   = visit(block, e->rhs);
+        auto         type  = e->implicitValueType()->asBuiltin();
+        Instruction* instr = nullptr;
         switch (e->op) {
             case BinaryOperator::Assign: {
                 //! FIXME: add conversion between i32 and f32
                 auto store = new StoreInst(rhs, lhs);
-                //! TODO: return load inst
+                block->insertToTail(store);
+                instr = new LoadInst(rhs->type, lhs);
             } break;
             case BinaryOperator::Add: {
-                return new BinaryOperatorInst(InstructionID::Add, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::Add, lhs, rhs);
             } break;
             case BinaryOperator::Sub: {
-                return new BinaryOperatorInst(InstructionID::Sub, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::Sub, lhs, rhs);
             } break;
             case BinaryOperator::Mul: {
-                return new BinaryOperatorInst(InstructionID::Mul, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::Mul, lhs, rhs);
             } break;
             case BinaryOperator::Div: {
-                return new BinaryOperatorInst(InstructionID::SDiv, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::SDiv, lhs, rhs);
             } break;
             case BinaryOperator::Mod: {
-                return new BinaryOperatorInst(InstructionID::SRem, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::SRem, lhs, rhs);
             } break;
             case BinaryOperator::And: {
-                return new BinaryOperatorInst(InstructionID::And, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::And, lhs, rhs);
             } break;
             case BinaryOperator::Or: {
-                return new BinaryOperatorInst(InstructionID::Or, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::Or, lhs, rhs);
             } break;
             case BinaryOperator::Xor: {
-                return new BinaryOperatorInst(InstructionID::Xor, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::Xor, lhs, rhs);
             } break;
             case BinaryOperator::LAnd: {
                 //! TODO: add cmp and and
@@ -213,53 +218,53 @@ protected:
             } break;
             case BinaryOperator::LT: {
                 if (type->isInt()) {
-                    return new ICmpInst(ComparePredicationType::SLT, lhs, rhs);
+                    instr = new ICmpInst(ComparePredicationType::SLT, lhs, rhs);
                 } else if (type->isFloat()) {
-                    return new FCmpInst(ComparePredicationType::OLT, lhs, rhs);
+                    instr = new FCmpInst(ComparePredicationType::OLT, lhs, rhs);
                 }
             } break;
             case BinaryOperator::LE: {
                 if (type->isInt()) {
-                    return new ICmpInst(ComparePredicationType::SLE, lhs, rhs);
+                    instr = new ICmpInst(ComparePredicationType::SLE, lhs, rhs);
                 } else if (type->isFloat()) {
-                    return new FCmpInst(ComparePredicationType::OLE, lhs, rhs);
+                    instr = new FCmpInst(ComparePredicationType::OLE, lhs, rhs);
                 }
             } break;
             case BinaryOperator::GT: {
                 if (type->isInt()) {
-                    return new ICmpInst(ComparePredicationType::SGT, lhs, rhs);
+                    instr = new ICmpInst(ComparePredicationType::SGT, lhs, rhs);
                 } else if (type->isFloat()) {
-                    return new FCmpInst(ComparePredicationType::OGT, lhs, rhs);
+                    instr = new FCmpInst(ComparePredicationType::OGT, lhs, rhs);
                 }
             } break;
             case BinaryOperator::GE: {
                 if (type->isInt()) {
-                    return new ICmpInst(ComparePredicationType::SGE, lhs, rhs);
+                    instr = new ICmpInst(ComparePredicationType::SGE, lhs, rhs);
                 } else if (type->isFloat()) {
-                    return new FCmpInst(ComparePredicationType::OGE, lhs, rhs);
+                    instr = new FCmpInst(ComparePredicationType::OGE, lhs, rhs);
                 }
             } break;
             case BinaryOperator::EQ: {
                 if (type->isInt()) {
-                    return new ICmpInst(ComparePredicationType::EQ, lhs, rhs);
+                    instr = new ICmpInst(ComparePredicationType::EQ, lhs, rhs);
                 } else if (type->isFloat()) {
-                    return new FCmpInst(ComparePredicationType::OEQ, lhs, rhs);
+                    instr = new FCmpInst(ComparePredicationType::OEQ, lhs, rhs);
                 }
             } break;
             case BinaryOperator::NE: {
                 if (type->isInt()) {
-                    return new ICmpInst(ComparePredicationType::NE, lhs, rhs);
+                    instr = new ICmpInst(ComparePredicationType::NE, lhs, rhs);
                 } else if (type->isFloat()) {
-                    return new FCmpInst(ComparePredicationType::ONE, lhs, rhs);
+                    instr = new FCmpInst(ComparePredicationType::ONE, lhs, rhs);
                 }
             } break;
             case BinaryOperator::Shl: {
                 assert(type->isInt());
-                return new BinaryOperatorInst(InstructionID::Shl, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::Shl, lhs, rhs);
             } break;
             case BinaryOperator::Shr: {
                 assert(type->isInt());
-                return new BinaryOperatorInst(InstructionID::AShr, lhs, rhs);
+                instr = new BinaryOperatorInst(InstructionID::AShr, lhs, rhs);
             } break;
             case BinaryOperator::Comma: {
                 assert(false && "comma expr always appears as CommaExpr");
@@ -268,7 +273,9 @@ protected:
                 assert(false && "comma expr always appears as SubscriptExpr");
             } break;
         }
-        return nullptr;
+        assert(instr != nullptr);
+        block->insertToTail(instr);
+        return instr;
     }
 
     Value* visit(BasicBlock* block, CommaExpr* e) {
@@ -296,15 +303,20 @@ protected:
                     argList.push_back(visit(block, arg->value()));
                     arg = arg->next();
                 }
-                return new CallInst(static_cast<Function*>(value), argList);
+                auto call =
+                    new CallInst(static_cast<Function*>(value), argList);
+                block->insertToTail(call);
+                return call;
             }
         }
         return nullptr;
     }
 
     Value* visit(BasicBlock* block, SubscriptExpr* e) {
-        return new GetElementPtrInst(
-            visit(block, e->lhs), visit(block, e->rhs));
+        auto value =
+            new GetElementPtrInst(visit(block, e->lhs), visit(block, e->rhs));
+        block->insertToTail(value);
+        return value;
     }
 };
 
