@@ -2,7 +2,7 @@
 set pass_cnt 0
 set unpass_cnt 0
 set putint_test 0
-set libfunc getint putint getarray putarray
+set libfunc getint putint getarray putarray putch
 set msg "null"
 
 
@@ -54,4 +54,4 @@ echo "Pass" $pass_cnt "tests"
 set_color red
 echo $unpass_cnt not pass.
 set_color yellow
-echo "NR of tests with putint() or getint() or getarray() function: 57" #之前统计过了，哈哈
+echo "NR of tests with putint() or getint() or getarray() function: 58" #之前统计过了，哈哈

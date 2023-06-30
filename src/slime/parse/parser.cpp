@@ -100,7 +100,7 @@ void Parser::next() {
 
 bool Parser::expect(TOKEN token, const char *msg) {
     if (ls.token.id == token) {
-        ls.next();
+        next();
         return true;
     }
     //! TODO: prettify display message
@@ -218,7 +218,9 @@ FunctionDecl *Parser::enterfunc() {
     if (shouldClear) { funcparams.head()->removeFromList(); }
     ret = FunctionDecl::create(
         funcname, ps.cur_specifs->clone(), funcparams, NULL);
-    gsyms->insert(std::pair<std::string_view, NamedDecl*>(lookupStringLiteral(funcname), ret));
+    ret->scope.scope = lookupStringLiteral(funcname);
+    gsyms->insert(std::pair<std::string_view, NamedDecl *>(
+        lookupStringLiteral(funcname), ret));
     return ret;
 }
 
@@ -334,7 +336,8 @@ VarDecl *Parser::vardef() {
     ArrayType  *arrType  = NULL;
     VarDecl    *ret      = NULL;
     next();
-    // if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON) {
+    // if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON)
+    // {
     //     return NULL;
     // }
 
@@ -345,7 +348,7 @@ VarDecl *Parser::vardef() {
         while (ls.token.id == TOKEN::TK_LBRACKET) { //<! 数组长度声明
             next();
             //! NOTE: 目前不支持数组长度推断
-            arrType->insertToTail(expr());
+            arrType->insertToTail(binexpr(PRIORITIES.size()));
             if (ls.token.id == TOKEN::TK_RBRACKET) {
                 next();
             } else {
@@ -361,7 +364,7 @@ VarDecl *Parser::vardef() {
         if (ls.token.id == TOKEN::TK_LBRACE) {
             initexpr = initlist();
         } else {
-            initexpr = expr();
+            initexpr = binexpr(PRIORITIES.size());
         }
         //! TODO: 获取并处理初始化赋值
     }
@@ -372,7 +375,7 @@ VarDecl *Parser::vardef() {
     }
 
     if (arrType) {
-        auto e              = ps.cur_specifs->type;
+        auto e               = ps.cur_specifs->type;
         ps.cur_specifs->type = arrType;
         ret = VarDecl::create(varname, ps.cur_specifs->clone(), initexpr);
         ps.cur_specifs->type = e;
@@ -412,7 +415,7 @@ InitListExpr *Parser::initlist() {
         if (ls.token.id == TOKEN::TK_LBRACE) {
             ret->insertToTail(initlist());
         } else {
-            ret->insertToTail(expr());
+            ret->insertToTail(binexpr(PRIORITIES.size()));
         }
         has_more = false;
         if (ls.token.id == TOKEN::TK_COMMA) {
@@ -508,7 +511,8 @@ ParamVarDeclList Parser::funcargs() {
 
         //! 完成参数类型并写入函数原型
         if (ls.token.id == TOKEN::TK_COMMA) {
-            if (ls.lookahead() == TOKEN::TK_RPAREN) {
+            next();
+            if (ls.token.id == TOKEN::TK_RPAREN) {
                 fprintf(stderr, "Unexpected comma in funcargs()!\n");
                 exit(-1);
             }
@@ -772,9 +776,12 @@ Expr *Parser::primaryexpr() {
 
     switch (ls.token.id) {
         case TOKEN::TK_IDENT: {
-            NamedDecl *ident = findSymbol(ls.token.detail.data(), DeclID::Var);
-            if (!ident) {
+            NamedDecl *ident = NULL;
+            if (ls.lookahead() == TOKEN::TK_LPAREN)
                 ident = findSymbol(ls.token.detail.data(), DeclID::Function);
+            else
+                ident = findSymbol(ls.token.detail.data(), DeclID::Var);
+            if (!ident) {
                 if (!ident) {
                     fprintf(
                         stderr,
@@ -863,8 +870,23 @@ Expr *Parser::postfixexpr() {
                     fprintf(stderr, "Invalid array name.\n");
                     exit(-1);
                 }
-                ret = SubscriptExpr::create(ret, expr());
-                expect(TOKEN::TK_RBRACKET, "expect ']'");
+                DeclRefExpr *arr = ret->asDeclRef();
+                int nr_dimension = arr->source->type()->asArray()->size();
+                int index_cnt    = 0;
+                while (ls.token.id == TOKEN::TK_LBRACKET) {
+                    next();
+                    index_cnt++;
+                    ret = SubscriptExpr::create(ret, expr());
+                    expect(TOKEN::TK_RBRACKET, "expect ']'");
+                }
+                if (index_cnt > nr_dimension) {
+                    fprintf(
+                        stderr,
+                        "Too many indexes with array %s. Need %d but got %d.\n",
+                        arr->source->name.data(),
+                        nr_dimension,
+                        index_cnt);
+                }
             } break;
             case TOKEN::TK_LPAREN: { //<! function call
                 if (ret->valueType->typeId != TypeID::FunctionProto) {
@@ -898,42 +920,56 @@ Expr *Parser::postfixexpr() {
  *      '!' unary-expr
  */
 Expr *Parser::unaryexpr() {
-    Expr *ret = postfixexpr();
-    // switch (ls.token.id) {
-    //     case TOKEN::TK_ADD:
-    //         ret = new UnaryExpr(UnaryOperator::Pos, ret);
-    //         next();
-    //         break;
-    //     case TOKEN::TK_SUB:
-    //         ret = new UnaryExpr(UnaryOperator::Neg, ret);
-    //         next();
-    //         break;
-    //     case TOKEN::TK_INV:
-    //         ret = new UnaryExpr(UnaryOperator::Inv, ret);
-    //         next();
-    //         break;
-    //     case TOKEN::TK_NOT:
-    //         ret = new UnaryExpr(UnaryOperator::Not, ret);
-    //         next();
-    //         break;
-    //     default: {
-    //         // postfixexpr();
-    //     } break;
-    // }
+    Expr *ret = NULL;
+    switch (ls.token.id) {
+        case TOKEN::TK_ADD:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Pos, ret);
+            break;
+        case TOKEN::TK_SUB:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Neg, ret);
+            break;
+        case TOKEN::TK_INV:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Inv, ret);
+            break;
+        case TOKEN::TK_NOT:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Not, ret);
+            break;
+        default: {
+            ret = postfixexpr();
+        } break;
+    }
 
     return ret;
 }
 
 Expr *Parser::binexpr(int priority) {
     Expr *left, *right;
-    left                         = unaryexpr();
-    if(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN)
+    left = unaryexpr();
+    if (ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN
+        || ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_RBRACKET
+        || ls.token.id == TOKEN::TK_RBRACE)
         return left;
     BinaryOperator   op          = binastop(ls.token.id);
     OperatorPriority curPriority = lookupOperatorPriority(op);
+    //! CONST value check
+    if(left->tryIntoDeclRef() != NULL && op == BinaryOperator::Assign){
+        auto var = left->asDeclRef()->source;
+        if(var->specifier->isConst()){
+            fprintf(stderr, "assignment of read-only variable '%s'", var->name.data());
+            exit(-1);
+        }
+    }
+
     while (curPriority.priority < priority
            || (curPriority.priority == priority && !curPriority.assoc)) {
-        
         next();
         right = binexpr(curPriority.priority);
         left  = new BinaryExpr(
@@ -941,7 +977,10 @@ Expr *Parser::binexpr(int priority) {
             op,
             left,
             right);
-        if(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN)
+        if (ls.token.id == TOKEN::TK_SEMICOLON
+            || ls.token.id == TOKEN::TK_RPAREN || ls.token.id == TOKEN::TK_COMMA
+            || ls.token.id == TOKEN::TK_RBRACKET
+            || ls.token.id == TOKEN::TK_RBRACE)
             return left;
         op          = binastop(ls.token.id);
         curPriority = lookupOperatorPriority(op);
