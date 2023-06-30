@@ -1,7 +1,7 @@
 #!/usr/bin/fish
 set pass_cnt 0
 set unpass_cnt 0
-set putint_test 0
+set libfunc_test 0
 set libfunc getint putint getarray putarray putch
 set msg "null"
 
@@ -31,19 +31,9 @@ for file in (ls test/functional/*.sy)
         end
         if test "$msg" = "null"
             set msg $file "not pass".
+        else
+            set libfunc_test (math $libfunc_test + 1)
         end
-
-        # rg putint $file >> /dev/null
-        # if test $status -eq 0
-        #     set msg $file "not pass with putint()."
-        # else
-        #     rg getint $file >> /dev/null
-        #     if test $status -eq 0
-        #         set msg $file "not pass. with getint()"
-        #     else
-        #         set msg $file "not pass."
-        #     end
-        # end
         
         echo $msg
     end
@@ -54,4 +44,4 @@ echo "Pass" $pass_cnt "tests"
 set_color red
 echo $unpass_cnt not pass.
 set_color yellow
-echo "NR of tests with putint() or getint() or getarray() function: 58" #之前统计过了，哈哈
+echo "NR of tests with libfunction: $libfunc_test" #之前统计过了，哈哈
