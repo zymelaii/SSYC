@@ -6,6 +6,8 @@
 #include "../ir/minimal.h"
 #include "../utils/list.h"
 
+#include <map>
+
 namespace slime::visitor {
 
 using namespace slime::ast;
@@ -73,8 +75,70 @@ protected:
             e->index  = paramIndex++;
         }
         //! TODO: build BasicBlocks
+        auto entry = new BasicBlock(function);
+        function->blocks.push_back(entry);
+        visit(function, entry, e->body);
         return function;
     }
+
+    void visit(Function* fn, BasicBlock* block, Stmt* e) {
+        switch (e->stmtId) {
+            case StmtID::Null: {
+                //! NOTE: nothing to do
+            } break;
+            case StmtID::Decl: {
+                visit(fn, block, e->asDeclStmt());
+            } break;
+            case StmtID::Expr: {
+                visit(fn, block, e->asExprStmt());
+            } break;
+            case StmtID::Compound: {
+                visit(fn, block, e->asCompoundStmt());
+            } break;
+            case StmtID::If: {
+                visit(fn, block, e->asIfStmt());
+            } break;
+            case StmtID::Do: {
+                visit(fn, block, e->asDoStmt());
+            } break;
+            case StmtID::While: {
+                visit(fn, block, e->asWhileStmt());
+            } break;
+            case StmtID::Break: {
+                visit(fn, block, e->asBreakStmt());
+            } break;
+            case StmtID::Continue: {
+                visit(fn, block, e->asContinueStmt());
+            } break;
+            case StmtID::Return: {
+                visit(fn, block, e->asReturnStmt());
+            } break;
+        }
+    }
+
+    void visit(Function* fn, BasicBlock* block, DeclStmt* e) {
+        for (auto decl : *e) {
+
+        }
+    }
+
+    void visit(Function* fn, BasicBlock* block, ExprStmt* e) {
+        visit(block, e->unwrap());
+    }
+
+    void visit(Function* fn, BasicBlock* block, CompoundStmt* e) {}
+
+    void visit(Function* fn, BasicBlock* block, IfStmt* e) {}
+
+    void visit(Function* fn, BasicBlock* block, DoStmt* e) {}
+
+    void visit(Function* fn, BasicBlock* block, WhileStmt* e) {}
+
+    void visit(Function* fn, BasicBlock* block, BreakStmt* e) {}
+
+    void visit(Function* fn, BasicBlock* block, ContinueStmt* e) {}
+
+    void visit(Function* fn, BasicBlock* block, ReturnStmt* e) {}
 
     Value* visit(BasicBlock* block, Expr* e) {
         switch (e->exprId) {
@@ -306,6 +370,9 @@ protected:
         return new GetElementPtrInst(
             visit(block, e->lhs), visit(block, e->rhs));
     }
+
+private:
+    std::map<std::string_view, Value*> symbolTable_;
 };
 
 } // namespace slime::visitor
