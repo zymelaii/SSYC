@@ -51,7 +51,9 @@ void Driver::execute() {
             ls.next();
         }
     } else {
-        while (ls.token.id != TOKEN::TK_EOF) { parser_.func(); }
+        while (ls.token.id != TOKEN::TK_EOF) {
+            parser_.parse();
+        }
     }
 
     ready_ = false;
