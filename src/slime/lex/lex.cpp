@@ -15,6 +15,7 @@ static void strcpy_s(char* dest, size_t n, const char* src) {
     char*       p = dest;
     const char* q = src;
     while (--n >= 0 && *q != '\0') { *p++ = *q++; }
+    *p = '\0';
 }
 #endif
 
