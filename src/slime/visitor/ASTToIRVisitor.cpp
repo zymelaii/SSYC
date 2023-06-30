@@ -251,4 +251,45 @@ ir::Constant* ASTToIRVisitor::evaluateCompileTimeAstExpr(ast::Expr* expr) {
     }
 }
 
+ir::Value* ASTToIRVisitor::makeBooleanCondition(ir::Value* condition) {
+    if (condition->type->id == ir::TypeID::Integer) {
+        condition = new ICmpInst(
+            ComparePredicationType::NE, condition, new ConstantInt(0));
+    } else if (condition->type->id == ir::TypeID::Float) {
+        condition = new FCmpInst(
+            ComparePredicationType::UNE, condition, new ConstantFloat(0.f));
+    }
+    return condition;
+}
+
+BasicBlock* ASTToIRVisitor::createLoop(
+    void*       hint,
+    BasicBlock* entry,
+    Expr*       condition,
+    Stmt*       body,
+    bool        isLoopBodyFirst) {
+    auto            function = entry->parent;
+    LoopDescription desc;
+    desc.branchLoop = new BasicBlock(function);
+    desc.branchCond = new BasicBlock(function);
+    desc.branchExit = new BasicBlock(function);
+    function->blocks.push_back(desc.branchLoop);
+    function->blocks.push_back(desc.branchCond);
+    function->blocks.push_back(desc.branchExit);
+    if (isLoopBodyFirst) {
+        entry->insertToTail(new BranchInst(desc.branchLoop));
+    } else {
+        entry->insertToTail(new BranchInst(desc.branchCond));
+    }
+    auto block = visit(function, desc.branchLoop, body);
+    block->insertToTail(new BranchInst(desc.branchCond));
+    auto cond   = visit(function, desc.branchCond, condition->asExprStmt());
+    auto i1cond = makeBooleanCondition(cond);
+    if (i1cond != cond) { desc.branchCond->insertToTail(i1cond); }
+    desc.branchCond->insertToTail(
+        new BranchInst(i1cond, desc.branchLoop, desc.branchExit));
+    loopMap_.insert_or_assign(hint, desc);
+    return desc.branchExit;
+}
+
 } // namespace slime::visitor

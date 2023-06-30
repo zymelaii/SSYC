@@ -19,13 +19,14 @@ class ASTToIRVisitor : public TopLevelIRObjectList {
 public:
     static ir::Type*     getIRTypeFromAstType(ast::Type* type);
     static ir::Constant* evaluateCompileTimeAstExpr(ast::Expr* expr);
+    static ir::Value*    makeBooleanCondition(ir::Value* condition);
 
     void visit(TranslationUnit* e) {
         for (auto decl : *e) {
             switch (decl->declId) {
                 case DeclID::Var: {
-                    insertToTail(
-                        static_cast<GlobalVariable*>(visit(decl->asVarDecl())));
+                    insertToTail(static_cast<GlobalVariable*>(
+                        visit(nullptr, decl->asVarDecl())));
                 } break;
                 case DeclID::Function: {
                     insertToTail(visit(decl->asFunctionDecl()));
@@ -38,7 +39,7 @@ public:
     }
 
 protected:
-    Value* visit(VarDecl* e) {
+    Value* visit(BasicBlock* block, VarDecl* e) {
         auto type = getIRTypeFromAstType(e->type());
         if (e->scope.depth == 0) {
             assert(!e->name.empty());
@@ -50,9 +51,12 @@ protected:
                 evaluateCompileTimeAstExpr(e->initValue));
         } else {
             auto alloca = new AllocaInst(type);
+            //! NOTE: always let var-decl be at the front
+            block->parent->blocks.front()->insertToHead(alloca);
             if (e->initValue != nullptr) {
-                return new StoreInst(
+                auto instr = new StoreInst(
                     evaluateCompileTimeAstExpr(e->initValue), alloca);
+                block->insertToTail(instr);
             }
             return alloca;
         }
@@ -74,14 +78,14 @@ protected:
             e->parent = function;
             e->index  = paramIndex++;
         }
-        //! TODO: build BasicBlocks
         auto entry = new BasicBlock(function);
         function->blocks.push_back(entry);
         visit(function, entry, e->body);
+        loopMap_.clear();
         return function;
     }
 
-    void visit(Function* fn, BasicBlock* block, Stmt* e) {
+    BasicBlock* visit(Function* fn, BasicBlock* block, Stmt* e) {
         switch (e->stmtId) {
             case StmtID::Null: {
                 //! NOTE: nothing to do
@@ -93,16 +97,16 @@ protected:
                 visit(fn, block, e->asExprStmt());
             } break;
             case StmtID::Compound: {
-                visit(fn, block, e->asCompoundStmt());
+                block = visit(fn, block, e->asCompoundStmt());
             } break;
             case StmtID::If: {
-                visit(fn, block, e->asIfStmt());
+                block = visit(fn, block, e->asIfStmt());
             } break;
             case StmtID::Do: {
-                visit(fn, block, e->asDoStmt());
+                block = visit(fn, block, e->asDoStmt());
             } break;
             case StmtID::While: {
-                visit(fn, block, e->asWhileStmt());
+                block = visit(fn, block, e->asWhileStmt());
             } break;
             case StmtID::Break: {
                 visit(fn, block, e->asBreakStmt());
@@ -114,31 +118,71 @@ protected:
                 visit(fn, block, e->asReturnStmt());
             } break;
         }
+        return block;
     }
 
     void visit(Function* fn, BasicBlock* block, DeclStmt* e) {
-        for (auto decl : *e) {
+        for (auto decl : *e) { visit(block, decl); }
+    }
 
+    Value* visit(Function* fn, BasicBlock* block, ExprStmt* e) {
+        return visit(block, e->unwrap());
+    }
+
+    BasicBlock* visit(Function* fn, BasicBlock* block, CompoundStmt* e) {
+        for (auto stmt : *e) { block = visit(fn, block, stmt); }
+        return block;
+    }
+
+    BasicBlock* visit(Function* fn, BasicBlock* block, IfStmt* e) {
+        auto condition   = visit(fn, block, e->condition->asExprStmt());
+        auto i1condition = makeBooleanCondition(condition);
+        if (i1condition != condition) { block->insertToTail(i1condition); }
+        auto branchExit = new BasicBlock(fn);
+        auto branchIf   = new BasicBlock(fn);
+        fn->blocks.push_back(branchIf);
+        visit(fn, branchIf, e->branchIf);
+        branchIf->insertToTail(new BranchInst(branchExit));
+        if (e->branchElse != nullptr) {
+            auto branchElse = new BasicBlock(fn);
+            fn->blocks.push_back(branchElse);
+            visit(fn, branchElse, e->branchElse);
+            branchElse->insertToTail(new BranchInst(branchExit));
+            block->insertToTail(
+                new BranchInst(i1condition, branchIf, branchElse));
+        } else {
+            block->insertToTail(
+                new BranchInst(i1condition, branchIf, branchExit));
         }
+        fn->blocks.push_back(branchExit);
+        return branchExit;
     }
 
-    void visit(Function* fn, BasicBlock* block, ExprStmt* e) {
-        visit(block, e->unwrap());
+    BasicBlock* visit(Function* fn, BasicBlock* block, DoStmt* e) {
+        return createLoop(
+            e, block, e->condition->asExprStmt()->unwrap(), e->loopBody, true);
     }
 
-    void visit(Function* fn, BasicBlock* block, CompoundStmt* e) {}
+    BasicBlock* visit(Function* fn, BasicBlock* block, WhileStmt* e) {
+        return createLoop(
+            e, block, e->condition->asExprStmt()->unwrap(), e->loopBody, false);
+    }
 
-    void visit(Function* fn, BasicBlock* block, IfStmt* e) {}
+    void visit(Function* fn, BasicBlock* block, BreakStmt* e) {
+        assert(e->parent != nullptr && "break not in a loop");
+        auto& desc = loopMap_[e->parent];
+        block->insertToTail(new BranchInst(desc.branchExit));
+    }
 
-    void visit(Function* fn, BasicBlock* block, DoStmt* e) {}
+    void visit(Function* fn, BasicBlock* block, ContinueStmt* e) {
+        assert(e->parent != nullptr && "continue not in a loop");
+        auto& desc = loopMap_[e->parent];
+        block->insertToTail(new BranchInst(desc.branchCond));
+    }
 
-    void visit(Function* fn, BasicBlock* block, WhileStmt* e) {}
-
-    void visit(Function* fn, BasicBlock* block, BreakStmt* e) {}
-
-    void visit(Function* fn, BasicBlock* block, ContinueStmt* e) {}
-
-    void visit(Function* fn, BasicBlock* block, ReturnStmt* e) {}
+    void visit(Function* fn, BasicBlock* block, ReturnStmt* e) {
+        block->insertToTail(new ReturnInst(visit(fn, block, e->returnValue)));
+    }
 
     Value* visit(BasicBlock* block, Expr* e) {
         switch (e->exprId) {
@@ -384,6 +428,21 @@ protected:
     }
 
 private:
+    BasicBlock* createLoop(
+        void*       hint,
+        BasicBlock* entry,
+        Expr*       condition,
+        Stmt*       body,
+        bool        isLoopBodyFirst = false);
+
+private:
+    struct LoopDescription {
+        BasicBlock* branchCond;
+        BasicBlock* branchLoop;
+        BasicBlock* branchExit;
+    };
+
+    std::map<void*, LoopDescription>   loopMap_;
     std::map<std::string_view, Value*> symbolTable_;
 };
 
