@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../utils/list.h"
-#include "cast.def"
+#include "../utils/cast.def"
 
 #include <vector>
 #include <assert.h>
@@ -41,10 +41,10 @@ struct Type {
 
     static Type* getElementType(Type* type);
 
-    RegisterCastWithoutSuffix(typeId, Builtin, Type, TypeID);
-    RegisterCastWithoutSuffix(typeId, Array, Type, TypeID);
-    RegisterCastWithoutSuffix(typeId, IncompleteArray, Type, TypeID);
-    RegisterCastWithoutSuffix(typeId, FunctionProto, Type, TypeID);
+    RegisterCastWithoutSuffixDecl(typeId, Builtin, Type, TypeID);
+    RegisterCastWithoutSuffixDecl(typeId, Array, Type, TypeID);
+    RegisterCastWithoutSuffixDecl(typeId, IncompleteArray, Type, TypeID);
+    RegisterCastWithoutSuffixDecl(typeId, FunctionProto, Type, TypeID);
 
     Type* extendIntoArrayType(Expr* length);
 
@@ -187,10 +187,16 @@ struct FunctionProtoType
 
     template <typename... Args>
     static FunctionProtoType* create(Type* returnType, Args... args) {
-        return new FunctionProtoType(returnType, args...);
+        auto e = new FunctionProtoType(returnType, args...);
+        return e;
     }
 
     Type* returnType;
 };
+
+RegisterCastWithoutSuffixImpl(typeId, Builtin, Type, TypeID);
+RegisterCastWithoutSuffixImpl(typeId, Array, Type, TypeID);
+RegisterCastWithoutSuffixImpl(typeId, IncompleteArray, Type, TypeID);
+RegisterCastWithoutSuffixImpl(typeId, FunctionProto, Type, TypeID);
 
 } // namespace slime::ast

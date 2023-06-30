@@ -160,6 +160,8 @@ public:
     void insertToHead(AbstractListTrait<T> &list) {
         if (parent_ != nullptr) { removeFromList(); }
         auto node          = list.headGuard();
+        prev_              = node;
+        next_              = node->next_;
         node->next_->prev_ = this;
         node->next_        = this;
         parent_            = &list;
@@ -169,6 +171,8 @@ public:
     void insertToTail(AbstractListTrait<T> &list) {
         if (parent_ != nullptr) { removeFromList(); }
         auto node          = list.tailGuard();
+        prev_              = node->prev_;
+        next_              = node;
         node->prev_->next_ = this;
         node->prev_        = this;
         parent_            = &list;
@@ -275,12 +279,82 @@ public:
         node_type *ptr_;
     };
 
+    class reverse_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = ListTrait::value_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        reverse_iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        reverse_iterator(const reverse_iterator &other)
+            : reverse_iterator(other.ptr_) {}
+
+        reverse_iterator &operator++() {
+            if (ptr_ != parent_->headGuard()) { ptr_ = ptr_->prev(); }
+            return *this;
+        }
+
+        const reverse_iterator &operator++() const {
+            return const_cast<reverse_iterator *>(this)->operator++();
+        }
+
+        reverse_iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        reverse_iterator operator++(int) const {
+            return (*const_cast<reverse_iterator *>(this))++;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->headGuard());
+            return ptr_->value();
+        }
+
+        reference operator*() const {
+            return const_cast<reverse_iterator *>(this)->operator*();
+        }
+
+        pointer operator->() {
+            return ptr_->value();
+        }
+
+        bool operator==(const reverse_iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const reverse_iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
     iterator begin() {
         return iterator(this->headGuard()->next_);
     }
 
     iterator end() {
         return iterator(this->tailGuard());
+    }
+
+    reverse_iterator rbegin() {
+        return reverse_iterator(this->tailGuard()->prev_);
+    }
+
+    reverse_iterator rend() {
+        return reverse_iterator(this->headGuard());
     }
 
     ListTrait() {
@@ -293,13 +367,7 @@ public:
 
     ListTrait(ListTrait &&list)
         : ListTrait() {
-        auto head = list.headGuard()->next_;
-        auto tail = list.tailGuard();
-        while (head != tail) {
-            auto node = head->next_;
-            head->insertToTail(*this);
-            head = node;
-        }
+        for (auto &e : list) { insertToTail(std::move(e)); }
     }
 
     template <typename... Args>

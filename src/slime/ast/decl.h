@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../utils/list.h"
+#include "../utils/cast.def"
 #include "type.h"
 #include "scope.h"
-#include "cast.def"
 
 #include <stdint.h>
 #include <string_view>
@@ -94,9 +94,9 @@ struct Decl {
     Decl(DeclID declId)
         : declId{declId} {}
 
-    RegisterCast(declId, Var, Decl, DeclID);
-    RegisterCast(declId, ParamVar, Decl, DeclID);
-    RegisterCast(declId, Function, Decl, DeclID);
+    RegisterCastDecl(declId, Var, Decl, DeclID);
+    RegisterCastDecl(declId, ParamVar, Decl, DeclID);
+    RegisterCastDecl(declId, Function, Decl, DeclID);
 
     DeclID declId;
 };
@@ -111,8 +111,8 @@ struct NamedDecl : public Decl {
         return specifier->type;
     }
 
-    std::string_view name;
     Scope            scope;
+    std::string_view name;
     DeclSpecifier   *specifier;
 };
 
@@ -190,9 +190,8 @@ struct FunctionDecl
     static void extractTypeListFromParams(
         TypeList *typeListPtr, const ParamVarDeclList &params) {
         TypeList list;
-        for (auto param = params.head(); param != nullptr;
-             param      = param->next()) {
-            list.insertToTail(param->value()->type());
+        for (auto param : *const_cast<ParamVarDeclList *>(&params)) {
+            list.insertToTail(param->type());
         }
         new (typeListPtr) TypeList(std::move(list));
     }
@@ -226,5 +225,9 @@ inline FunctionDecl *DeclSpecifier::createFunctionDecl(
     //! FIXME: here assume returnType == specifier->type
     return FunctionDecl::create(name, this, params, body);
 }
+
+RegisterCastImpl(declId, Var, Decl, DeclID);
+RegisterCastImpl(declId, ParamVar, Decl, DeclID);
+RegisterCastImpl(declId, Function, Decl, DeclID);
 
 } // namespace slime::ast

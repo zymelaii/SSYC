@@ -1,9 +1,9 @@
 #pragma once
 
 #include "../utils/list.h"
+#include "../utils/cast.def"
 #include "type.h"
 #include "stmt.h"
-#include "cast.def"
 #include "operators.def"
 #include "expr.def"
 
@@ -40,17 +40,17 @@ struct Expr : public ExprStmt {
         : exprId{exprId}
         , valueType{valueType} {}
 
-    RegisterCastWithoutSuffix(exprId, DeclRef, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Constant, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Unary, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Binary, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Comma, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Paren, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Stmt, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Call, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, Subscript, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, InitList, Expr, ExprID);
-    RegisterCastWithoutSuffix(exprId, NoInit, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, DeclRef, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Constant, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Unary, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Binary, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Comma, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Paren, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Stmt, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Call, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, Subscript, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, InitList, Expr, ExprID);
+    RegisterCastWithoutSuffixDecl(exprId, NoInit, Expr, ExprID);
 
     bool isNoEffectExpr();
 
@@ -81,11 +81,13 @@ struct ConstantExpr : public Expr {
     template <typename T>
     void setData(T data) {
         if constexpr (std::is_integral_v<T>) {
-            type = ConstantType::i32;
-            i32  = data;
+            type      = ConstantType::i32;
+            i32       = data;
+            valueType = BuiltinType::getIntType();
         } else if constexpr (std::is_floating_point_v<T>) {
-            type = ConstantType::f32;
-            f32  = data;
+            type      = ConstantType::f32;
+            f32       = data;
+            valueType = BuiltinType::getFloatType();
         } else {
             assert(false && "unsupport constant type");
         }
@@ -245,5 +247,17 @@ struct NoInitExpr : public Expr {
         return &singleton;
     }
 };
+
+RegisterCastWithoutSuffixImpl(exprId, DeclRef, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Constant, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Unary, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Binary, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Comma, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Paren, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Stmt, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Call, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, Subscript, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, InitList, Expr, ExprID);
+RegisterCastWithoutSuffixImpl(exprId, NoInit, Expr, ExprID);
 
 }; // namespace slime::ast

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../utils/list.h"
+
 #include <stdint.h>
 #include <assert.h>
 #include <list>
@@ -9,11 +11,15 @@
 namespace slime::ir {
 
 struct Value;
+struct BasicBlock;
+struct Instruction;
 struct Function;
 struct Instruction;
 struct FunctionType;
 struct ArrayType;
 struct PointerType;
+
+using InstructionList = slime::utils::ListTrait<Instruction *>;
 
 inline namespace utils {
 
@@ -39,7 +45,7 @@ enum class TypeID {
     //! 复合类型
     Array,
     Function,
-    Pointer, //<! NOTE: 暂未实现
+    Pointer,
 };
 
 enum class InstructionID {
@@ -119,6 +125,8 @@ struct Type {
     static ArrayType   *getArrayType(Type *elementType, size_t length);
     static PointerType *getPointerType(Type *elementType);
 
+    inline Type *tryGetElementType();
+
     //! 是否是基础类型
     bool isPrimitiveType() const;
 
@@ -196,11 +204,12 @@ struct User : public Value {
 };
 
 //! NOTE: BasicBlock 是由一个唯一的 label 引导的基本块
-struct BasicBlock : public Value {
+struct BasicBlock
+    : public Value
+    , public InstructionList {
     BasicBlock(Function *parent, std::string_view name = "");
 
-    Function                *parent;   //<! 所属函数
-    std::list<Instruction *> instList; //<! 指令列表
+    Function *parent; //<! 所属函数
 };
 
 //! parameter of function
@@ -446,5 +455,12 @@ struct CallInst : public Instruction {
         for (int i = 0; i < args.size(); ++i) { useAt(i + 1) = args[i]; }
     }
 };
+
+inline Type *Type::tryGetElementType() {
+    if (id == TypeID::Pointer || id == TypeID::Array) {
+        return static_cast<SequentialType *>(this)->elementType();
+    }
+    return Type::getVoidType();
+}
 
 } // namespace slime::ir

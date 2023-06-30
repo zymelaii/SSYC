@@ -17,10 +17,8 @@ bool Expr::isNoEffectExpr() {
                 && e->rhs->isNoEffectExpr();
         } break;
         case ExprID::Comma: {
-            auto node = asComma()->head();
-            while (node != nullptr) {
-                if (!node->value()->isNoEffectExpr()) { return false; }
-                node = node->next();
+            for (auto value : *asComma()) {
+                if (!value->isNoEffectExpr()) { return false; }
             }
             return true;
         } break;
@@ -38,10 +36,8 @@ bool Expr::isNoEffectExpr() {
             return false;
         } break;
         case ExprID::InitList: {
-            auto node = asInitList()->head();
-            while (node != nullptr) {
-                if (!node->value()->isNoEffectExpr()) { return false; }
-                node = node->next();
+            for (auto value : *asInitList()) {
+                if (!value->isNoEffectExpr()) { return false; }
             }
             return true;
         } break;
