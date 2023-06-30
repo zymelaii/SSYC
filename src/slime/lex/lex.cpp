@@ -582,6 +582,10 @@ LexState::LexState()
 
 LexState::~LexState() = default;
 
+std::set<const char*>& LexState::sharedStringSet() {
+    return d->strtable;
+}
+
 void LexState::resetstream(std::istream* input) {
     assert(!input->eof());
     d->stream.reset(input);
@@ -606,10 +610,6 @@ TOKEN LexState::lookahead() {
         column       = col;
     }
     return nexttoken.id;
-}
-
-std::set<const char*>& LexState::sharedStringLiteralSet() {
-    return d->strtable;
 }
 
 //! format token into string buffer

@@ -49,7 +49,7 @@ public:
     //! FIXME: lookahead() changes column as well
     TOKEN lookahead();
 
-    std::set<const char *> &sharedStringLiteralSet();
+    std::set<const char *> &sharedStringSet();
 
 protected:
     void resetstream(std::istream *input);

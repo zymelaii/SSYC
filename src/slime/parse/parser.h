@@ -1,85 +1,91 @@
 #pragma once
 
 #include "../lex/lex.h"
-#include "ast.h"
+#include "../ast/ast.h"
+#include "../ast/stmt.h"
+#include "../ast/expr.h"
+
+#include <set>
+#include <map>
+#include <queue>
+#include <string_view>
 
 namespace slime {
 
-namespace detail {
-static constexpr size_t MAX_SYMTABLE_LENGTH = 512;
-} // namespace detail
+using namespace ast;
 
-struct ParseState {};
+using SymbolTable     = std::map<std::string_view, NamedDecl*>;
+using SymbolTableList = slime::utils::ListTrait<SymbolTable*>;
 
-struct syminfo {
-    char* name;
-    int   type;    // 类型(void/int)
-    int   stype;   // var:0 function:1
-    int   arrsize; // 数组大小
-};
-
-struct symtable {
-    syminfo symbols[detail::MAX_SYMTABLE_LENGTH];
-    int     sym_num;
+struct ParseState {
+    FunctionDecl*
+        cur_func; //<! index in gsym of current parsing function(-1 if not in a
+                  // function)
+    int               cur_depth;
+    DeclSpecifier*    cur_specifs;
+    ParamVarDeclList* cur_params;
+    TranslationUnit*  tu;
+    WhileStmt*        cur_loop;
 };
 
 class Parser {
 public:
-    LexState              ls;
-    ParseState            ps;
-    std::set<const char*> sharedStringLiteralSet;
+    LexState               ls;
+    ParseState             ps;
+    std::set<const char*>& sharedStringSet;
+    SymbolTableList        symbolTable;
 
     Parser()
-        : sharedStringLiteralSet{ls.sharedStringLiteralSet()} {}
+        : sharedStringSet{ls.sharedStringSet()}
+        , ps{nullptr, 0, nullptr, nullptr, nullptr, nullptr} {}
 
-    void             next();
-    bool             expect(TOKEN token, const char* msg = nullptr);
-    std::string_view lookupStringLiteral(std::string_view s);
+    void        next();
+    bool        expect(TOKEN token, const char* msg = nullptr);
+    const char* lookupStringLiteral(std::string_view s);
 
 protected:
-    void enterblock();
-    void leaveblock();
-    void enterdecl();
-    void leavedecl();
-    void enterfunc();
-    void leavefunc();
+    void          enterblock();
+    void          leaveblock();
+    void          enterdecl();
+    void          leavedecl(DeclID tag);
+    FunctionDecl* enterfunc(); // add func symbol to g_sym and return its index
+    void          leavefunc();
 
 public:
-    void decl();
-    void vardef();
-    void initlist();
-    void func();
-    void funcargs();
-    void statement();
-    void ifstat();
-    void whilestat();
-    void breakstat();
-    void continuestat();
-    void returnstat();
-    void block();
+    TranslationUnit* parse();
+    void             global_decl();
+    DeclStmt*        decl();
+    VarDecl*         vardef();
+    InitListExpr*    initlist();
+    FunctionDecl*    func();
+    ParamVarDeclList funcargs();
+    Stmt*            statement();
+    IfStmt*          ifstat();
+    WhileStmt*       whilestat();
+    BreakStmt*       breakstat();
+    ContinueStmt*    continuestat();
+    ReturnStmt*      returnstat();
+    CompoundStmt*    block();
 
-    //! 添加一个全局变量符号到gsym，返回下标
-    int  add_globalsym(LexState& ls, int type);
-    void add_localsym();
+    BinaryOperator binastop(TOKEN token);
 
-    struct ASTNode* primaryexpr();
-    struct ASTNode* postfixexpr();
-    struct ASTNode* unaryexpr();
-    struct ASTNode* mulexpr();
-    struct ASTNode* addexpr();
-    struct ASTNode* shiftexpr();
-    struct ASTNode* relexpr();
-    struct ASTNode* eqexpr();
-    struct ASTNode* andexpr();
-    struct ASTNode* xorexpr();
-    struct ASTNode* orexpr();
-    struct ASTNode* landexpr();
-    struct ASTNode* lorexpr();
-    struct ASTNode* condexpr();
-    struct ASTNode* assignexpr();
-    struct ASTNode* expr();
+    NamedDecl* findSymbol(std::string_view name, DeclID declID);
+    // search a symbol in g_sym and return
+    // its index(-1 if failed)
 
-    void exprlist();
+    //! search a local symbol in a block and return its index in l_sym.
+    //! pblock will point to that block if it is not NULL
+
+    Expr* primaryexpr();
+    Expr* postfixexpr();
+    Expr* unaryexpr();
+
+    Expr* binexpr(int priority);
+    Expr* expr();
+
+    ExprList* exprlist();
+
+    // 输出AST（后序遍历）
 };
 
 } // namespace slime

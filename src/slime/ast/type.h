@@ -187,7 +187,8 @@ struct FunctionProtoType
 
     template <typename... Args>
     static FunctionProtoType* create(Type* returnType, Args... args) {
-        return new FunctionProtoType(returnType, args...);
+        auto e = new FunctionProtoType(returnType, args...);
+        return e;
     }
 
     Type* returnType;

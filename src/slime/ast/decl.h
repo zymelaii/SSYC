@@ -111,8 +111,8 @@ struct NamedDecl : public Decl {
         return specifier->type;
     }
 
-    std::string_view name;
     Scope            scope;
+    std::string_view name;
     DeclSpecifier   *specifier;
 };
 
