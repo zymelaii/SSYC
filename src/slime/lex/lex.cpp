@@ -116,7 +116,7 @@ o integer-constant: ((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L
 x integer-suffix:   (([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)
 )";
     static std::regex pattern(
-        R"(((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?)");
+        R"(((0[0-7]*)|(0[xX][0-9a-fA-F]+)|([1-9][0-9]*))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?)");
     return std::regex_match(s, pattern);
 }
 
@@ -397,7 +397,8 @@ TOKEN read_number(LexState& ls, std::string_view& raw) {
     while (true) {
         if (nextif(ls, exp)) {
             nextif(ls, "-+");
-        } else if (isdigit(ls.cur) || ls.cur == '.') {
+        } else if (isalnum(ls.cur) || ls.cur == '.') {
+            //! NOTE: consider hex integer, using isalnum instead of isnumber
             next(ls);
         } else {
             break;
