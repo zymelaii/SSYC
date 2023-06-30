@@ -285,7 +285,7 @@ BasicBlock* ASTToIRVisitor::createLoop(
     block->insertToTail(new BranchInst(desc.branchCond));
     auto cond   = visit(function, desc.branchCond, condition->asExprStmt());
     auto i1cond = makeBooleanCondition(cond);
-    if (i1cond != cond) { desc.branchCond->insertToTail(i1cond); }
+    if (i1cond != cond) { desc.branchCond->insertToTail(static_cast<Instruction*>(i1cond)); }
     desc.branchCond->insertToTail(
         new BranchInst(i1cond, desc.branchLoop, desc.branchExit));
     loopMap_.insert_or_assign(hint, desc);

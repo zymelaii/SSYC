@@ -137,7 +137,7 @@ protected:
     BasicBlock* visit(Function* fn, BasicBlock* block, IfStmt* e) {
         auto condition   = visit(fn, block, e->condition->asExprStmt());
         auto i1condition = makeBooleanCondition(condition);
-        if (i1condition != condition) { block->insertToTail(i1condition); }
+        if (i1condition != condition) { block->insertToTail(static_cast<Instruction*>(i1condition)); }
         auto branchExit = new BasicBlock(fn);
         auto branchIf   = new BasicBlock(fn);
         fn->blocks.push_back(branchIf);
