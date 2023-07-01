@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <cstddef>
 #include <map>
 #include <array>
 #include <string.h>
@@ -91,6 +92,8 @@ inline OperatorPriority lookupOperatorPriority(BinaryOperator op) {
         [static_cast<int>(op) + static_cast<int>(UnaryOperator::Paren)];
 }
 
+//! FIXME: SIGSEGV in parsing long variable name. To reproduce the error, run
+//! with the functional test 79
 void Parser::next() {
     do {
         ls.next();
@@ -109,6 +112,49 @@ bool Parser::expect(TOKEN token, const char *msg) {
     return false;
 }
 
+void Parser::addExternalFunc(
+    const char *name, BuiltinTypeID builtin, ParamVarDeclList &params) {
+    assert(symbolTable.head() != NULL);
+    DeclSpecifier *specif = DeclSpecifier::create();
+    specif->addSpecifier(NamedDeclSpecifier::Extern);
+    specif->type       = BuiltinType::get(builtin);
+    FunctionDecl *func = FunctionDecl::create(name, specif, params, NULL);
+    symbolTable.head()->value()->insert(
+        std::pair<std::string_view, NamedDecl *>(name, func));
+}
+
+void Parser::presetFunction() {
+    ParamVarDeclList *params;
+    DeclSpecifier    *specif = DeclSpecifier::create();
+    specif->type             = BuiltinType::getVoidType();
+
+    // getint
+    params = new ParamVarDeclList;
+    addExternalFunc("getint", BuiltinTypeID::Void, *params);
+
+    // getch
+    addExternalFunc("getch", BuiltinTypeID::Void, *params);
+
+    // putint
+    params   = new ParamVarDeclList;
+    auto arg = ParamVarDecl::create("ch", specif);
+    addExternalFunc("putint", BuiltinTypeID::Void, *params);
+
+    // putch
+    addExternalFunc("putch", BuiltinTypeID::Void, *params);
+
+    // getarray
+    params = new ParamVarDeclList;
+    addExternalFunc("getarray", BuiltinTypeID::Void, *params);
+
+    // putarray
+    params       = new ParamVarDeclList;
+    auto arrType = IncompleteArrayType::create(BuiltinType::getIntType());
+    specif->type = arrType;
+    arg          = ParamVarDecl::create("arr", specif);
+    addExternalFunc("putarray", BuiltinTypeID::Void, *params);
+}
+
 const char *Parser::lookupStringLiteral(std::string_view s) {
     const char *result = *sharedStringSet.find(s.data());
     if (result == nullptr) {
@@ -122,6 +168,7 @@ const char *Parser::lookupStringLiteral(std::string_view s) {
 TranslationUnit *Parser::parse() {
     ps.tu = new TranslationUnit();
     symbolTable.insertToHead(new SymbolTable);
+    presetFunction();
     while (ls.token.id != TOKEN::TK_EOF) global_decl();
     return ps.tu;
 }
@@ -138,7 +185,7 @@ void Parser::enterdecl() {
         case TOKEN::TK_VOID: {
             ps.cur_specifs->type = BuiltinType::getVoidType();
             next();
-        }
+        } break;
         case TOKEN::TK_INT: {
             ps.cur_specifs->type = BuiltinType::getIntType();
             next();
@@ -202,7 +249,8 @@ FunctionDecl *Parser::enterfunc() {
     bool             err         = false;
 
     for (auto param : funcparams) {
-        auto name         = param->name;
+        auto name = param->name;
+        if (param->type()->tryIntoArray() != NULL) continue;
         auto is_type_void = param->type()->asBuiltin()->isVoid();
         if (is_type_void && name.empty()) {
             if (funcparams.size() == 1) {
@@ -474,6 +522,10 @@ ParamVarDeclList Parser::funcargs() {
                 stderr, "Warning: Missing parameter's name in funcargs()!\n");
         }
 
+        if (ls.token.id == TOKEN::TK_IDENT) {
+            paramname = lookupStringLiteral(ls.token.detail.data());
+            next();
+        }
         if (ls.token.id == TOKEN::TK_LBRACKET) {
             //! 处理数组参数类型
             specif->type = IncompleteArrayType::create(
@@ -490,7 +542,9 @@ ParamVarDeclList Parser::funcargs() {
             specif->type->asArray()->insertToTail(NoInitExpr::get());
             next();
             while (ls.token.id == TOKEN::TK_LBRACKET) {
-                specif->type->asArray()->insertToTail(expr());
+                next();
+                specif->type->asArray()->insertToTail(
+                    binexpr(PRIORITIES.size()));
                 //! NOTE: 处理并存储长度值
                 if (ls.token.id != TOKEN::TK_RBRACKET) {
                     //! 处理错误：数组长度声明括号未闭合
@@ -501,13 +555,10 @@ ParamVarDeclList Parser::funcargs() {
             }
         }
 
-        if (ls.token.id == TOKEN::TK_IDENT)
-            paramname = lookupStringLiteral(ls.token.detail.data());
         auto new_param = ParamVarDecl::create(paramname, specif->clone());
         new_param->scope.depth = 1;
         new_param->scope.scope = paramname;
         params.insertToTail(new_param);
-        next();
 
         //! 完成参数类型并写入函数原型
         if (ls.token.id == TOKEN::TK_COMMA) {
@@ -651,7 +702,10 @@ ReturnStmt *Parser::returnstat() {
         exit(-1);
     }
     if (ret->typeOfReturnValue()->asBuiltin()->isVoid()
-        && !ps.cur_func->type()->asBuiltin()->isVoid()) {
+        && !ps.cur_func->type()
+                ->asFunctionProto()
+                ->returnType->asBuiltin()
+                ->isVoid()) {
         fprintf(
             stderr,
             "error: Missing return value in non-void function %s!\n",
@@ -960,10 +1014,13 @@ Expr *Parser::binexpr(int priority) {
     BinaryOperator   op          = binastop(ls.token.id);
     OperatorPriority curPriority = lookupOperatorPriority(op);
     //! CONST value check
-    if(left->tryIntoDeclRef() != NULL && op == BinaryOperator::Assign){
+    if (left->tryIntoDeclRef() != NULL && op == BinaryOperator::Assign) {
         auto var = left->asDeclRef()->source;
-        if(var->specifier->isConst()){
-            fprintf(stderr, "assignment of read-only variable '%s'", var->name.data());
+        if (var->specifier->isConst()) {
+            fprintf(
+                stderr,
+                "assignment of read-only variable '%s'",
+                var->name.data());
             exit(-1);
         }
     }
