@@ -86,7 +86,7 @@ public:
     Expr* unaryexpr();
 
     Expr* binexpr(int priority);
-    Expr* expr();
+    Expr* commaexpr();
 
     ExprList* exprlist();
 

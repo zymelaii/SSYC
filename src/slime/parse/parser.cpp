@@ -633,7 +633,7 @@ Stmt *Parser::statement() {
             ret = decl();
             break;
         default: {
-            ret = ExprStmt::from(expr());
+            ret = ExprStmt::from(commaexpr());
             expect(TOKEN::TK_SEMICOLON, "expect ';' after expression");
         } break;
     }
@@ -645,7 +645,7 @@ IfStmt *Parser::ifstat() {
     IfStmt *ret = new IfStmt();
     next();
     expect(TOKEN::TK_LPAREN, "expect '(' after 'if'");
-    ret->condition = expr();
+    ret->condition = commaexpr();
     //! TODO: 检查 expr 是否为条件表达式
     expect(TOKEN::TK_RPAREN, "expect ')'");
 
@@ -664,7 +664,7 @@ WhileStmt *Parser::whilestat() {
     next();
     //! TODO: 提升嵌套层次
     expect(TOKEN::TK_LPAREN, "expect '(' after 'while'");
-    ret->condition = expr();
+    ret->condition = commaexpr();
     //! TODO: 检查 expr 是否为条件表达式
     expect(TOKEN::TK_RPAREN, "expect ')'");
     WhileStmt *upper_loop = ps.cur_loop;
@@ -703,7 +703,7 @@ ReturnStmt *Parser::returnstat() {
     next();
     ReturnStmt *ret = new ReturnStmt();
     if (ls.token.id != TOKEN::TK_SEMICOLON) {
-        ret->returnValue = ExprStmt::from(expr());
+        ret->returnValue = ExprStmt::from(commaexpr());
     } else
         ret->returnValue = new NullStmt();
 
@@ -905,7 +905,7 @@ Expr *Parser::primaryexpr() {
         } break;
         case TOKEN::TK_LPAREN: {
             next();
-            ret = new ParenExpr(expr());
+            ret = new ParenExpr(commaexpr());
             expect(TOKEN::TK_RPAREN, "expect ')' after expression");
         } break;
         default: {
@@ -942,7 +942,7 @@ Expr *Parser::postfixexpr() {
                 while (ls.token.id == TOKEN::TK_LBRACKET) {
                     next();
                     index_cnt++;
-                    ret = SubscriptExpr::create(ret, expr());
+                    ret = SubscriptExpr::create(ret, commaexpr());
                     expect(TOKEN::TK_RBRACKET, "expect ']'");
                 }
                 if (index_cnt > nr_dimension) {
@@ -1064,7 +1064,7 @@ Expr *Parser::binexpr(int priority) {
  *      assign-expr |
  *      expr ',' assign-expr
  */
-Expr *Parser::expr() {
+Expr *Parser::commaexpr() {
     Expr *ret = binexpr(PRIORITIES.size());
     if (!ret) {
         fprintf(stderr, "Missing expression before comma!\n");
