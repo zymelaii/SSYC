@@ -123,7 +123,7 @@ x integer-suffix:   (([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)
 bool isfltval(const char* s) {
     auto              _ = R"(
 o floating-constant:               ((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?
-o decimal-floating-constant:       ((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+))[flFL]?
+o decimal-floating-constant:       (((([0-9]*\.[0-9]+)|([0-9]+\.))([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+))[flFL]?
 o hexadecimal-floating-constant:   0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+[flFL]?
 x exponent-part:                   [eE][+-]?[0-9]+
 x binary-exponent-part:            [pP][+-]?[0-9]+
@@ -131,7 +131,7 @@ x fractional-constant:             ([0-9]*\.[0-9]+)|([0-9]+\.)
 x hexadecimal-fractional-constant: ([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.)
 )";
     static std::regex pattern(
-        R"(((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?)");
+        R"((((((([0-9]*\.[0-9]+)|([0-9]+\.))([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?)");
     return std::regex_match(s, pattern);
 }
 
