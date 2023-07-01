@@ -10,6 +10,7 @@ class Driver {
 public:
     struct Flags {
         bool LexOnly = false;
+        bool DumpAST = false;
     };
 
     static Driver* create();
