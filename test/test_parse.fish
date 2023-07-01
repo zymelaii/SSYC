@@ -2,7 +2,7 @@
 set pass_cnt 0
 set unpass_cnt 0
 set libfunc_test 0
-set libfunc getint putint getarray putarray putch
+set libfunc getint putint getfloat putfloat getarray putarray getfarray putfarray putch
 set msg "null"
 
 
@@ -44,4 +44,4 @@ echo "Pass" $pass_cnt "tests"
 set_color red
 echo $unpass_cnt not pass.
 set_color yellow
-echo "NR of tests with libfunction: $libfunc_test" #之前统计过了，哈哈
+# echo "NR of tests with libfunction: $libfunc_test" #之前统计过了，哈哈

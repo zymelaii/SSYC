@@ -135,6 +135,9 @@ void Parser::presetFunction() {
     // getch
     addExternalFunc("getch", BuiltinTypeID::Void, *params);
 
+    // getfloat
+    addExternalFunc("getfloat", BuiltinTypeID::Void, *params);
+
     // putint
     params   = new ParamVarDeclList;
     auto arg = ParamVarDecl::create("ch", specif);
@@ -143,9 +146,15 @@ void Parser::presetFunction() {
     // putch
     addExternalFunc("putch", BuiltinTypeID::Void, *params);
 
+    // putfloat
+    addExternalFunc("putfloat", BuiltinTypeID::Void, *params);
+
     // getarray
     params = new ParamVarDeclList;
     addExternalFunc("getarray", BuiltinTypeID::Void, *params);
+
+    // getfarray
+    addExternalFunc("getfarray", BuiltinTypeID::Void, *params);
 
     // putarray
     params       = new ParamVarDeclList;
@@ -153,6 +162,9 @@ void Parser::presetFunction() {
     specif->type = arrType;
     arg          = ParamVarDecl::create("arr", specif);
     addExternalFunc("putarray", BuiltinTypeID::Void, *params);
+
+    // putfarray
+    addExternalFunc("putfarray", BuiltinTypeID::Void, *params);
 }
 
 const char *Parser::lookupStringLiteral(std::string_view s) {
