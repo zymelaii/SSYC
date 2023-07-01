@@ -61,7 +61,7 @@ struct LexStatePrivate {
     void bufsave(char ch) {
         if (buffer.n >= buffer.size) {
             buffer.size += buffer.size / 2;
-            realloc(buffer.buf, buffer.size + 1);
+            buffer.buf  = (char*)realloc(buffer.buf, buffer.size + 1);
         }
         buffer.buf[buffer.n++] = ch;
     }
