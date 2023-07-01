@@ -61,7 +61,7 @@ struct LexStatePrivate {
     void bufsave(char ch) {
         if (buffer.n >= buffer.size) {
             buffer.size += buffer.size / 2;
-            realloc(buffer.buf, buffer.size + 1);
+            buffer.buf  = (char*)realloc(buffer.buf, buffer.size + 1);
         }
         buffer.buf[buffer.n++] = ch;
     }
@@ -116,14 +116,14 @@ o integer-constant: ((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L
 x integer-suffix:   (([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)
 )";
     static std::regex pattern(
-        R"(((0[0-7]*)|([1-9][0-9]*)|(0[xX][0-9a-fA-F]+))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?)");
+        R"(((0[0-7]*)|(0[xX][0-9a-fA-F]+)|([1-9][0-9]*))(([uU](l{0,2}|L{0,2})?)|(l{1,2}|L{1,2})[uU]?)?)");
     return std::regex_match(s, pattern);
 }
 
 bool isfltval(const char* s) {
     auto              _ = R"(
 o floating-constant:               ((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?
-o decimal-floating-constant:       ((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+))[flFL]?
+o decimal-floating-constant:       (((([0-9]*\.[0-9]+)|([0-9]+\.))([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+))[flFL]?
 o hexadecimal-floating-constant:   0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+[flFL]?
 x exponent-part:                   [eE][+-]?[0-9]+
 x binary-exponent-part:            [pP][+-]?[0-9]+
@@ -131,7 +131,7 @@ x fractional-constant:             ([0-9]*\.[0-9]+)|([0-9]+\.)
 x hexadecimal-fractional-constant: ([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.)
 )";
     static std::regex pattern(
-        R"(((((([0-9]*\.[0-9]+)|([0-9]+\.)([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?)");
+        R"((((((([0-9]*\.[0-9]+)|([0-9]+\.))([eE][+-]?[0-9]+)?)|([0-9]+[eE][+-]?[0-9]+)))|(0[xX]((([0-9a-fA-F]*\.[0-9a-fA-F]+)|([0-9a-fA-F]+\.))|([0-9a-fA-F]+))[pP][+-]?[0-9]+))[flFL]?)");
     return std::regex_match(s, pattern);
 }
 
@@ -397,7 +397,8 @@ TOKEN read_number(LexState& ls, std::string_view& raw) {
     while (true) {
         if (nextif(ls, exp)) {
             nextif(ls, "-+");
-        } else if (isdigit(ls.cur) || ls.cur == '.') {
+        } else if (isalnum(ls.cur) || ls.cur == '.') {
+            //! NOTE: consider hex integer, using isalnum instead of isnumber
             next(ls);
         } else {
             break;

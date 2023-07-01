@@ -204,10 +204,14 @@ struct CallExpr : public Expr {
 //! SubscriptExpr -> Expr '[' Expr ']'
 struct SubscriptExpr : public Expr {
     SubscriptExpr()
-        : Expr(ExprID::Subscript, UnresolvedType::get()) {}
+        : Expr(ExprID::Subscript, UnresolvedType::get())
+        , lhs{nullptr}
+        , rhs{nullptr} {}
 
     SubscriptExpr(Expr *lhs, Expr *rhs)
-        : Expr(ExprID::Subscript, Type::getElementType(lhs->valueType)) {}
+        : Expr(ExprID::Subscript, Type::getElementType(lhs->valueType))
+        , lhs{lhs}
+        , rhs{rhs} {}
 
     static SubscriptExpr *create(Expr *lhs, Expr *rhs) {
         return new SubscriptExpr(lhs, rhs);

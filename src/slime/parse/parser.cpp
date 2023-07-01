@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <cstddef>
 #include <map>
 #include <array>
 #include <string.h>
@@ -91,6 +92,8 @@ inline OperatorPriority lookupOperatorPriority(BinaryOperator op) {
         [static_cast<int>(op) + static_cast<int>(UnaryOperator::Paren)];
 }
 
+//! FIXME: SIGSEGV in parsing long variable name. To reproduce the error, run
+//! with the functional test 79
 void Parser::next() {
     do {
         ls.next();
@@ -100,13 +103,68 @@ void Parser::next() {
 
 bool Parser::expect(TOKEN token, const char *msg) {
     if (ls.token.id == token) {
-        ls.next();
+        next();
         return true;
     }
     //! TODO: prettify display message
     if (msg != nullptr) { fprintf(stderr, "%s", msg); }
     //! TODO: raise an error
     return false;
+}
+
+void Parser::addExternalFunc(
+    const char *name, BuiltinTypeID builtin, ParamVarDeclList &params) {
+    assert(symbolTable.head() != NULL);
+    DeclSpecifier *specif = DeclSpecifier::create();
+    specif->addSpecifier(NamedDeclSpecifier::Extern);
+    specif->type       = BuiltinType::get(builtin);
+    FunctionDecl *func = FunctionDecl::create(name, specif, params, NULL);
+    symbolTable.head()->value()->insert(
+        std::pair<std::string_view, NamedDecl *>(name, func));
+}
+
+void Parser::presetFunction() {
+    ParamVarDeclList *params;
+    DeclSpecifier    *specif = DeclSpecifier::create();
+    specif->type             = BuiltinType::getVoidType();
+
+    // getint
+    params = new ParamVarDeclList;
+    addExternalFunc("getint", BuiltinTypeID::Void, *params);
+
+    // getch
+    addExternalFunc("getch", BuiltinTypeID::Void, *params);
+
+    // getfloat
+    addExternalFunc("getfloat", BuiltinTypeID::Void, *params);
+
+    // putint
+    params   = new ParamVarDeclList;
+    auto arg = ParamVarDecl::create("ch", specif);
+    addExternalFunc("putint", BuiltinTypeID::Void, *params);
+
+    // putch
+    addExternalFunc("putch", BuiltinTypeID::Void, *params);
+
+    // putfloat
+    addExternalFunc("putfloat", BuiltinTypeID::Void, *params);
+
+    // getarray
+    params = new ParamVarDeclList;
+    addExternalFunc("getarray", BuiltinTypeID::Void, *params);
+
+    // getfarray
+    addExternalFunc("getfarray", BuiltinTypeID::Void, *params);
+
+    // putarray
+    params       = new ParamVarDeclList;
+    auto arrType = IncompleteArrayType::create(BuiltinType::getIntType());
+    specif->type = arrType;
+    arg          = ParamVarDecl::create("arr", specif);
+    addExternalFunc("putarray", BuiltinTypeID::Void, *params);
+
+    // putfarray
+    addExternalFunc("putfarray", BuiltinTypeID::Void, *params);
 }
 
 const char *Parser::lookupStringLiteral(std::string_view s) {
@@ -122,6 +180,7 @@ const char *Parser::lookupStringLiteral(std::string_view s) {
 TranslationUnit *Parser::parse() {
     ps.tu = new TranslationUnit();
     symbolTable.insertToHead(new SymbolTable);
+    presetFunction();
     while (ls.token.id != TOKEN::TK_EOF) global_decl();
     return ps.tu;
 }
@@ -138,7 +197,7 @@ void Parser::enterdecl() {
         case TOKEN::TK_VOID: {
             ps.cur_specifs->type = BuiltinType::getVoidType();
             next();
-        }
+        } break;
         case TOKEN::TK_INT: {
             ps.cur_specifs->type = BuiltinType::getIntType();
             next();
@@ -202,7 +261,8 @@ FunctionDecl *Parser::enterfunc() {
     bool             err         = false;
 
     for (auto param : funcparams) {
-        auto name         = param->name;
+        auto name = param->name;
+        if (param->type()->tryIntoArray() != NULL) continue;
         auto is_type_void = param->type()->asBuiltin()->isVoid();
         if (is_type_void && name.empty()) {
             if (funcparams.size() == 1) {
@@ -218,6 +278,7 @@ FunctionDecl *Parser::enterfunc() {
     if (shouldClear) { funcparams.head()->removeFromList(); }
     ret = FunctionDecl::create(
         funcname, ps.cur_specifs->clone(), funcparams, NULL);
+    ret->scope.scope = lookupStringLiteral(funcname);
     gsyms->insert(std::pair<std::string_view, NamedDecl *>(
         lookupStringLiteral(funcname), ret));
     return ret;
@@ -347,7 +408,7 @@ VarDecl *Parser::vardef() {
         while (ls.token.id == TOKEN::TK_LBRACKET) { //<! 数组长度声明
             next();
             //! NOTE: 目前不支持数组长度推断
-            arrType->insertToTail(expr());
+            arrType->insertToTail(binexpr(PRIORITIES.size()));
             if (ls.token.id == TOKEN::TK_RBRACKET) {
                 next();
             } else {
@@ -363,7 +424,7 @@ VarDecl *Parser::vardef() {
         if (ls.token.id == TOKEN::TK_LBRACE) {
             initexpr = initlist();
         } else {
-            initexpr = expr();
+            initexpr = binexpr(PRIORITIES.size());
         }
         //! TODO: 获取并处理初始化赋值
     }
@@ -414,7 +475,7 @@ InitListExpr *Parser::initlist() {
         if (ls.token.id == TOKEN::TK_LBRACE) {
             ret->insertToTail(initlist());
         } else {
-            ret->insertToTail(expr());
+            ret->insertToTail(binexpr(PRIORITIES.size()));
         }
         has_more = false;
         if (ls.token.id == TOKEN::TK_COMMA) {
@@ -473,6 +534,10 @@ ParamVarDeclList Parser::funcargs() {
                 stderr, "Warning: Missing parameter's name in funcargs()!\n");
         }
 
+        if (ls.token.id == TOKEN::TK_IDENT) {
+            paramname = lookupStringLiteral(ls.token.detail.data());
+            next();
+        }
         if (ls.token.id == TOKEN::TK_LBRACKET) {
             //! 处理数组参数类型
             specif->type = IncompleteArrayType::create(
@@ -489,7 +554,9 @@ ParamVarDeclList Parser::funcargs() {
             specif->type->asArray()->insertToTail(NoInitExpr::get());
             next();
             while (ls.token.id == TOKEN::TK_LBRACKET) {
-                specif->type->asArray()->insertToTail(expr());
+                next();
+                specif->type->asArray()->insertToTail(
+                    binexpr(PRIORITIES.size()));
                 //! NOTE: 处理并存储长度值
                 if (ls.token.id != TOKEN::TK_RBRACKET) {
                     //! 处理错误：数组长度声明括号未闭合
@@ -500,17 +567,15 @@ ParamVarDeclList Parser::funcargs() {
             }
         }
 
-        if (ls.token.id == TOKEN::TK_IDENT)
-            paramname = lookupStringLiteral(ls.token.detail.data());
         auto new_param = ParamVarDecl::create(paramname, specif->clone());
         new_param->scope.depth = 1;
         new_param->scope.scope = paramname;
         params.insertToTail(new_param);
-        next();
 
         //! 完成参数类型并写入函数原型
         if (ls.token.id == TOKEN::TK_COMMA) {
-            if (ls.lookahead() == TOKEN::TK_RPAREN) {
+            next();
+            if (ls.token.id == TOKEN::TK_RPAREN) {
                 fprintf(stderr, "Unexpected comma in funcargs()!\n");
                 exit(-1);
             }
@@ -568,7 +633,7 @@ Stmt *Parser::statement() {
             ret = decl();
             break;
         default: {
-            ret = ExprStmt::from(expr());
+            ret = ExprStmt::from(commaexpr());
             expect(TOKEN::TK_SEMICOLON, "expect ';' after expression");
         } break;
     }
@@ -580,7 +645,7 @@ IfStmt *Parser::ifstat() {
     IfStmt *ret = new IfStmt();
     next();
     expect(TOKEN::TK_LPAREN, "expect '(' after 'if'");
-    ret->condition = expr();
+    ret->condition = commaexpr();
     //! TODO: 检查 expr 是否为条件表达式
     expect(TOKEN::TK_RPAREN, "expect ')'");
 
@@ -599,7 +664,7 @@ WhileStmt *Parser::whilestat() {
     next();
     //! TODO: 提升嵌套层次
     expect(TOKEN::TK_LPAREN, "expect '(' after 'while'");
-    ret->condition = expr();
+    ret->condition = commaexpr();
     //! TODO: 检查 expr 是否为条件表达式
     expect(TOKEN::TK_RPAREN, "expect ')'");
     WhileStmt *upper_loop = ps.cur_loop;
@@ -638,7 +703,7 @@ ReturnStmt *Parser::returnstat() {
     next();
     ReturnStmt *ret = new ReturnStmt();
     if (ls.token.id != TOKEN::TK_SEMICOLON) {
-        ret->returnValue = ExprStmt::from(expr());
+        ret->returnValue = ExprStmt::from(commaexpr());
     } else
         ret->returnValue = new NullStmt();
 
@@ -649,7 +714,10 @@ ReturnStmt *Parser::returnstat() {
         exit(-1);
     }
     if (ret->typeOfReturnValue()->asBuiltin()->isVoid()
-        && !ps.cur_func->type()->asBuiltin()->isVoid()) {
+        && !ps.cur_func->type()
+                ->asFunctionProto()
+                ->returnType->asBuiltin()
+                ->isVoid()) {
         fprintf(
             stderr,
             "error: Missing return value in non-void function %s!\n",
@@ -774,9 +842,12 @@ Expr *Parser::primaryexpr() {
 
     switch (ls.token.id) {
         case TOKEN::TK_IDENT: {
-            NamedDecl *ident = findSymbol(ls.token.detail.data(), DeclID::Var);
-            if (!ident) {
+            NamedDecl *ident = NULL;
+            if (ls.lookahead() == TOKEN::TK_LPAREN)
                 ident = findSymbol(ls.token.detail.data(), DeclID::Function);
+            else
+                ident = findSymbol(ls.token.detail.data(), DeclID::Var);
+            if (!ident) {
                 if (!ident) {
                     fprintf(
                         stderr,
@@ -834,7 +905,7 @@ Expr *Parser::primaryexpr() {
         } break;
         case TOKEN::TK_LPAREN: {
             next();
-            ret = new ParenExpr(expr());
+            ret = new ParenExpr(commaexpr());
             expect(TOKEN::TK_RPAREN, "expect ')' after expression");
         } break;
         default: {
@@ -865,8 +936,23 @@ Expr *Parser::postfixexpr() {
                     fprintf(stderr, "Invalid array name.\n");
                     exit(-1);
                 }
-                ret = SubscriptExpr::create(ret, expr());
-                expect(TOKEN::TK_RBRACKET, "expect ']'");
+                DeclRefExpr *arr = ret->asDeclRef();
+                int nr_dimension = arr->source->type()->asArray()->size();
+                int index_cnt    = 0;
+                while (ls.token.id == TOKEN::TK_LBRACKET) {
+                    next();
+                    index_cnt++;
+                    ret = SubscriptExpr::create(ret, commaexpr());
+                    expect(TOKEN::TK_RBRACKET, "expect ']'");
+                }
+                if (index_cnt > nr_dimension) {
+                    fprintf(
+                        stderr,
+                        "Too many indexes with array %s. Need %d but got %d.\n",
+                        arr->source->name.data(),
+                        nr_dimension,
+                        index_cnt);
+                }
             } break;
             case TOKEN::TK_LPAREN: { //<! function call
                 if (ret->valueType->typeId != TypeID::FunctionProto) {
@@ -900,28 +986,32 @@ Expr *Parser::postfixexpr() {
  *      '!' unary-expr
  */
 Expr *Parser::unaryexpr() {
-    Expr *ret = postfixexpr();
-    // switch (ls.token.id) {
-    //     case TOKEN::TK_ADD:
-    //         ret = new UnaryExpr(UnaryOperator::Pos, ret);
-    //         next();
-    //         break;
-    //     case TOKEN::TK_SUB:
-    //         ret = new UnaryExpr(UnaryOperator::Neg, ret);
-    //         next();
-    //         break;
-    //     case TOKEN::TK_INV:
-    //         ret = new UnaryExpr(UnaryOperator::Inv, ret);
-    //         next();
-    //         break;
-    //     case TOKEN::TK_NOT:
-    //         ret = new UnaryExpr(UnaryOperator::Not, ret);
-    //         next();
-    //         break;
-    //     default: {
-    //         // postfixexpr();
-    //     } break;
-    // }
+    Expr *ret = NULL;
+    switch (ls.token.id) {
+        case TOKEN::TK_ADD:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Pos, ret);
+            break;
+        case TOKEN::TK_SUB:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Neg, ret);
+            break;
+        case TOKEN::TK_INV:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Inv, ret);
+            break;
+        case TOKEN::TK_NOT:
+            next();
+            ret = unaryexpr();
+            ret = new UnaryExpr(UnaryOperator::Not, ret);
+            break;
+        default: {
+            ret = postfixexpr();
+        } break;
+    }
 
     return ret;
 }
@@ -929,10 +1019,24 @@ Expr *Parser::unaryexpr() {
 Expr *Parser::binexpr(int priority) {
     Expr *left, *right;
     left = unaryexpr();
-    if (ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN)
+    if (ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN
+        || ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_RBRACKET
+        || ls.token.id == TOKEN::TK_RBRACE)
         return left;
     BinaryOperator   op          = binastop(ls.token.id);
     OperatorPriority curPriority = lookupOperatorPriority(op);
+    //! CONST value check
+    if (left->tryIntoDeclRef() != NULL && op == BinaryOperator::Assign) {
+        auto var = left->asDeclRef()->source;
+        if (var->specifier->isConst()) {
+            fprintf(
+                stderr,
+                "assignment of read-only variable '%s'",
+                var->name.data());
+            exit(-1);
+        }
+    }
+
     while (curPriority.priority < priority
            || (curPriority.priority == priority && !curPriority.assoc)) {
         next();
@@ -943,7 +1047,9 @@ Expr *Parser::binexpr(int priority) {
             left,
             right);
         if (ls.token.id == TOKEN::TK_SEMICOLON
-            || ls.token.id == TOKEN::TK_RPAREN)
+            || ls.token.id == TOKEN::TK_RPAREN || ls.token.id == TOKEN::TK_COMMA
+            || ls.token.id == TOKEN::TK_RBRACKET
+            || ls.token.id == TOKEN::TK_RBRACE)
             return left;
         op          = binastop(ls.token.id);
         curPriority = lookupOperatorPriority(op);
@@ -958,7 +1064,7 @@ Expr *Parser::binexpr(int priority) {
  *      assign-expr |
  *      expr ',' assign-expr
  */
-Expr *Parser::expr() {
+Expr *Parser::commaexpr() {
     Expr *ret = binexpr(PRIORITIES.size());
     if (!ret) {
         fprintf(stderr, "Missing expression before comma!\n");

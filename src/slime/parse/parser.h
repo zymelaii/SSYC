@@ -53,6 +53,11 @@ protected:
 
 public:
     TranslationUnit* parse();
+    void             addExternalFunc(
+                    const char*       name,
+                    BuiltinTypeID     builtin,
+                    ParamVarDeclList& params); // preset some external functions
+    void             presetFunction();
     void             global_decl();
     DeclStmt*        decl();
     VarDecl*         vardef();
@@ -81,7 +86,7 @@ public:
     Expr* unaryexpr();
 
     Expr* binexpr(int priority);
-    Expr* expr();
+    Expr* commaexpr();
 
     ExprList* exprlist();
 

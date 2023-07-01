@@ -1,4 +1,5 @@
 #include "driver.h"
+#include "../visitor/ASTDumpVisitor.h"
 
 #include <iostream>
 #include <sstream>
@@ -50,9 +51,12 @@ void Driver::execute() {
             puts(pretty_tok2str(ls.token, buf));
             ls.next();
         }
-    } else {
-        while (ls.token.id != TOKEN::TK_EOF) {
-            parser_.parse();
+    } else if (ls.token.id != TOKEN::TK_EOF) {
+        auto unit = parser_.parse();
+        if (flags_.DumpAST) {
+            auto visitor =
+                visitor::ASTDumpVisitor::createWithOstream(&std::cerr);
+            visitor->visit(unit);
         }
     }
 
