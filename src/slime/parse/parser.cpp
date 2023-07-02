@@ -252,7 +252,7 @@ FunctionDecl *Parser::enterfunc() {
 
     for (auto param : funcparams) {
         auto name = param->name;
-        if (param->type()->tryIntoArray() != nullptr) continue;
+        if (param->type()->tryIntoIncompleteArray() != nullptr) continue;
         auto is_type_void = param->type()->asBuiltin()->isVoid();
         if (is_type_void && name.empty()) {
             if (funcparams.size() == 1) {
@@ -922,13 +922,14 @@ Expr *Parser::postfixexpr() {
     while (!ok) {
         switch (ls.token.id) {
             case TOKEN::TK_LBRACKET: { //<! array index
-                if (ret->valueType->typeId != TypeID::Array) {
+                if (!ret->valueType->isArrayLike()) {
                     fprintf(stderr, "Invalid array name.\n");
                     exit(-1);
                 }
                 DeclRefExpr *arr = ret->asDeclRef();
-                int nr_dimension = arr->source->type()->asArray()->size();
-                int index_cnt    = 0;
+                int nr_dimension = static_cast<ArrayType *>(arr->source->type())
+                                       ->totalDimension();
+                int index_cnt = 0;
                 while (ls.token.id == TOKEN::TK_LBRACKET) {
                     next();
                     index_cnt++;

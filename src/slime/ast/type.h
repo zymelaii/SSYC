@@ -48,6 +48,10 @@ struct Type {
 
     Type* extendIntoArrayType(Expr* length);
 
+    bool isArrayLike() const {
+        return typeId == TypeID::Array || typeId == TypeID::IncompleteArray;
+    }
+
     TypeID typeId;
 };
 
@@ -123,9 +127,12 @@ struct BuiltinType : public Type {
 struct ArrayType
     : public Type
     , public ExprList {
-    ArrayType(Type* type)
-        : Type(TypeID::Array)
+    ArrayType(TypeID typeId, Type* type)
+        : Type(typeId)
         , type{type} {}
+
+    ArrayType(Type* type)
+        : ArrayType(TypeID::Array, type) {}
 
     template <
         typename... Args,
@@ -150,10 +157,32 @@ struct ArrayType
         return new ArrayType(type, args...);
     }
 
+    size_t totalDimension() const {
+        return typeId == TypeID::IncompleteArray ? size() + 1 : size();
+    }
+
     Type* type;
 };
 
-struct IncompleteArrayType : public ArrayType {};
+struct IncompleteArrayType : public ArrayType {
+    IncompleteArrayType(Type* type)
+        : ArrayType(TypeID::IncompleteArray, type) {}
+
+    template <
+        typename... Args,
+        typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
+        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename       = std::enable_if_t<std::is_convertible_v<First, Expr*>>>
+    IncompleteArrayType(Type* type, Args... args)
+        : ArrayType(type, std::initializer_list<Expr*>{args...}) {
+        typeId = TypeID::IncompleteArray;
+    }
+
+    template <typename... Args>
+    static IncompleteArrayType* create(Type* type, Args... args) {
+        return new IncompleteArrayType(type, args...);
+    }
+};
 
 struct FunctionProtoType
     : public Type
