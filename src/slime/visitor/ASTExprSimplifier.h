@@ -15,6 +15,8 @@ public:
     static bool               isFunctionCallCompileTimeEvaluable(
                       ast::FunctionDecl* function, size_t maxStmtAllowed = 64);
     static ast::ConstantExpr* tryEvaluateFunctionCall(ast::CallExpr* call);
+    static ast::InitListExpr* regulateInitListForArray(
+        ast::ArrayType* array, ast::InitListExpr* list);
 };
 
 } // namespace slime::visitor

@@ -427,6 +427,12 @@ VarDecl *Parser::vardef() {
     if (arrType) {
         auto e               = ps.cur_specifs->type;
         ps.cur_specifs->type = arrType;
+        if (auto e = initexpr->tryIntoNoInit()) {
+            initexpr = InitListExpr::create();
+        } else {
+            initexpr = ASTExprSimplifier::regulateInitListForArray(
+                arrType, initexpr->asInitList());
+        }
         ret = VarDecl::create(varname, ps.cur_specifs->clone(), initexpr);
         ps.cur_specifs->type = e;
     } else

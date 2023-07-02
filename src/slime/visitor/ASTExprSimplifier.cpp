@@ -1,6 +1,8 @@
 #include "ASTExprSimplifier.h"
 #include "../utils/list.h"
 
+#include <vector>
+
 namespace slime::visitor {
 
 using namespace ast;
@@ -75,16 +77,14 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                     seqlike->asDeclRef()->source->asVarDecl()->initValue)
                     ->asInitList();
             if (initval == nullptr) { return nullptr; }
-            if (initval->size() == 0) {
-                auto builtin = seqlike->valueType->asBuiltin();
-                if (builtin->isInt()) {
-                    return ConstantExpr::createI32(0);
-                } else if (builtin->isFloat()) {
-                    return ConstantExpr::createF32(0.f);
-                } else {
-                    return nullptr;
-                }
+            ConstantExpr* zeroValue = nullptr;
+            auto builtin = seqlike->valueType->asArray()->type->asBuiltin();
+            if (builtin->isInt()) {
+                zeroValue = ConstantExpr::createI32(0);
+            } else if (builtin->isFloat()) {
+                zeroValue = ConstantExpr::createF32(0.f);
             }
+            if (initval->size() == 0) { return zeroValue; }
             utils::ListTrait<ConstantExpr*> indices;
             while (subscript != nullptr) {
                 if (auto index = tryEvaluateCompileTimeExpr(subscript->rhs)) {
@@ -94,12 +94,26 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                 }
                 subscript = subscript->lhs->tryIntoSubscript();
             }
-            //! TODO: complete element index
+            int n = 0;
+            for (auto index : indices) {
+                if (index->i32 >= initval->size()) { return zeroValue; }
+                Expr* expr = nullptr;
+                int   i    = 0;
+                for (auto e : *initval) {
+                    if (i++ == index->i32) {
+                        expr = e;
+                        break;
+                    }
+                }
+                if (++n < indices.size()) {
+                    initval = expr->asInitList();
+                } else {
+                    return trySimplify(expr);
+                }
+            }
             return nullptr;
         } break;
-        case ast::ExprID::InitList: {
-            return nullptr;
-        } break;
+        case ast::ExprID::InitList:
         case ast::ExprID::NoInit: {
             return nullptr;
         } break;
@@ -333,7 +347,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
 }
 
 bool ASTExprSimplifier::isFunctionCallCompileTimeEvaluable(
-    ast::FunctionDecl* function, size_t maxStmtAllowed) {
+    FunctionDecl* function, size_t maxStmtAllowed) {
     //! TODO: exclude non-const variable and extern function
     return false;
 }
@@ -345,6 +359,67 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateFunctionCall(CallExpr* call) {
     if (!fn || !fn->canBeConstExpr) { return nullptr; }
     //! TODO: execute AST evaluation machine
     return nullptr;
+}
+
+static InitListExpr* consumeArrayInitBlock(
+    BuiltinTypeID                elementType,
+    const std::vector<int>&      array,
+    int                          currentDim,
+    InitListExpr::iterator&      it,
+    const InitListExpr::iterator end) {
+    assert(elementType != BuiltinTypeID::Void);
+    assert(currentDim > 0);
+    auto result = InitListExpr::create();
+    if (currentDim == array.size()) {
+        int n = array[currentDim - 1];
+        while (it != end && n-- > 0) {
+            auto e = ASTExprSimplifier::trySimplify(*it);
+            if (e->exprId == ExprID::InitList) {
+                assert(e->asInitList()->size() == 0);
+                e = elementType == BuiltinTypeID::Int
+                      ? ConstantExpr::createI32(0)
+                      : ConstantExpr::createF32(0.f);
+            }
+            result->insertToTail(e);
+            ++it;
+        }
+    } else {
+        for (int i = 0; i < array[currentDim - 1] && it != end; ++i) {
+            if ((*it)->exprId == ExprID::InitList) {
+                auto innerList = (*it)->asInitList();
+                auto innerIt   = innerList->begin();
+                result->insertToTail(consumeArrayInitBlock(
+                    elementType,
+                    array,
+                    currentDim + 1,
+                    innerIt,
+                    innerList->end()));
+                ++it;
+            } else {
+                result->insertToTail(consumeArrayInitBlock(
+                    elementType, array, currentDim + 1, it, end));
+            }
+        }
+    }
+    return result;
+}
+
+InitListExpr* ASTExprSimplifier::regulateInitListForArray(
+    ArrayType* array, InitListExpr* list) {
+    //! 1. empty brace zeros corresponding dimension
+    //! 2. rest of given values are reset to zero
+    //! 3. plain values must fit the length before next brace
+    std::vector<int> arrayLength;
+    for (auto e : *array) {
+        auto n = tryEvaluateCompileTimeExpr(e);
+        assert(n != nullptr);
+        assert(n->tryIntoConstant() != nullptr);
+        assert(n->asConstant()->type == ConstantType::i32);
+        arrayLength.push_back(n->asConstant()->i32);
+    }
+    auto it = list->begin();
+    return consumeArrayInitBlock(
+        array->type->asBuiltin()->type, arrayLength, 1, it, list->end());
 }
 
 } // namespace slime::visitor
