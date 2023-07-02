@@ -541,11 +541,11 @@ ParamVarDeclList Parser::funcargs() {
                     "parameter.\n");
                 exit(-1);
             }
-            specif->type->asArray()->insertToTail(NoInitExpr::get());
+            // specif->type->asArray()->insertToTail(NoInitExpr::get());
             next();
             while (ls.token.id == TOKEN::TK_LBRACKET) {
                 next();
-                specif->type->asArray()->insertToTail(
+                specif->type->asIncompleteArray()->insertToTail(
                     binexpr(PRIORITIES.size()));
                 //! NOTE: 处理并存储长度值
                 if (ls.token.id != TOKEN::TK_RBRACKET) {
