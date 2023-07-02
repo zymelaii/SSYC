@@ -171,7 +171,8 @@ struct FunctionDecl
         CompoundStmt     *body)
         : DeclaratorDecl(DeclID::Function, name, DeclSpecifier::create())
         , ParamVarDeclList(std::move(params))
-        , body{body} {
+        , body{body}
+        , canBeConstExpr{false} {
         TypeList list;
         extractTypeListFromParams(&list, params);
         specifier->type =
@@ -185,7 +186,8 @@ struct FunctionDecl
         CompoundStmt     *body)
         : DeclaratorDecl(DeclID::Function, name, specifier)
         , ParamVarDeclList(std::move(params))
-        , body{body} {}
+        , body{body}
+        , canBeConstExpr{false} {}
 
     static void extractTypeListFromParams(
         TypeList *typeListPtr, const ParamVarDeclList &params) {
@@ -214,6 +216,7 @@ struct FunctionDecl
     }
 
     CompoundStmt *body;
+    bool          canBeConstExpr;
 };
 
 inline ParamVarDecl *DeclSpecifier::createParamVarDecl(std::string_view name) {
