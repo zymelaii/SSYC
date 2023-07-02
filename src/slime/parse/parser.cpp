@@ -584,8 +584,8 @@ ParamVarDeclList Parser::funcargs() {
         }
     }
     next();
-    ps.cur_params = &params;
-    return params;
+    ps.cur_params = new ParamVarDeclList(std::move(params));
+    return std::move(*ps.cur_params);
 }
 
 /*!
