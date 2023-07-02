@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "../visitor/ASTExprSimplifier.h"
 
 #include <cstddef>
 #include <map>
@@ -10,6 +11,8 @@
 
 namespace slime {
 
+using visitor::ASTExprSimplifier;
+
 struct OperatorPriority {
     constexpr OperatorPriority(int priority, bool assoc)
         : priority{priority}
@@ -18,7 +21,7 @@ struct OperatorPriority {
     //! 优先级
     int priority;
 
-    //! 结核性
+    //! 结合性
     //! false: 右结合
     //! true: 左结合
     bool assoc;
@@ -34,52 +37,39 @@ static constexpr std::array<OperatorPriority, TOTAL_OPERATORS> PRIORITIES{
     OperatorPriority(1, false),
     //! Subscript '[]'
     OperatorPriority(0, true),
-
     //! BinaryOperator
     //! Mul Div Mod
     OperatorPriority(2, true),
     OperatorPriority(2, true),
     OperatorPriority(2, true),
-
     //! Add Sub
     OperatorPriority(3, true),
     OperatorPriority(3, true),
-
     //! Shl Shr
     OperatorPriority(4, true),
     OperatorPriority(4, true),
-
     //! Comparaison Operator
     OperatorPriority(5, true),
     OperatorPriority(5, true),
     OperatorPriority(5, true),
     OperatorPriority(5, true),
-
     //! EQ NE
     OperatorPriority(6, true),
     OperatorPriority(6, true),
-
     //! And
     OperatorPriority(7, true),
-
     //! Xor
     OperatorPriority(8, true),
-
     //! Or
     OperatorPriority(9, true),
-
     //! Logic And
     OperatorPriority(10, true),
-
     //! Logic Or
     OperatorPriority(11, true),
-
     //! Assign
     OperatorPriority(12, false),
-
-    // Comma
+    //! Comma
     OperatorPriority(13, true),
-
 };
 
 inline OperatorPriority lookupOperatorPriority(UnaryOperator op) {
@@ -114,11 +104,11 @@ bool Parser::expect(TOKEN token, const char *msg) {
 
 void Parser::addExternalFunc(
     const char *name, BuiltinTypeID builtin, ParamVarDeclList &params) {
-    assert(symbolTable.head() != NULL);
+    assert(symbolTable.head() != nullptr);
     DeclSpecifier *specif = DeclSpecifier::create();
     specif->addSpecifier(NamedDeclSpecifier::Extern);
     specif->type       = BuiltinType::get(builtin);
-    FunctionDecl *func = FunctionDecl::create(name, specif, params, NULL);
+    FunctionDecl *func = FunctionDecl::create(name, specif, params, nullptr);
     symbolTable.head()->value()->insert(
         std::pair<std::string_view, NamedDecl *>(name, func));
 }
@@ -226,7 +216,7 @@ void Parser::leavedecl(DeclID tag) {
         next();
     }
     //! TODO: 清理操作
-    ps.cur_specifs = NULL;
+    ps.cur_specifs = nullptr;
 }
 
 // 标记函数类型，处理函数参数列表
@@ -262,7 +252,7 @@ FunctionDecl *Parser::enterfunc() {
 
     for (auto param : funcparams) {
         auto name = param->name;
-        if (param->type()->tryIntoArray() != NULL) continue;
+        if (param->type()->tryIntoArray() != nullptr) continue;
         auto is_type_void = param->type()->asBuiltin()->isVoid();
         if (is_type_void && name.empty()) {
             if (funcparams.size() == 1) {
@@ -277,7 +267,7 @@ FunctionDecl *Parser::enterfunc() {
     //! NOTE: function body will be added later.
     if (shouldClear) { funcparams.head()->removeFromList(); }
     ret = FunctionDecl::create(
-        funcname, ps.cur_specifs->clone(), funcparams, NULL);
+        funcname, ps.cur_specifs->clone(), funcparams, nullptr);
     ret->scope.scope = lookupStringLiteral(funcname);
     gsyms->insert(std::pair<std::string_view, NamedDecl *>(
         lookupStringLiteral(funcname), ret));
@@ -286,7 +276,7 @@ FunctionDecl *Parser::enterfunc() {
 
 //! 结束函数定义
 void Parser::leavefunc() {
-    ps.cur_func = NULL;
+    ps.cur_func = nullptr;
     //! TODO: 检查并处理函数体
 }
 
@@ -305,7 +295,7 @@ void Parser::leaveblock() {
 }
 
 void Parser::global_decl() {
-    assert(ps.tu != NULL);
+    assert(ps.tu != nullptr);
     assert(symbolTable.size() != 0);
 
     bool   err = false;
@@ -388,17 +378,17 @@ VarDecl *Parser::vardef() {
         //! TODO: 处理错误
         fprintf(stderr, "No TK_IDENT found in vardef()!\n");
         exit(-1);
-        return NULL;
+        return nullptr;
     }
 
     Expr       *initexpr = new NoInitExpr();
     const char *varname  = lookupStringLiteral(ls.token.detail.data());
-    ArrayType  *arrType  = NULL;
-    VarDecl    *ret      = NULL;
+    ArrayType  *arrType  = nullptr;
+    VarDecl    *ret      = nullptr;
     next();
     // if (ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_SEMICOLON)
     // {
-    //     return NULL;
+    //     return nullptr;
     // }
 
     //! TODO: 支持数组
@@ -443,7 +433,7 @@ VarDecl *Parser::vardef() {
         ret = VarDecl::create(varname, ps.cur_specifs->clone(), initexpr);
 
     if (ps.cur_depth) {
-        assert(ps.cur_func != NULL);
+        assert(ps.cur_func != nullptr);
         assert(ps.cur_depth == symbolTable.size() - 1);
         ret->scope.scope = lookupStringLiteral(ps.cur_func->name);
         ret->scope.depth = ps.cur_depth;
@@ -506,7 +496,7 @@ ParamVarDeclList Parser::funcargs() {
     DeclSpecifier   *specif = DeclSpecifier::create();
     while (ls.token.id != TOKEN::TK_RPAREN) {
         //! FIXME: 可能死循环
-        const char *paramname = NULL;
+        const char *paramname = nullptr;
         switch (ls.token.id) {
             case TOKEN::TK_VOID: {
                 fprintf(
@@ -694,12 +684,12 @@ ContinueStmt *Parser::continuestat() {
         exit(-1);
     }
     expect(TOKEN::TK_SEMICOLON, "expect ';' after continue statement");
-    return new ContinueStmt();
+    return new ContinueStmt;
 }
 
 ReturnStmt *Parser::returnstat() {
     assert(ls.token.id == TOKEN::TK_RETURN);
-    assert(ps.cur_func != NULL);
+    assert(ps.cur_func != nullptr);
     next();
     ReturnStmt *ret = new ReturnStmt();
     if (ls.token.id != TOKEN::TK_SEMICOLON) {
@@ -732,13 +722,13 @@ CompoundStmt *Parser::block() {
     enterblock();
     //! add function params to symboltable
 
-    if (ps.cur_params != NULL) {
+    if (ps.cur_params != nullptr) {
         auto lsyms = symbolTable.tail()->value();
         for (auto param : *ps.cur_params) {
             lsyms->insert(
                 std::pair<std::string_view, NamedDecl *>(param->name, param));
         }
-        ps.cur_params = NULL;
+        ps.cur_params = nullptr;
     }
     assert(ls.token.id == TOKEN::TK_LBRACE);
     next();
@@ -765,7 +755,7 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declID) {
         if (it != gsyms->end() && it->second->declId == DeclID::Function)
             return it->second;
     }
-    return NULL;
+    return nullptr;
 }
 
 BinaryOperator Parser::binastop(TOKEN token) {
@@ -842,7 +832,7 @@ Expr *Parser::primaryexpr() {
 
     switch (ls.token.id) {
         case TOKEN::TK_IDENT: {
-            NamedDecl *ident = NULL;
+            NamedDecl *ident = nullptr;
             if (ls.lookahead() == TOKEN::TK_LPAREN)
                 ident = findSymbol(ls.token.detail.data(), DeclID::Function);
             else
@@ -917,7 +907,7 @@ Expr *Parser::primaryexpr() {
         } break;
     }
 
-    return ret;
+    return ASTExprSimplifier::trySimplify(ret);
 }
 
 /*!
@@ -974,7 +964,7 @@ Expr *Parser::postfixexpr() {
     }
 
     //! TODO: support array index, function call
-    return ret;
+    return ASTExprSimplifier::trySimplify(ret);
 }
 
 /*!
@@ -986,7 +976,7 @@ Expr *Parser::postfixexpr() {
  *      '!' unary-expr
  */
 Expr *Parser::unaryexpr() {
-    Expr *ret = NULL;
+    Expr *ret = nullptr;
     switch (ls.token.id) {
         case TOKEN::TK_ADD:
             next();
@@ -1013,50 +1003,52 @@ Expr *Parser::unaryexpr() {
         } break;
     }
 
-    return ret;
+    return ASTExprSimplifier::trySimplify(ret);
 }
 
 Expr *Parser::binexpr(int priority) {
     Expr *left, *right;
     left = unaryexpr();
-    if (ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN
-        || ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_RBRACKET
-        || ls.token.id == TOKEN::TK_RBRACE)
-        return left;
-    BinaryOperator   op          = binastop(ls.token.id);
-    OperatorPriority curPriority = lookupOperatorPriority(op);
-    //! CONST value check
-    if (left->tryIntoDeclRef() != NULL && op == BinaryOperator::Assign) {
-        auto var = left->asDeclRef()->source;
-        if (var->specifier->isConst()) {
-            fprintf(
-                stderr,
-                "assignment of read-only variable '%s'",
-                var->name.data());
-            exit(-1);
+    if (!(ls.token.id == TOKEN::TK_SEMICOLON || ls.token.id == TOKEN::TK_RPAREN
+          || ls.token.id == TOKEN::TK_COMMA || ls.token.id == TOKEN::TK_RBRACKET
+          || ls.token.id == TOKEN::TK_RBRACE)) {
+        BinaryOperator   op          = binastop(ls.token.id);
+        OperatorPriority curPriority = lookupOperatorPriority(op);
+        //! CONST value check
+        if (left->tryIntoDeclRef() != nullptr && op == BinaryOperator::Assign) {
+            auto var = left->asDeclRef()->source;
+            if (var->specifier->isConst()) {
+                fprintf(
+                    stderr,
+                    "assignment of read-only variable '%s'",
+                    var->name.data());
+                exit(-1);
+            }
+        }
+
+        while (curPriority.priority < priority
+               || (curPriority.priority == priority && !curPriority.assoc)) {
+            next();
+            right = binexpr(curPriority.priority);
+            left  = new BinaryExpr(
+                BinaryExpr::resolveType(op, left->valueType, right->valueType),
+                op,
+                left,
+                right);
+            if (ls.token.id == TOKEN::TK_SEMICOLON
+                || ls.token.id == TOKEN::TK_RPAREN
+                || ls.token.id == TOKEN::TK_COMMA
+                || ls.token.id == TOKEN::TK_RBRACKET
+                || ls.token.id == TOKEN::TK_RBRACE) {
+                break;
+            }
+            op          = binastop(ls.token.id);
+            curPriority = lookupOperatorPriority(op);
+            //! TODO: 赋值时的类型检查
         }
     }
 
-    while (curPriority.priority < priority
-           || (curPriority.priority == priority && !curPriority.assoc)) {
-        next();
-        right = binexpr(curPriority.priority);
-        left  = new BinaryExpr(
-            BinaryExpr::resolveType(op, left->valueType, right->valueType),
-            op,
-            left,
-            right);
-        if (ls.token.id == TOKEN::TK_SEMICOLON
-            || ls.token.id == TOKEN::TK_RPAREN || ls.token.id == TOKEN::TK_COMMA
-            || ls.token.id == TOKEN::TK_RBRACKET
-            || ls.token.id == TOKEN::TK_RBRACE)
-            return left;
-        op          = binastop(ls.token.id);
-        curPriority = lookupOperatorPriority(op);
-        //! TODO: 赋值时的类型检查
-    }
-
-    return left;
+    return ASTExprSimplifier::trySimplify(left);
 }
 
 /*!
@@ -1076,7 +1068,7 @@ Expr *Parser::commaexpr() {
         static_cast<CommaExpr *>(ret)->insertToHead(tmp);
     }
 
-    return ret;
+    return ASTExprSimplifier::trySimplify(ret);
 }
 
 } // namespace slime
