@@ -75,7 +75,8 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                 subscript = subscript->lhs->tryIntoSubscript();
             }
             if (seqlike == nullptr
-                || seqlike->valueType->typeId != TypeID::Array) {
+                || seqlike->valueType->typeId != TypeID::Array
+                || !seqlike->source->specifier->isConst()) {
                 return nullptr;
             }
             auto initval = trySimplify(seqlike->source->asVarDecl()->initValue)
