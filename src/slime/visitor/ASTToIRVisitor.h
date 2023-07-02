@@ -21,26 +21,26 @@ public:
     void visit(ast::TranslationUnit *e);
 
 protected:
-    ir::Value    *visit(ir::BasicBlock *block, ast::VarDecl *e);
-    ir::Function *visit(ast::FunctionDecl *e);
-    ir::BasicBlock *
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::Stmt *e);
-    inline void
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::DeclStmt *e);
-    inline ir::Value *
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::ExprStmt *e);
-    inline ir::BasicBlock *
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::CompoundStmt *e);
-    ir::BasicBlock *
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::IfStmt *e);
-    inline ir::BasicBlock *
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::DoStmt *e);
-    inline ir::BasicBlock  *
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::WhileStmt *e);
+    ir::Value      *visit(ir::BasicBlock *block, ast::VarDecl *e);
+    ir::Function   *visit(ast::FunctionDecl *e);
+    ir::BasicBlock *visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::Stmt *e);
+    inline void visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::DeclStmt *e);
+    inline ir::Value *visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::ExprStmt *e);
+    inline ir::BasicBlock *visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::CompoundStmt *e);
+    ir::BasicBlock *visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::IfStmt *e);
+    inline ir::BasicBlock *visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::DoStmt *e);
+    inline ir::BasicBlock *visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::WhileStmt *e);
     void visit(ir::Function *fn, ir::BasicBlock *block, ast::BreakStmt *e);
     void visit(ir::Function *fn, ir::BasicBlock *block, ast::ContinueStmt *e);
-    inline void
-        visit(ir::Function *fn, ir::BasicBlock *block, ast::ReturnStmt *e);
+    inline void visit(
+        ir::Function *fn, ir::BasicBlock *block, ast::ReturnStmt *e);
     ir::Value        *visit(ir::BasicBlock *block, ast::Expr *e);
     ir::Value        *visit(ir::BasicBlock *block, ast::DeclRefExpr *e);
     ir::Value        *visit(ir::BasicBlock *block, ast::ConstantExpr *e);
@@ -103,8 +103,8 @@ inline void ASTToIRVisitor::visit(
     block->insertToTail(new ir::ReturnInst(visit(fn, block, e->returnValue)));
 }
 
-inline ir::Value *
-    ASTToIRVisitor::visit(ir::BasicBlock *block, ast::ParenExpr *e) {
+inline ir::Value *ASTToIRVisitor::visit(
+    ir::BasicBlock *block, ast::ParenExpr *e) {
     return visit(block, e->inner);
 }
 } // namespace slime::visitor

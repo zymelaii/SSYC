@@ -116,12 +116,12 @@ enum class ComparePredicationType {
 struct Type {
     Type(TypeID id = TypeID::Token);
 
-    static Type *getVoidType();
-    static Type *getLabelType();
-    static Type *getIntegerType();
-    static Type *getFloatType();
-    static FunctionType *
-        getFunctionType(Type *returnType, std::vector<Type *> &paramTypes);
+    static Type         *getVoidType();
+    static Type         *getLabelType();
+    static Type         *getIntegerType();
+    static Type         *getFloatType();
+    static FunctionType *getFunctionType(
+        Type *returnType, std::vector<Type *> &paramTypes);
     static ArrayType   *getArrayType(Type *elementType, size_t length);
     static PointerType *getPointerType(Type *elementType);
 

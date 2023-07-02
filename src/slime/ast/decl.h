@@ -147,8 +147,8 @@ struct ParamVarDecl : public VarDecl {
     ParamVarDecl(std::string_view name, DeclSpecifier *specifier);
     ParamVarDecl(DeclSpecifier *specifier);
 
-    static ParamVarDecl *
-        create(std::string_view name, DeclSpecifier *specifier) {
+    static ParamVarDecl *create(
+        std::string_view name, DeclSpecifier *specifier) {
         return new ParamVarDecl(name, specifier);
     }
 

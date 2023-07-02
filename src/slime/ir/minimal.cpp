@@ -29,8 +29,8 @@ Type *Type::getFloatType() {
     return new Type(TypeID::Float);
 }
 
-FunctionType *
-    Type::getFunctionType(Type *returnType, std::vector<Type *> &paramTypes) {
+FunctionType *Type::getFunctionType(
+    Type *returnType, std::vector<Type *> &paramTypes) {
     return new FunctionType(returnType, paramTypes);
 }
 

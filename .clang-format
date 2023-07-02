@@ -124,6 +124,8 @@ AlignConsecutiveDeclarations:
     AcrossComments: false
 #! The function declaration return type breaking style to use.
 AlwaysBreakAfterReturnType: None
+#! Penalty for putting the return type of a function onto its own line.
+PenaltyReturnTypeOnItsOwnLine: 128
 #! Control of individual brace wrapping cases.
 BraceWrapping:
     AfterCaseLabel: false
