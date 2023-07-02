@@ -17,11 +17,11 @@ struct is_iterable_as {
     template <typename G>
     static constexpr auto check(int) -> decltype(
         //! check begin, end, operator!=
-        void(std::begin(std::declval<T&>()) != std::end(std::declval<T&>())),
+        void(std::declval<T&>().begin() != std::declval<T&>().end()),
         //! check operator++
-        void(++std::declval<decltype(std::begin(std::declval<T&>()))&>()),
+        void(++std::declval<decltype(std::declval<T&>().end())&>()),
         //! check operator* and value type
-        check<decltype(*std::begin(std::declval<T&>()))>(0, 0));
+        check<decltype(*std::declval<T&>().begin())>(0, 0));
 
     template <typename G>
     static constexpr std::false_type check(...);
@@ -39,6 +39,11 @@ static inline constexpr bool is_iterable_as =
     detail::is_iterable_as_t<T, G>::value;
 
 template <size_t N, typename... Args>
-using nth_type = decltype(std::get<N>(std::tuple<Args...>()));
+using nth_type = decltype(std::get<N>(std::declval<std::tuple<Args...>>()));
+
+template <typename T, typename... Args>
+decltype(auto) firstValueOfTArguments(T&& first, const Args&... args) {
+    return std::forward<T>(first);
+}
 
 } // namespace slime::utils
