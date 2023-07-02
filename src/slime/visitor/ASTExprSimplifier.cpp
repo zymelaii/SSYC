@@ -8,22 +8,18 @@ namespace slime::visitor {
 using namespace ast;
 
 Expr* ASTExprSimplifier::trySimplify(Expr* expr) {
-    if (expr->exprId == ExprID::InitList) {
-        for (auto& e : *expr->asInitList()) { e = trySimplify(e); }
-        return expr;
-    }
-    auto e = tryEvaluateCompileTimeExpr(expr);
     //! TODO: algebra simplification
+    auto e = tryEvaluateCompileTimeExpr(expr);
     return !e ? expr : e;
 }
 
 Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
     switch (expr->exprId) {
-        case ast::ExprID::DeclRef: {
+        case ExprID::DeclRef: {
             auto e = expr->asDeclRef();
             if (!e->source->specifier->isConst()) { return nullptr; }
             switch (e->source->declId) {
-                case ast::DeclID::Var: {
+                case DeclID::Var: {
                     auto var = e->source->asVarDecl();
                     if (auto array = var->type()->tryIntoArray()) {
                         return expr;
@@ -33,58 +29,41 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                         return nullptr;
                     }
                 } break;
-                case ast::DeclID::ParamVar: {
+                case DeclID::ParamVar: {
                     return nullptr;
                 } break;
-                case ast::DeclID::Function: {
+                case DeclID::Function: {
                     return expr;
                 }
             }
         } break;
-        case ast::ExprID::Constant: {
+        case ExprID::Constant: {
             return expr;
         } break;
-        case ast::ExprID::Unary: {
+        case ExprID::Unary: {
             return tryEvaluateCompileTimeUnaryExpr(expr->asUnary());
         } break;
-        case ast::ExprID::Binary: {
+        case ExprID::Binary: {
             return tryEvaluateCompileTimeBinaryExpr(expr->asBinary());
         } break;
-        case ast::ExprID::Comma: {
+        case ExprID::Comma: {
             //! FIXME: only no-effect expr can be ignored
             return tryEvaluateCompileTimeExpr(expr->asComma()->tail()->value());
         } break;
-        case ast::ExprID::Paren: {
+        case ExprID::Paren: {
             return tryEvaluateCompileTimeExpr(expr->asParen()->inner);
         } break;
-        case ast::ExprID::Stmt: {
+        case ExprID::Stmt: {
             assert(false && "unsupported StmtExpr");
             return nullptr;
         } break;
-        case ast::ExprID::Call: {
+        case ExprID::Call: {
             return tryEvaluateFunctionCall(expr->asCall());
         } break;
-        case ast::ExprID::Subscript: {
-            auto subscript = expr->asSubscript();
-            if (subscript->lhs->exprId != ExprID::DeclRef) { return nullptr; }
-            auto seqlike = tryEvaluateCompileTimeExpr(subscript->lhs);
-            if (seqlike == nullptr
-                || seqlike->valueType->typeId != ast::TypeID::Array) {
-                return nullptr;
-            }
-            auto initval =
-                trySimplify(
-                    seqlike->asDeclRef()->source->asVarDecl()->initValue)
-                    ->asInitList();
-            if (initval == nullptr) { return nullptr; }
-            ConstantExpr* zeroValue = nullptr;
-            auto builtin = seqlike->valueType->asArray()->type->asBuiltin();
-            if (builtin->isInt()) {
-                zeroValue = ConstantExpr::createI32(0);
-            } else if (builtin->isFloat()) {
-                zeroValue = ConstantExpr::createF32(0.f);
-            }
-            if (initval->size() == 0) { return zeroValue; }
+        case ExprID::Subscript: {
+            //! lookup array decl & init list and make indices
+            auto                            subscript = expr->asSubscript();
+            DeclRefExpr*                    seqlike   = nullptr;
             utils::ListTrait<ConstantExpr*> indices;
             while (subscript != nullptr) {
                 if (auto index = tryEvaluateCompileTimeExpr(subscript->rhs)) {
@@ -92,8 +71,26 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                 } else {
                     return nullptr;
                 }
+                seqlike   = subscript->lhs->tryIntoDeclRef();
                 subscript = subscript->lhs->tryIntoSubscript();
             }
+            if (seqlike == nullptr
+                || seqlike->valueType->typeId != TypeID::Array) {
+                return nullptr;
+            }
+            auto initval = trySimplify(seqlike->source->asVarDecl()->initValue)
+                               ->asInitList();
+            if (initval == nullptr) { return nullptr; }
+            //! decide zero value
+            ConstantExpr* zeroValue = nullptr;
+            auto builtin = seqlike->valueType->asArray()->type->asBuiltin();
+            if (builtin->isInt()) {
+                zeroValue = ConstantExpr::createI32(0);
+            } else if (builtin->isFloat()) {
+                zeroValue = ConstantExpr::createF32(0.f);
+            }
+            //! evaluate subscript expr
+            if (initval->size() == 0) { return zeroValue; }
             int n = 0;
             for (auto index : indices) {
                 if (index->i32 >= initval->size()) { return zeroValue; }
@@ -113,8 +110,8 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
             }
             return nullptr;
         } break;
-        case ast::ExprID::InitList:
-        case ast::ExprID::NoInit: {
+        case ExprID::InitList:
+        case ExprID::NoInit: {
             return nullptr;
         } break;
     }
@@ -126,10 +123,10 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
     auto value = tryEvaluateCompileTimeExpr(e->operand);
     if (!value) { return nullptr; }
     switch (e->op) {
-        case ast::UnaryOperator::Pos: {
+        case UnaryOperator::Pos: {
             return value->asConstant();
         } break;
-        case ast::UnaryOperator::Neg: {
+        case UnaryOperator::Neg: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
                 auto c = value->asConstant();
                 if (builtin->isInt()) {
@@ -144,7 +141,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
                 return nullptr;
             }
         }
-        case ast::UnaryOperator::Not: {
+        case UnaryOperator::Not: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
                 auto c = value->asConstant();
                 if (builtin->isInt()) {
@@ -159,7 +156,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
                 return nullptr;
             }
         } break;
-        case ast::UnaryOperator::Inv: {
+        case UnaryOperator::Inv: {
             if (auto builtin = value->valueType->tryIntoBuiltin();
                 builtin->isInt()) {
                 value->asConstant()->setData(~value->asConstant()->i32);
@@ -168,7 +165,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
                 return nullptr;
             }
         } break;
-        case ast::UnaryOperator::Paren: {
+        case UnaryOperator::Paren: {
             assert(false && "ParenExpr is unreachable in UnaryExpr");
             return nullptr;
         } break;
@@ -325,10 +322,10 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
             auto rval = tryEvaluateCompileTimeUnaryExpr(&r)->tryIntoConstant();
             if (!lval || !rval) { return nullptr; }
             switch (e->op) {
-                case ast::BinaryOperator::LAnd: {
+                case BinaryOperator::LAnd: {
                     return ConstantExpr::createI32(!lval->i32 && !lval->i32);
                 } break;
-                case ast::BinaryOperator::LOr: {
+                case BinaryOperator::LOr: {
                     return ConstantExpr::createI32(!lval->i32 || !lval->i32);
                 } break;
                 default: {
