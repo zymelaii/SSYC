@@ -173,8 +173,8 @@ void ASTDumpVisitor::visit(UnaryExpr* e) {
 
 void ASTDumpVisitor::visit(BinaryExpr* e) {
     static const char* sops[21]{
-        "[]", "*",  "/",  "%", "+", "-", "<<", ">>", "<", "<=", ">",
-        ">=", "==", "!=", "&", "^", "|", "&&", "||", "=", ",",
+        "=", "+",  "-", "*",  "/",  "%",  "&",  "|",  "^", "&&", "||",
+        "<", "<=", ">", ">=", "==", "!=", "<<", ">>", ",", "[]",
     };
     assert(e->op != BinaryOperator::Subscript);
     assert(e->op != BinaryOperator::Comma);
