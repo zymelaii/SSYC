@@ -49,6 +49,7 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
             return tryEvaluateCompileTimeBinaryExpr(expr->asBinary());
         } break;
         case ast::ExprID::Comma: {
+            //! FIXME: only no-effect expr can be ignored
             return tryEvaluateCompileTimeExpr(expr->asComma()->tail()->value());
         } break;
         case ast::ExprID::Paren: {
@@ -108,11 +109,11 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
 ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
     auto e = expr->tryIntoUnary();
     if (!e) { return nullptr; }
-    auto value = tryEvaluateCompileTimeExpr(e->operand)->tryIntoConstant();
+    auto value = tryEvaluateCompileTimeExpr(e->operand);
     if (!value) { return nullptr; }
     switch (e->op) {
         case ast::UnaryOperator::Pos: {
-            return value;
+            return value->asConstant();
         } break;
         case ast::UnaryOperator::Neg: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
@@ -124,7 +125,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
                 } else {
                     return nullptr;
                 }
-                return value;
+                return c;
             } else {
                 return nullptr;
             }
@@ -139,7 +140,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
                 } else {
                     return nullptr;
                 }
-                return value;
+                return value->asConstant();
             } else {
                 return nullptr;
             }
@@ -148,7 +149,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
             if (auto builtin = value->valueType->tryIntoBuiltin();
                 builtin->isInt()) {
                 value->asConstant()->setData(~value->asConstant()->i32);
-                return value;
+                return value->asConstant();
             } else {
                 return nullptr;
             }
