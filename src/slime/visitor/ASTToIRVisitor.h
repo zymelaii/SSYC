@@ -66,8 +66,11 @@ private:
         ir::BasicBlock *branchExit;
     };
 
-    std::map<ast::Stmt *, LoopDescription>    loopMap_;
-    std::map<ast::DeclRefExpr *, ir::Value *> symbolTable_;
+    //! convenient for loop creation
+    std::map<ast::Stmt *, LoopDescription> loopMap_;
+
+    //! always refers to address if possible
+    std::map<ast::NamedDecl *, ir::Value *> symbolTable_;
 };
 
 inline void ASTToIRVisitor::visit(

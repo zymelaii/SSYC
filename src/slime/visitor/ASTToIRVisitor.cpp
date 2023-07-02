@@ -32,7 +32,7 @@ ir::Type* ASTToIRVisitor::getIRTypeFromAstType(ast::Type* type) {
             auto t = getIRTypeFromAstType(e->type);
             for (auto value : *e) {
                 //! FIXME: check validity
-                t = ir::Type::getArrayType(t, value->asConstant()->i32);
+                t = ir::Type::createArrayType(t, value->asConstant()->i32);
             }
             return t;
         } break;
@@ -41,9 +41,9 @@ ir::Type* ASTToIRVisitor::getIRTypeFromAstType(ast::Type* type) {
             auto t = getIRTypeFromAstType(e->type);
             for (auto value : *e) {
                 //! FIXME: check validity
-                t = ir::Type::getArrayType(t, value->asConstant()->i32);
+                t = ir::Type::createArrayType(t, value->asConstant()->i32);
             }
-            return ir::Type::getPointerType(t);
+            return ir::Type::createPointerType(t);
         } break;
     }
     return nullptr;
@@ -65,10 +65,10 @@ ir::Constant* ASTToIRVisitor::evaluateCompileTimeAstExpr(Expr* expr) {
 }
 
 Value* ASTToIRVisitor::makeBooleanCondition(Value* condition) {
-    if (condition->type->id == ir::TypeID::Integer) {
+    if (condition->type->isInteger()) {
         condition = new ICmpInst(
             ComparePredicationType::NE, condition, new ConstantInt(0));
-    } else if (condition->type->id == ir::TypeID::Float) {
+    } else if (condition->type->isFloat()) {
         condition = new FCmpInst(
             ComparePredicationType::UNE, condition, new ConstantFloat(0.f));
     }
@@ -104,6 +104,7 @@ Value* ASTToIRVisitor::visit(BasicBlock* block, VarDecl* e) {
             evaluateCompileTimeAstExpr(e->initValue));
     } else {
         auto alloca = new AllocaInst(type);
+        symbolTable_.insert_or_assign(e, alloca);
         //! NOTE: always let var-decl be at the front
         block->parent->blocks.front()->insertToHead(alloca);
         if (e->initValue != nullptr) {
@@ -123,7 +124,7 @@ Function* ASTToIRVisitor::visit(FunctionDecl* e) {
         paramTypes.push_back(type);
         params.push_back(new Parameter(type, nullptr, param->name));
     }
-    auto proto = ir::Type::getFunctionType(
+    auto proto = ir::Type::createFunctionType(
         getIRTypeFromAstType(e->proto()->returnType), paramTypes);
     auto function   = new Function(proto, e->name);
     int  paramIndex = 0;
@@ -422,7 +423,7 @@ Value* ASTToIRVisitor::visit(BasicBlock* block, CommaExpr* e) {
 Value* ASTToIRVisitor::visit(BasicBlock* block, CallExpr* e) {
     auto fn = e->asDeclRef()->source->asFunctionDecl()->name;
     for (auto value : *this) {
-        if (value->type->id == ir::TypeID::Function && value->name == fn) {
+        if (value->type->isFunction() && value->name == fn) {
             std::vector<Value*> argList;
             auto                arg = e->argList.head();
             while (arg != nullptr) {
