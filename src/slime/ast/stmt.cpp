@@ -11,9 +11,11 @@ Type* Stmt::implicitValueType() {
         case StmtID::Do:
         case StmtID::While:
         case StmtID::Break:
-        case StmtID::Continue:
-        case StmtID::Return: {
+        case StmtID::Continue: {
             return BuiltinType::getVoidType();
+        } break;
+        case StmtID::Return: {
+            return asReturnStmt()->returnValue->implicitValueType();
         } break;
         case StmtID::Expr: {
             return asExprStmt()->unwrap()->valueType;

@@ -41,6 +41,10 @@ struct Type {
 
     static Type* getElementType(Type* type);
 
+    Type* decay() {
+        return static_cast<Type*>(this);
+    }
+
     RegisterCastWithoutSuffixDecl(typeId, Builtin, Type, TypeID);
     RegisterCastWithoutSuffixDecl(typeId, Array, Type, TypeID);
     RegisterCastWithoutSuffixDecl(typeId, IncompleteArray, Type, TypeID);
@@ -51,6 +55,8 @@ struct Type {
     bool isArrayLike() const {
         return typeId == TypeID::Array || typeId == TypeID::IncompleteArray;
     }
+
+    bool equals(const Type* other) const;
 
     TypeID typeId;
 };
@@ -121,6 +127,14 @@ struct BuiltinType : public Type {
         return type == BuiltinTypeID::Void;
     }
 
+    bool equals(const Type* other) const {
+        if (this == other) { return true; }
+        if (auto builtin = const_cast<Type*>(other)->tryIntoBuiltin()) {
+            return type == builtin->type;
+        }
+        return false;
+    }
+
     BuiltinTypeID type;
 };
 
@@ -161,6 +175,8 @@ struct ArrayType
         return typeId == TypeID::IncompleteArray ? size() + 1 : size();
     }
 
+    bool equals(const Type* other) const;
+
     Type* type;
 };
 
@@ -182,6 +198,8 @@ struct IncompleteArrayType : public ArrayType {
     static IncompleteArrayType* create(Type* type, Args... args) {
         return new IncompleteArrayType(type, args...);
     }
+
+    bool equals(const Type* other) const;
 };
 
 struct FunctionProtoType
@@ -219,6 +237,8 @@ struct FunctionProtoType
         auto e = new FunctionProtoType(returnType, args...);
         return e;
     }
+
+    bool equals(const Type* other) const;
 
     Type* returnType;
 };

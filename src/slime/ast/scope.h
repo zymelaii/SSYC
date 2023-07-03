@@ -12,7 +12,7 @@ struct Scope {
         , depth{0} {}
 
     bool isGlobal() const {
-        return scope.empty();
+        return depth == 0;
     }
 
     std::string toString() {

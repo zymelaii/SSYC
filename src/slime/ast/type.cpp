@@ -1,8 +1,11 @@
 #include "type.h"
+#include "../visitor/ASTExprSimplifier.h"
 
 #include <vector>
 
 namespace slime::ast {
+
+using visitor::ASTExprSimplifier;
 
 Type* Type::getElementType(Type* type) {
     switch (type->typeId) {
@@ -60,6 +63,94 @@ Type* Type::extendIntoArrayType(Expr* length) {
             return this;
         } break;
     }
+}
+
+bool Type::equals(const Type* other) const {
+    if (this == other) { return true; }
+    auto self = const_cast<Type*>(this);
+    switch (typeId) {
+        case TypeID::None:
+        case TypeID::Unresolved: {
+            return typeId == other->typeId;
+        } break;
+        case TypeID::Builtin: {
+            return self->asBuiltin()->equals(other);
+        } break;
+        case TypeID::Array: {
+            return self->asArray()->equals(other);
+        } break;
+        case TypeID::IncompleteArray: {
+            return self->asIncompleteArray()->equals(other);
+        } break;
+        case TypeID::FunctionProto: {
+            return self->asFunctionProto()->equals(other);
+        } break;
+    }
+}
+
+bool ArrayType::equals(const Type* other) const {
+    if (this == other) { return true; }
+    if (auto self = const_cast<ArrayType*>(this)->tryIntoIncompleteArray()) {
+        return self->equals(other);
+    }
+    if (auto array = const_cast<Type*>(other)->tryIntoArray()) {
+        if (size() != array->size()) { return false; }
+        auto it = array->begin();
+        for (auto lhs : *this) {
+            auto rhs = *it++;
+            if (lhs == rhs) { continue; }
+            auto lval = ASTExprSimplifier::tryEvaluateCompileTimeExpr(lhs);
+            auto rval = ASTExprSimplifier::tryEvaluateCompileTimeExpr(rhs);
+            if (!lval || !rval) { return false; }
+            assert(lval->tryIntoConstant() && rval->tryIntoConstant());
+            assert(
+                lval->asConstant()->type == ConstantType::i32
+                && rval->asConstant()->type == ConstantType::i32);
+            if (lval->asConstant()->i32 != rval->asConstant()->i32) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool IncompleteArrayType::equals(const Type* other) const {
+    if (this == other) { return true; }
+    if (auto array = const_cast<Type*>(other)->tryIntoIncompleteArray()) {
+        if (size() != array->size()) { return false; }
+        auto it = array->begin();
+        for (auto lhs : *this) {
+            auto rhs = *it++;
+            if (lhs == rhs) { continue; }
+            auto lval = ASTExprSimplifier::tryEvaluateCompileTimeExpr(lhs);
+            auto rval = ASTExprSimplifier::tryEvaluateCompileTimeExpr(rhs);
+            if (!lval || !rval) { return false; }
+            assert(lval->tryIntoConstant() && rval->tryIntoConstant());
+            assert(
+                lval->asConstant()->type == ConstantType::i32
+                && rval->asConstant()->type == ConstantType::i32);
+            if (lval->asConstant()->i32 != rval->asConstant()->i32) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool FunctionProtoType::equals(const Type* other) const {
+    if (this == other) { return true; }
+    if (auto fn = const_cast<Type*>(other)->tryIntoFunctionProto()) {
+        if (size() != fn->size()) { return true; }
+        if (!returnType->equals(fn->returnType)) { return false; }
+        auto it = fn->begin();
+        for (auto param : *this) {
+            if (!param->equals(*it++)) { return false; }
+        }
+        return true;
+    }
+    return false;
 }
 
 } // namespace slime::ast

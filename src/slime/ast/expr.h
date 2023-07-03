@@ -40,6 +40,10 @@ struct Expr : public ExprStmt {
         : exprId{exprId}
         , valueType{valueType} {}
 
+    Expr *decay() {
+        return static_cast<Expr *>(this);
+    }
+
     RegisterCastWithoutSuffixDecl(exprId, DeclRef, Expr, ExprID);
     RegisterCastWithoutSuffixDecl(exprId, Constant, Expr, ExprID);
     RegisterCastWithoutSuffixDecl(exprId, Unary, Expr, ExprID);
@@ -129,6 +133,10 @@ struct BinaryExpr : public Expr {
         , op{op}
         , lhs{lhs}
         , rhs{rhs} {}
+
+    BinaryExpr(BinaryOperator op, Expr *lhs, Expr *rhs)
+        : BinaryExpr(
+            resolveType(op, lhs->valueType, rhs->valueType), op, lhs, rhs) {}
 
     static Type *resolveType(BinaryOperator op, Type *lhsType, Type *rhsType);
 

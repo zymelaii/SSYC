@@ -7,37 +7,41 @@
 
 #include <set>
 #include <map>
-#include <queue>
+#include <vector>
+#include <limits>
 #include <string_view>
 
 namespace slime {
 
 using namespace ast;
 
-using SymbolTable     = std::map<std::string_view, NamedDecl*>;
-using SymbolTableList = slime::utils::ListTrait<SymbolTable*>;
-
 struct ParseState {
-    FunctionDecl*
-        cur_func; //<! index in gsym of current parsing function(-1 if not in a
-                  // function)
-    int               cur_depth;
-    DeclSpecifier*    cur_specifs;
-    ParamVarDeclList* cur_params;
-    TranslationUnit*  tu;
-    WhileStmt*        cur_loop;
+    FunctionDecl*     cur_func             = nullptr;
+    int               cur_depth            = 0;
+    DeclID            decl_type            = DeclID::ParamVar;
+    DeclSpecifier*    cur_specifs          = nullptr;
+    ParamVarDeclList* cur_params           = nullptr;
+    TranslationUnit*  tu                   = nullptr;
+    WhileStmt*        cur_loop             = nullptr;
+    bool              next_block_as_fn     = false;
+    bool              ignore_next_funcdecl = false;
 };
 
 class Parser {
 public:
-    LexState               ls;
-    ParseState             ps;
-    std::set<const char*>& sharedStringSet;
-    SymbolTableList        symbolTable;
+    using SymbolTable = std::map<std::string_view, NamedDecl*>;
+
+    LexState                  ls;
+    ParseState                ps;
+    std::set<const char*>&    sharedStringSet;
+    std::vector<SymbolTable*> symbolTable;
 
     Parser()
         : sharedStringSet{ls.sharedStringSet()}
-        , ps{nullptr, 0, nullptr, nullptr, nullptr, nullptr} {}
+        , ps{} {
+        //! the bottom is always alive for global symbols
+        symbolTable.push_back(new SymbolTable);
+    }
 
     void        next();
     bool        expect(TOKEN token, const char* msg = nullptr);
@@ -47,15 +51,16 @@ protected:
     void          enterblock();
     void          leaveblock();
     void          enterdecl();
-    void          leavedecl(DeclID tag);
+    void          leavedecl();
     FunctionDecl* enterfunc(); // add func symbol to g_sym and return its index
     void          leavefunc();
 
 public:
     TranslationUnit* parse();
+    void             addSymbol(NamedDecl* decl);
     void             addExternalFunc(
                     const char*       name,
-                    BuiltinTypeID     builtin,
+                    Type*             returnType,
                     ParamVarDeclList& params); // preset some external functions
     void             presetFunction();
     void             global_decl();
@@ -85,7 +90,7 @@ public:
     Expr* postfixexpr();
     Expr* unaryexpr();
 
-    Expr* binexpr(int priority);
+    Expr* binexpr(int priority = std::numeric_limits<int>::max());
     Expr* commaexpr();
 
     ExprList* exprlist();

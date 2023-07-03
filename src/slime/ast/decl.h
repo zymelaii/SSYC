@@ -94,6 +94,10 @@ struct Decl {
     Decl(DeclID declId)
         : declId{declId} {}
 
+    Decl *decay() {
+        return static_cast<Decl *>(this);
+    }
+
     RegisterCastDecl(declId, Var, Decl, DeclID);
     RegisterCastDecl(declId, ParamVar, Decl, DeclID);
     RegisterCastDecl(declId, Function, Decl, DeclID);

@@ -29,6 +29,10 @@ struct Stmt {
     Stmt(StmtID stmtId)
         : stmtId{stmtId} {}
 
+    Stmt* decay() {
+        return static_cast<Stmt*>(this);
+    }
+
     RegisterCastDecl(stmtId, Null, Stmt, StmtID);
     RegisterCastDecl(stmtId, Decl, Stmt, StmtID);
     RegisterCastDecl(stmtId, Expr, Stmt, StmtID);
