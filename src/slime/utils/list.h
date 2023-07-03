@@ -279,6 +279,68 @@ public:
         node_type *ptr_;
     };
 
+    class const_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = ListTrait::value_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        const_iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        const_iterator(const const_iterator &other)
+            : const_iterator(other.ptr_) {}
+
+        const_iterator &operator++() {
+            if (ptr_ != parent_->tailGuard()) { ptr_ = ptr_->next(); }
+            return *this;
+        }
+
+        const const_iterator &operator++() const {
+            return const_cast<const_iterator *>(this)->operator++();
+        }
+
+        const_iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        const_iterator operator++(int) const {
+            return (*const_cast<const_iterator *>(this))++;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->tailGuard());
+            return ptr_->value();
+        }
+
+        reference operator*() const {
+            return const_cast<const_iterator *>(this)->operator*();
+        }
+
+        pointer operator->() {
+            return ptr_->value();
+        }
+
+        bool operator==(const const_iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const const_iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
     class reverse_iterator {
     public:
         using iterator_category = std::forward_iterator_tag;
@@ -342,19 +404,35 @@ public:
     };
 
     iterator begin() {
-        return iterator(this->headGuard()->next_);
+        return iterator(headGuard()->next_);
     }
 
     iterator end() {
-        return iterator(this->tailGuard());
+        return iterator(tailGuard());
+    }
+
+    const_iterator begin() const {
+        return cbegin();
+    }
+
+    const_iterator end() const {
+        return cend();
+    }
+
+    const_iterator cbegin() const {
+        return const_iterator(AbstractListTrait<T>::headGuard()->next_);
+    }
+
+    const_iterator cend() const {
+        return const_iterator(AbstractListTrait<T>::tailGuard());
     }
 
     reverse_iterator rbegin() {
-        return reverse_iterator(this->tailGuard()->prev_);
+        return reverse_iterator(tailGuard()->prev_);
     }
 
     reverse_iterator rend() {
-        return reverse_iterator(this->headGuard());
+        return reverse_iterator(headGuard());
     }
 
     ListTrait() {
@@ -365,23 +443,41 @@ public:
         guard_[1].prev_   = &guard_[0];
     }
 
+    ListTrait(const ListTrait &list)
+        : ListTrait() {
+        for (auto &e : list) { insertToTail(e); }
+    }
+
     ListTrait(ListTrait &&list)
         : ListTrait() {
         for (auto &e : list) { insertToTail(std::move(e)); }
     }
 
-    template <typename... Args>
-    void insertToHead(Args &&...args) {
-        value_type e(std::forward<Args>(args)...);
-        auto       node = new ListNode(e);
-        node->insertToHead(*this);
+    ListTrait(const std::initializer_list<value_type> &list)
+        : ListTrait() {
+        for (const auto &e : list) { insertToTail(e); }
     }
 
     template <typename... Args>
-    void insertToTail(Args &&...args) {
+    static ListTrait *from(Args &&...args) {
+        return new ListTrait(
+            std::initializer_list<value_type>{std::forward<Args>(args)...});
+    }
+
+    template <typename... Args>
+    node_type *insertToHead(Args &&...args) {
         value_type e(std::forward<Args>(args)...);
-        auto       node = new ListNode(e);
+        auto       node = new node_type(e);
+        node->insertToHead(*this);
+        return node;
+    }
+
+    template <typename... Args>
+    node_type *insertToTail(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new node_type(e);
         node->insertToTail(*this);
+        return node;
     }
 
 private:
