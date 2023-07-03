@@ -1,0 +1,15 @@
+extern int a();
+
+extern int b();
+
+extern int b() {
+    return 1;
+}
+
+extern int b();
+
+int c() {
+    return 0;
+}
+
+extern int c();

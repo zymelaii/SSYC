@@ -1,0 +1,5 @@
+static inline const int foo() {
+    return 3;
+}
+
+extern int bar();
