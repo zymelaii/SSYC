@@ -42,22 +42,30 @@ bool Driver::isReady() const {
 }
 
 void Driver::execute() {
-    auto& ls = parser_.ls;
+    assert(isReady() && "driver is not ready");
 
-    if (flags_.LexOnly) {
+    auto&            ls     = parser_.ls;
+    TranslationUnit* module = nullptr;
+    bool             done   = ls.token.id == TOKEN::TK_EOF;
+
+    if (!done && flags_.LexOnly) {
         char buf[256]{};
         while (ls.token.id != TOKEN::TK_EOF) {
             const char* tok = tok2str(ls.token.id, buf);
             puts(pretty_tok2str(ls.token, buf));
             ls.next();
         }
-    } else if (ls.token.id != TOKEN::TK_EOF) {
-        auto unit = parser_.parse();
-        if (flags_.DumpAST) {
-            auto visitor =
-                visitor::ASTDumpVisitor::createWithOstream(&std::cerr);
-            visitor->visit(unit);
-        }
+        done = true;
+    }
+
+    if (!done) {
+        module = parser_.parse();
+        assert(module != nullptr && "invalid parse result");
+    }
+
+    if (!done && flags_.DumpAST) {
+        auto visitor = visitor::ASTDumpVisitor::createWithOstream(&std::cout);
+        visitor->visit(module);
     }
 
     ready_ = false;
