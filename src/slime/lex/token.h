@@ -45,6 +45,9 @@ enum class TOKEN : int {
     TK_INT,                           //<! `int`
     TK_FLOAT,                         //<! `float`
     TK_CONST,                         //<! `const`
+    TK_STATIC,                        //<! `static`
+    TK_INLINE,                        //<! `inline`
+    TK_EXTERN,                        //<! `extern`
     TK_IF,                            //<! `if`
     TK_ELSE,                          //<! `else`
     TK_FOR,                           //<! `for`

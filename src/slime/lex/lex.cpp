@@ -153,6 +153,15 @@ const char* tok2str(TOKEN token) {
         case TOKEN::TK_CONST: {
             return "const";
         }
+        case TOKEN::TK_STATIC: {
+            return "static";
+        } break;
+        case TOKEN::TK_INLINE: {
+            return "inline";
+        } break;
+        case TOKEN::TK_EXTERN: {
+            return "extern";
+        } break;
         case TOKEN::TK_IF: {
             return "if";
         }
