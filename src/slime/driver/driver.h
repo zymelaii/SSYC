@@ -30,8 +30,7 @@ protected:
         typename = std::enable_if_t<std::is_base_of_v<std::istream, T>>>
     void resetInput(T& is) {
         if (!is.eof()) {
-            parser_.ls.reset(is);
-            parser_.next();
+            parser_.reset(is);
             ready_ = true;
         }
     }

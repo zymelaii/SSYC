@@ -12,6 +12,9 @@ struct LexStatePrivate;
 
 class LexState {
 public:
+    std::unique_ptr<LexStatePrivate>        d;        //<! private data
+    std::shared_ptr<std::set<const char *>> strtable; //<! shared string set
+
     int32_t cur;        //<! current character (consider utf-8 code)
     size_t  line;       //<! number of current line
     size_t  lastline;   //<! line of last consumed token
@@ -20,10 +23,11 @@ public:
     Token   token;      //<! current token
     Token   nexttoken;  //<! lookahead token
 
-    std::unique_ptr<LexStatePrivate> d; //<! private data
-
     LexState();
     ~LexState();
+
+    LexState(LexState &&other);
+    LexState& operator=(LexState &&other);
 
     LexState(const LexState &)            = delete;
     LexState &operator=(const LexState &) = delete;
@@ -48,8 +52,6 @@ public:
     //! lookahead one token
     //! FIXME: lookahead() changes column as well
     TOKEN lookahead();
-
-    std::set<const char *> &sharedStringSet();
 
 protected:
     void resetstream(std::istream *input);

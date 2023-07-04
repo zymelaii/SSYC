@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../lex/lex.h"
+#include "../lex/lexer.h"
 #include "../ast/ast.h"
 #include "../ast/stmt.h"
 #include "../ast/expr.h"
@@ -29,21 +29,28 @@ struct ParseState {
 
 class Parser {
 public:
-    using SymbolTable = std::map<std::string_view, NamedDecl*>;
-
-    LexState                  ls;
-    ParseState                ps;
-    std::set<const char*>&    sharedStringSet;
-    std::vector<SymbolTable*> symbolTable;
-
     Parser()
-        : sharedStringSet{ls.sharedStringSet()}
+        : stringSet{lexer_.strtable()}
         , ps{} {
         //! the bottom is always alive for global symbols
         symbolTable.push_back(new SymbolTable);
     }
 
-    void        next();
+    template <typename T>
+    void reset(T& stream) {
+        lexer_.reset(stream);
+    }
+
+    const Lexer& lexer() const {
+        return lexer_;
+    }
+
+    Lexer&& move_lexer() {
+        auto lexer = std::move(lexer_);
+        new (&lexer_) Lexer;
+        return std::move(lexer);
+    }
+
     bool        expect(TOKEN token, const char* msg = nullptr);
     const char* lookupStringLiteral(std::string_view s);
 
@@ -52,17 +59,17 @@ protected:
     void          leaveblock();
     void          enterdecl();
     void          leavedecl();
-    FunctionDecl* enterfunc(); // add func symbol to g_sym and return its index
+    FunctionDecl* enterfunc();
     void          leavefunc();
 
 public:
     TranslationUnit* parse();
     void             addSymbol(NamedDecl* decl);
-    void             addExternalFunc(
-                    const char*       name,
-                    Type*             returnType,
-                    ParamVarDeclList& params); // preset some external functions
-    void             presetFunction();
+
+    void addExternalFunc(
+        const char* name, Type* returnType, ParamVarDeclList& params);
+    void presetFunction();
+
     void             global_decl();
     DeclStmt*        decl();
     VarDecl*         vardef();
@@ -80,11 +87,6 @@ public:
     BinaryOperator binastop(TOKEN token);
 
     NamedDecl* findSymbol(std::string_view name, DeclID declID);
-    // search a symbol in g_sym and return
-    // its index(-1 if failed)
-
-    //! search a local symbol in a block and return its index in l_sym.
-    //! pblock will point to that block if it is not NULL
 
     Expr* primaryexpr();
     Expr* postfixexpr();
@@ -95,7 +97,13 @@ public:
 
     ExprList* exprlist();
 
-    // 输出AST（后序遍历）
+private:
+    using SymbolTable = std::map<std::string_view, NamedDecl*>;
+
+    Lexer                                  lexer_;
+    ParseState                             ps;
+    std::shared_ptr<std::set<const char*>> stringSet;
+    std::vector<SymbolTable*>              symbolTable;
 };
 
 } // namespace slime

@@ -85,18 +85,9 @@ inline OperatorPriority lookupOperatorPriority(BinaryOperator op) {
         [static_cast<int>(op) + static_cast<int>(UnaryOperator::Paren)];
 }
 
-//! FIXME: SIGSEGV in parsing long variable name. To reproduce the error, run
-//! with the functional test 79
-void Parser::next() {
-    do {
-        ls.next();
-    } while (ls.token.id == TOKEN::TK_COMMENT
-             || ls.token.id == TOKEN::TK_MLCOMMENT);
-}
-
 bool Parser::expect(TOKEN token, const char *msg) {
-    if (ls.token.id == token) {
-        next();
+    if (lexer_.this_token() == token) {
+        lexer_.next();
         return true;
     }
     //! TODO: prettify display message
@@ -185,10 +176,10 @@ void Parser::presetFunction() {
 const char *Parser::lookupStringLiteral(std::string_view s) {
     if (s.empty()) { return nullptr; }
     auto result = s.data();
-    if (!sharedStringSet.count(result)) {
+    if (!stringSet->count(result)) {
         result = strdup(result);
         assert(result != nullptr);
-        auto [_, ok] = sharedStringSet.insert(result);
+        auto [_, ok] = stringSet->insert(result);
         assert(ok);
     }
     return result;
@@ -225,7 +216,7 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declId) {
 }
 
 BinaryOperator Parser::binastop(TOKEN token) {
-    switch (ls.token.id) {
+    switch (token) {
         case TOKEN::TK_ASS: {
             return BinaryOperator::Assign;
         } break;
@@ -292,7 +283,8 @@ BinaryOperator Parser::binastop(TOKEN token) {
 TranslationUnit *Parser::parse() {
     ps.tu = new TranslationUnit;
     presetFunction();
-    while (ls.token.id != TOKEN::TK_EOF) { global_decl(); }
+    if (lexer_.isDiscard(lexer_.this_token())) { lexer_.next(); }
+    while (!lexer_.this_token().isEOF()) { global_decl(); }
     return ps.tu;
 }
 
@@ -301,7 +293,7 @@ void Parser::enterdecl() {
     auto spec = DeclSpecifier::create();
     bool done = false;
     while (!done) {
-        switch (ls.token.id) {
+        switch (lexer_.this_token().id) {
             case TOKEN::TK_CONST: {
                 spec->addSpecifier(NamedDeclSpecifier::Const);
             } break;
@@ -333,7 +325,7 @@ void Parser::enterdecl() {
                 Diagnosis::assertAlwaysFalse("expect unqualified-id");
             } break;
         }
-        next();
+        lexer_.next();
     }
     ps.cur_specifs = spec;
 }
@@ -354,12 +346,13 @@ FunctionDecl *Parser::enterfunc() {
     //! parse function proto
     assert(symbolTable.size() == 1);
     FunctionDecl *fn   = nullptr;
-    const char   *name = lookupStringLiteral(ls.token.detail);
+    const char   *name = lookupStringLiteral(lexer_.this_token().detail);
     expect(TOKEN::TK_IDENT, "expect unqualified-id");
-    Diagnosis::assertTrue(ls.token.id == TOKEN::TK_LPAREN, "expect '('");
+    Diagnosis::assertTrue(
+        lexer_.this_token() == TOKEN::TK_LPAREN, "expect '('");
     auto params = std::move(funcargs());
     fn          = FunctionDecl::create(name, ps.cur_specifs, params, nullptr);
-    bool          haveBody = ls.token.id == TOKEN::TK_LBRACE;
+    bool          haveBody = lexer_.this_token() == TOKEN::TK_LBRACE;
     bool          skip     = false;
     FunctionDecl *rewrite  = nullptr;
     auto          symbols  = symbolTable.back();
@@ -436,15 +429,15 @@ void Parser::global_decl() {
     assert(ps.tu != nullptr);
     assert(symbolTable.size() == 1);
     enterdecl();
-    while (ls.token.id != TOKEN::TK_EOF) {
+    while (!lexer_.this_token().isEOF()) {
         //! parse global variable
-        if (ls.lookahead() != TOKEN::TK_LPAREN) {
+        if (lexer_.lookahead() != TOKEN::TK_LPAREN) {
             Diagnosis::assertTrue(
                 !ps.cur_specifs->type->asBuiltin()->isVoid(),
                 "variable has incomplete type 'void'");
             ps.tu->insertToTail(vardef());
             ps.decl_type = DeclID::Var;
-            if (ls.token.id == TOKEN::TK_SEMICOLON) {
+            if (lexer_.this_token() == TOKEN::TK_SEMICOLON) {
                 break;
             } else {
                 expect(TOKEN::TK_COMMA, "expect ';' at the end of declaration");
@@ -469,15 +462,15 @@ DeclStmt *Parser::decl() {
     auto stmt = new DeclStmt;
     enterdecl();
     ps.decl_type = DeclID::Var;
-    while (ls.token.id != TOKEN::TK_EOF) {
+    while (!lexer_.this_token().isEOF()) {
         Diagnosis::assertTrue(
-            ls.lookahead() != TOKEN::TK_LPAREN,
+            lexer_.lookahead() != TOKEN::TK_LPAREN,
             "nested function definition is not allowed");
         Diagnosis::assertTrue(
             !ps.cur_specifs->type->asBuiltin()->isVoid(),
             "variable has incomplete type 'void'");
         stmt->insertToTail(vardef());
-        if (ls.token.id == TOKEN::TK_SEMICOLON) {
+        if (lexer_.this_token() == TOKEN::TK_SEMICOLON) {
             break;
         } else {
             expect(TOKEN::TK_COMMA, "expect ';' at the end of declaration");
@@ -494,17 +487,17 @@ DeclStmt *Parser::decl() {
  */
 VarDecl *Parser::vardef() {
     Expr       *init      = NoInitExpr::get();
-    const char *name      = lookupStringLiteral(ls.token.detail);
+    const char *name      = lookupStringLiteral(lexer_.this_token().detail);
     ArrayType  *arrayType = nullptr;
     VarDecl    *decl      = nullptr;
     auto        spec      = ps.cur_specifs;
     expect(TOKEN::TK_IDENT, "expect identifier");
     //! aggregate as array type if possible
-    if (ls.token.id == TOKEN::TK_LBRACKET) {
+    if (lexer_.this_token() == TOKEN::TK_LBRACKET) {
         assert(ps.cur_specifs->type->tryIntoBuiltin());
         arrayType = ArrayType::create(ps.cur_specifs->type);
-        while (ls.token.id == TOKEN::TK_LBRACKET) {
-            next();
+        while (lexer_.this_token() == TOKEN::TK_LBRACKET) {
+            lexer_.next();
             arrayType->insertToTail(binexpr());
             expect(TOKEN::TK_RBRACKET, "expect ']'");
         }
@@ -512,9 +505,9 @@ VarDecl *Parser::vardef() {
         spec->type = arrayType;
     }
     //! handle initialize
-    if (ls.token.id == TOKEN::TK_ASS) {
-        next();
-        init = ls.token.id == TOKEN::TK_LBRACE
+    if (lexer_.this_token() == TOKEN::TK_ASS) {
+        lexer_.next();
+        init = lexer_.this_token() == TOKEN::TK_LBRACE
                  ? ASTExprSimplifier::regulateInitListForArray(
                      arrayType, initlist())
                  : binexpr();
@@ -535,29 +528,29 @@ VarDecl *Parser::vardef() {
  *      '{' (expr | init-list) { ',' (expr | init-list) } [ ',' ] '}'
  */
 InitListExpr *Parser::initlist() {
-    assert(ls.token.id == TOKEN::TK_LBRACE);
-    next();
+    assert(lexer_.this_token() == TOKEN::TK_LBRACE);
+    lexer_.next();
     auto list    = InitListExpr::create();
     bool hasMore = true;
-    while (ls.token.id != TOKEN::TK_RBRACE) {
+    while (lexer_.this_token() != TOKEN::TK_RBRACE) {
         list->insertToTail(
-            ls.token.id == TOKEN::TK_LBRACE ? initlist() : binexpr());
+            lexer_.this_token() == TOKEN::TK_LBRACE ? initlist() : binexpr());
         hasMore = false;
         //! this allows trailing-comma as well
-        if (ls.token.id == TOKEN::TK_COMMA) {
+        if (lexer_.this_token() == TOKEN::TK_COMMA) {
             hasMore = true;
-            next();
+            lexer_.next();
         }
     }
-    next();
+    lexer_.next();
     return list;
 }
 
 FunctionDecl *Parser::func() {
     auto fn = enterfunc();
-    if (ls.token.id == TOKEN::TK_SEMICOLON) {
+    if (lexer_.this_token() == TOKEN::TK_SEMICOLON) {
         //! declare without defination
-        next();
+        lexer_.next();
     } else {
         fn->body = block();
     }
@@ -566,18 +559,18 @@ FunctionDecl *Parser::func() {
 }
 
 ParamVarDeclList Parser::funcargs() {
-    assert(ls.token.id == TOKEN::TK_LPAREN);
-    next();
+    assert(lexer_.this_token() == TOKEN::TK_LPAREN);
+    lexer_.next();
     auto params = new ParamVarDeclList;
     auto spec   = DeclSpecifier::create();
-    while (ls.token.id != TOKEN::TK_RPAREN) {
+    while (lexer_.this_token() != TOKEN::TK_RPAREN) {
         const char *name = nullptr;
         bool        skip = false;
         //! get leading type declarator
-        switch (ls.token.id) {
+        switch (lexer_.this_token().id) {
             case TOKEN::TK_VOID: {
-                if (ls.lookahead() == TOKEN::TK_RPAREN) {
-                    next();
+                if (lexer_.lookahead() == TOKEN::TK_RPAREN) {
+                    lexer_.next();
                     skip = true;
                     break;
                 }
@@ -586,11 +579,11 @@ ParamVarDeclList Parser::funcargs() {
             } break;
             case TOKEN::TK_INT: {
                 spec->type = BuiltinType::getIntType();
-                next();
+                lexer_.next();
             } break;
             case TOKEN::TK_FLOAT: {
                 spec->type = BuiltinType::getFloatType();
-                next();
+                lexer_.next();
             } break;
             default: {
                 Diagnosis::assertAlwaysFalse("unknown type name");
@@ -598,21 +591,21 @@ ParamVarDeclList Parser::funcargs() {
         }
         //! collect name of parameter var
         //! NOTE: parameter var may be anonymous
-        if (ls.token.id == TOKEN::TK_IDENT) {
-            name = lookupStringLiteral(ls.token.detail);
-            next();
+        if (lexer_.this_token() == TOKEN::TK_IDENT) {
+            name = lookupStringLiteral(lexer_.this_token().detail);
+            lexer_.next();
         }
         //! aggregate as incomplete array type if possible
-        if (ls.token.id == TOKEN::TK_LBRACKET) {
-            next();
-            if (ls.token.id != TOKEN::TK_RBRACKET) {
+        if (lexer_.this_token() == TOKEN::TK_LBRACKET) {
+            lexer_.next();
+            if (lexer_.this_token() != TOKEN::TK_RBRACKET) {
                 auto decayedLength = commaexpr();
                 Diagnosis::expectAlwaysFalse("type decays to incomplete array");
             }
             expect(TOKEN::TK_RBRACKET, "expect ']'");
             auto type = IncompleteArrayType::create(spec->type->asBuiltin());
-            while (ls.token.id == TOKEN::TK_LBRACKET) {
-                next();
+            while (lexer_.this_token() == TOKEN::TK_LBRACKET) {
+                lexer_.next();
                 type->insertToTail(commaexpr());
                 expect(TOKEN::TK_RBRACKET, "expect ']'");
             }
@@ -627,17 +620,17 @@ ParamVarDeclList Parser::funcargs() {
             //! NOTE: scope of param var will be set later (in enterfunc)
             params->insertToTail(param);
             //! check terminator of parameters
-            bool hasMore = ls.token.id == TOKEN::TK_COMMA;
-            if (hasMore) { next(); }
+            bool hasMore = lexer_.this_token() == TOKEN::TK_COMMA;
+            if (hasMore) { lexer_.next(); }
             Diagnosis::assertTrue(
-                !hasMore || hasMore && ls.token.id != TOKEN::TK_RPAREN,
+                !hasMore || hasMore && lexer_.this_token() != TOKEN::TK_RPAREN,
                 "expect parameter declarator");
             Diagnosis::assertTrue(
-                hasMore || !hasMore && ls.token.id == TOKEN::TK_RPAREN,
+                hasMore || !hasMore && lexer_.this_token() == TOKEN::TK_RPAREN,
                 "expect ')");
         }
         //! avoid endless loop
-        if (ls.token.id == TOKEN::TK_EOF) { break; }
+        if (lexer_.this_token() == TOKEN::TK_EOF) { break; }
     }
     expect(TOKEN::TK_RPAREN, "expect ')'");
     ps.cur_params = params;
@@ -657,9 +650,9 @@ ParamVarDeclList Parser::funcargs() {
  */
 Stmt *Parser::statement() {
     Stmt *stmt = nullptr;
-    switch (ls.token.id) {
+    switch (lexer_.this_token().id) {
         case TOKEN::TK_SEMICOLON: {
-            next();
+            lexer_.next();
             stmt = NullStmt::get();
         } break;
         case TOKEN::TK_IF: {
@@ -698,17 +691,17 @@ Stmt *Parser::statement() {
 }
 
 IfStmt *Parser::ifstat() {
-    assert(ls.token.id == TOKEN::TK_IF);
+    assert(lexer_.this_token() == TOKEN::TK_IF);
     auto stmt = new IfStmt;
-    next();
+    lexer_.next();
     expect(TOKEN::TK_LPAREN, "expect '(' after 'if'");
     stmt->condition = commaexpr();
     Diagnosis::assertConditionalExpression(
         stmt->condition->asExprStmt()->unwrap());
     expect(TOKEN::TK_RPAREN, "expect ')'");
     stmt->branchIf = statement();
-    if (ls.token.id == TOKEN::TK_ELSE) {
-        next();
+    if (lexer_.this_token() == TOKEN::TK_ELSE) {
+        lexer_.next();
         stmt->branchElse = statement();
     } else {
         stmt->branchElse = NullStmt::get();
@@ -717,9 +710,9 @@ IfStmt *Parser::ifstat() {
 }
 
 WhileStmt *Parser::whilestat() {
-    assert(ls.token.id == TOKEN::TK_WHILE);
+    assert(lexer_.this_token() == TOKEN::TK_WHILE);
     auto stmt = new WhileStmt;
-    next();
+    lexer_.next();
     expect(TOKEN::TK_LPAREN, "expect '(' after 'while'");
     stmt->condition = commaexpr();
     Diagnosis::assertConditionalExpression(
@@ -733,8 +726,8 @@ WhileStmt *Parser::whilestat() {
 }
 
 BreakStmt *Parser::breakstat() {
-    assert(ls.token.id == TOKEN::TK_BREAK);
-    next();
+    assert(lexer_.this_token() == TOKEN::TK_BREAK);
+    lexer_.next();
     auto stmt    = new BreakStmt;
     stmt->parent = ps.cur_loop;
     Diagnosis::assertWellFormedBreakStatement(stmt);
@@ -743,8 +736,8 @@ BreakStmt *Parser::breakstat() {
 }
 
 ContinueStmt *Parser::continuestat() {
-    assert(ls.token.id == TOKEN::TK_CONTINUE);
-    next();
+    assert(lexer_.this_token() == TOKEN::TK_CONTINUE);
+    lexer_.next();
     auto stmt    = new ContinueStmt;
     stmt->parent = ps.cur_loop;
     Diagnosis::assertWellFormedContinueStatement(stmt);
@@ -753,11 +746,10 @@ ContinueStmt *Parser::continuestat() {
 }
 
 ReturnStmt *Parser::returnstat() {
-    assert(ls.token.id == TOKEN::TK_RETURN);
+    assert(lexer_.this_token() == TOKEN::TK_RETURN);
     assert(ps.cur_func != nullptr);
-    next();
     auto stmt         = new ReturnStmt;
-    stmt->returnValue = ls.token.id != TOKEN::TK_SEMICOLON
+    stmt->returnValue = lexer_.next() != TOKEN::TK_SEMICOLON
                           ? ExprStmt::from(commaexpr())->decay()
                           : NullStmt::get()->decay();
     Diagnosis::assertWellFormedReturnStatement(
@@ -776,11 +768,13 @@ CompoundStmt *Parser::block() {
         }
         ps.cur_params = nullptr;
     }
-    assert(ls.token.id == TOKEN::TK_LBRACE);
-    next();
+    assert(lexer_.this_token() == TOKEN::TK_LBRACE);
+    lexer_.next();
     auto stmt = new CompoundStmt;
-    while (ls.token.id != TOKEN::TK_RBRACE) { stmt->insertToTail(statement()); }
-    next();
+    while (lexer_.this_token() != TOKEN::TK_RBRACE) {
+        stmt->insertToTail(statement());
+    }
+    lexer_.next();
     leaveblock();
     return stmt;
 }
@@ -792,8 +786,8 @@ CompoundStmt *Parser::block() {
 ExprList *Parser::exprlist() {
     auto args = new ExprList;
     args->insertToTail(binexpr());
-    while (ls.token.id == TOKEN::TK_COMMA) {
-        next();
+    while (lexer_.this_token() == TOKEN::TK_COMMA) {
+        lexer_.next();
         args->insertToTail(binexpr());
     }
     return args;
@@ -809,17 +803,17 @@ ExprList *Parser::exprlist() {
  */
 Expr *Parser::primaryexpr() {
     Expr *expr = nullptr;
-    switch (ls.token.id) {
+    switch (lexer_.this_token().id) {
         case TOKEN::TK_IDENT: {
             auto ident = findSymbol(
-                ls.token.detail,
-                ls.lookahead() == TOKEN::TK_LPAREN ? DeclID::Function
-                                                   : DeclID::Var);
+                lexer_.this_token().detail,
+                lexer_.lookahead() == TOKEN::TK_LPAREN ? DeclID::Function
+                                                       : DeclID::Var);
             Diagnosis::assertTrue(
                 ident != nullptr, "use of undeclared identifier");
             auto ref = new DeclRefExpr;
             ref->setSource(ident);
-            if (auto token = ls.lookahead(); token == TOKEN::TK_LBRACKET) {
+            if (auto token = lexer_.lookahead(); token == TOKEN::TK_LBRACKET) {
                 //! is sequential value
                 Diagnosis::assertSubscriptableValue(ref);
             } else if (token == TOKEN::TK_LPAREN) {
@@ -827,22 +821,24 @@ Expr *Parser::primaryexpr() {
                 Diagnosis::assertCallable(ref);
             }
             expr = ref;
-            next();
+            lexer_.next();
         } break;
         case TOKEN::TK_INTVAL: {
-            expr = ConstantExpr::createI32(atoi(ls.token.detail.data()));
-            next();
+            expr = ConstantExpr::createI32(
+                atoi(lexer_.this_token().detail.data()));
+            lexer_.next();
         } break;
         case TOKEN::TK_FLTVAL: {
-            expr = ConstantExpr::createF32(atof(ls.token.detail.data()));
-            next();
+            expr = ConstantExpr::createF32(
+                atof(lexer_.this_token().detail.data()));
+            lexer_.next();
         } break;
         case TOKEN::TK_STRING: {
             //! TODO: #featrue(string)
             Diagnosis::assertAlwaysFalse("string literal is not supported yet");
         } break;
         case TOKEN::TK_LPAREN: {
-            next();
+            lexer_.next();
             expr = ParenExpr::create(commaexpr());
             expect(TOKEN::TK_RPAREN, "expect ')' after expression");
         } break;
@@ -862,21 +858,21 @@ Expr *Parser::primaryexpr() {
 Expr *Parser::postfixexpr() {
     auto expr = primaryexpr();
     while (true) {
-        if (ls.token.id == TOKEN::TK_LBRACKET) {
+        if (lexer_.this_token() == TOKEN::TK_LBRACKET) {
             //! subscript sequential value
-            while (ls.token.id == TOKEN::TK_LBRACKET) {
-                next();
+            while (lexer_.this_token() == TOKEN::TK_LBRACKET) {
+                lexer_.next();
                 Diagnosis::assertSubscriptableValue(expr);
                 expr = SubscriptExpr::create(expr, commaexpr());
                 expect(TOKEN::TK_RBRACKET, "expect ']'");
             }
             continue;
         }
-        if (ls.token.id == TOKEN::TK_LPAREN) {
+        if (lexer_.this_token() == TOKEN::TK_LPAREN) {
             //! function call
             Diagnosis::assertCallable(expr);
-            next();
-            expr = ls.token.id != TOKEN::TK_RPAREN
+            lexer_.next();
+            expr = lexer_.this_token() != TOKEN::TK_RPAREN
                      ? CallExpr::create(expr, *exprlist())
                      : CallExpr::create(expr);
             expect(TOKEN::TK_RPAREN, "expect ')'");
@@ -902,7 +898,7 @@ Expr *Parser::unaryexpr() {
     Expr *expr    = nullptr;
     auto  op      = UnaryOperator::Paren;
     auto  isUnary = true;
-    switch (ls.token.id) {
+    switch (lexer_.this_token().id) {
         case TOKEN::TK_ADD: {
             op = UnaryOperator::Pos;
         } break;
@@ -920,7 +916,7 @@ Expr *Parser::unaryexpr() {
         } break;
     }
     if (isUnary) {
-        next();
+        lexer_.next();
         expr = new UnaryExpr(op, unaryexpr());
     } else {
         expr = postfixexpr();
@@ -928,26 +924,24 @@ Expr *Parser::unaryexpr() {
     return ASTExprSimplifier::trySimplify(expr);
 }
 
-inline bool isTerminateTokenForStmtOrExpr(TOKEN token) {
-    return token == TOKEN::TK_SEMICOLON || token == TOKEN::TK_RPAREN
-        || token == TOKEN::TK_COMMA || token == TOKEN::TK_RBRACKET
-        || token == TOKEN::TK_RBRACE;
+inline bool isTerminateTokenForStmtOrExpr(const Token &token) {
+    return token.isSemicolon() || token.isComma() || token.isRightBracket();
 }
 
 Expr *Parser::binexpr(int priority) {
     Expr *left  = unaryexpr();
     Expr *right = nullptr;
-    if (!isTerminateTokenForStmtOrExpr(ls.token.id)) {
-        auto op     = binastop(ls.token.id);
+    if (!isTerminateTokenForStmtOrExpr(lexer_.this_token())) {
+        auto op     = binastop(lexer_.this_token().id);
         auto opdesc = lookupOperatorPriority(op);
         Diagnosis::assertNoAssignToConstQualifiedValue(left, op);
         while (opdesc.priority < priority
                || (opdesc.priority == priority && !opdesc.assoc)) {
-            next();
+            lexer_.next();
             right = binexpr(opdesc.priority);
             left  = new BinaryExpr(op, left, right);
-            if (isTerminateTokenForStmtOrExpr(ls.token.id)) { break; }
-            op     = binastop(ls.token.id);
+            if (isTerminateTokenForStmtOrExpr(lexer_.this_token())) { break; }
+            op     = binastop(lexer_.this_token().id);
             opdesc = lookupOperatorPriority(op);
             //! TODO: check assign type
         }
@@ -963,7 +957,7 @@ Expr *Parser::binexpr(int priority) {
 Expr *Parser::commaexpr() {
     auto expr = binexpr();
     Diagnosis::assertWellFormedCommaExpression(expr);
-    if (ls.token.id == TOKEN::TK_COMMA) {
+    if (lexer_.this_token() == TOKEN::TK_COMMA) {
         auto first = expr;
         expr       = new CommaExpr(*exprlist());
         expr->asComma()->insertToHead(first);

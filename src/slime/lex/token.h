@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <string_view>
+#include <stdint.h>
 
 namespace slime {
 
@@ -10,6 +11,31 @@ enum class TOKEN;
 struct Token {
     TOKEN            id;     //<! token ID
     std::string_view detail; //<! raw content of token
+
+    bool operator==(TOKEN token) const {
+        return id == token;
+    }
+
+    bool operator!=(TOKEN token) const {
+        return id != token;
+    }
+
+    operator TOKEN() const {
+        return id;
+    }
+
+    inline bool isNone() const;
+    inline bool isIdent() const;
+    inline bool isComma() const;
+    inline bool isSemicolon() const;
+    inline bool isEOF() const;
+    inline bool isComment() const;
+    inline bool isSingleCharToken() const;
+    inline bool isReserved() const;
+    inline bool isLiteral() const;
+    inline bool isBracket() const;
+    inline bool isLeftBracket() const;
+    inline bool isRightBracket() const;
 };
 
 namespace detail {
@@ -81,5 +107,58 @@ enum class TOKEN : int {
 namespace detail {
 static constexpr int LAST_RESERVED = static_cast<int>(TOKEN::LAST_RESERVED);
 } // namespace detail
+
+inline bool Token::isNone() const {
+    return id == TOKEN::TK_NONE;
+}
+
+inline bool Token::isIdent() const {
+    return id == TOKEN::TK_IDENT;
+}
+
+inline bool Token::isComma() const {
+    return id == TOKEN::TK_COMMA;
+}
+
+inline bool Token::isSemicolon() const {
+    return id == TOKEN::TK_SEMICOLON;
+}
+
+inline bool Token::isEOF() const {
+    return id == TOKEN::TK_EOF;
+}
+
+inline bool Token::isComment() const {
+    return id == TOKEN::TK_COMMENT || id == TOKEN::TK_MLCOMMENT;
+}
+
+inline bool Token::isSingleCharToken() const {
+    auto v = static_cast<uint8_t>(id);
+    return v > 0 && v < 128;
+}
+
+inline bool Token::isReserved() const {
+    auto v = static_cast<uint8_t>(id);
+    return v >= detail::FIRST_RESERVED && v <= detail::LAST_RESERVED;
+}
+
+inline bool Token::isLiteral() const {
+    return id == TOKEN::TK_INTVAL || id == TOKEN::TK_FLTVAL
+        || id == TOKEN::TK_STRING;
+}
+
+inline bool Token::isBracket() const {
+    return isLeftBracket() || isRightBracket();
+}
+
+inline bool Token::isLeftBracket() const {
+    return id == TOKEN::TK_LPAREN || id == TOKEN::TK_LBRACKET
+        || id == TOKEN::TK_LBRACE;
+}
+
+inline bool Token::isRightBracket() const {
+    return id == TOKEN::TK_RPAREN || id == TOKEN::TK_RBRACKET
+        || id == TOKEN::TK_RBRACE;
+}
 
 } // namespace slime

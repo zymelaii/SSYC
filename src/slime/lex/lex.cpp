@@ -26,14 +26,15 @@ struct Buffer {
 };
 
 struct LexStatePrivate {
-    std::unique_ptr<std::istream> stream;     //<! input stream
-    std::set<const char*>         strtable;   //<! buffered string table
-    Buffer                        buffer;     //<! raw input buffer
-    bool                          bufenabled; //<! save chars to buffer
-    std::string                   linebuffer; //<! input buffer of currnet line
+    std::unique_ptr<std::istream>          stream;   //<! input stream
+    std::shared_ptr<std::set<const char*>> strtable; //<! buffered string table
+    Buffer                                 buffer;   //<! raw input buffer
+    bool                                   bufenabled; //<! save chars to buffer
+    std::string linebuffer; //<! input buffer of currnet line
 
     LexStatePrivate()
-        : bufenabled{false} {
+        : bufenabled{false}
+        , strtable{std::make_shared<std::set<const char*>>()} {
         buffer.size = 256;
         buffer.buf  = (char*)malloc(buffer.size + 1);
         buffer.n    = 0;
@@ -43,13 +44,10 @@ struct LexStatePrivate {
         free(buffer.buf);
         buffer.n    = 0;
         buffer.size = 0;
-
-        for (const auto& ptr : strtable) { delete ptr; }
-        strtable.clear();
     }
 
     const char* savestr(char* s) {
-        auto [it, ok] = strtable.insert(s);
+        auto [it, ok] = strtable->insert(s);
         if (!ok) { free(s); }
         return *it;
     }
@@ -589,12 +587,17 @@ TOKEN lex(LexState& ls, std::string_view& raw) {
 namespace slime {
 
 LexState::LexState()
-    : d{std::make_unique<LexStatePrivate>()} {}
+    : d{std::make_unique<LexStatePrivate>()} {
+    strtable = d->strtable;
+}
 
 LexState::~LexState() = default;
 
-std::set<const char*>& LexState::sharedStringSet() {
-    return d->strtable;
+LexState::LexState(LexState&& other) = default;
+
+LexState& LexState::operator=(LexState&& other) {
+    new (this) LexState(std::move(other));
+    return *this;
 }
 
 void LexState::resetstream(std::istream* input) {
@@ -615,10 +618,13 @@ void LexState::next() {
 
 TOKEN LexState::lookahead() {
     if (nexttoken.id == TOKEN::TK_NONE) {
-        auto col     = column;
+        auto colno   = column;
+        auto lineno  = line;
         nexttoken.id = lex(*this, nexttoken.detail);
         lastcolumn   = column;
-        column       = col;
+        lastline     = line;
+        column       = colno;
+        line         = lineno;
     }
     return nexttoken.id;
 }

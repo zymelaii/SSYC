@@ -44,17 +44,16 @@ bool Driver::isReady() const {
 void Driver::execute() {
     assert(isReady() && "driver is not ready");
 
-    auto&            ls     = parser_.ls;
     TranslationUnit* module = nullptr;
-    bool             done   = ls.token.id == TOKEN::TK_EOF;
+    bool             done   = parser_.lexer().this_token().isEOF();
 
     if (!done && flags_.LexOnly) {
         char buf[256]{};
-        while (ls.token.id != TOKEN::TK_EOF) {
-            const char* tok = tok2str(ls.token.id, buf);
-            puts(pretty_tok2str(ls.token, buf));
-            ls.next();
-        }
+        auto lexer = parser_.move_lexer();
+        do {
+            const char* tok = tok2str(lexer.this_token(), buf);
+            puts(pretty_tok2str(lexer.this_token(), buf));
+        } while (!lexer.exact_next().isEOF());
         done = true;
     }
 
