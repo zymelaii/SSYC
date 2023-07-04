@@ -1,9 +1,5 @@
 project(slimec)
 
-if(CMAKE_BUILD_TYPE STREQUAL Debug)
-    add_compile_options(-g)
-endif()
-
 add_subdirectory(slime)
 
 set(SOURCE_FILES main.cpp)

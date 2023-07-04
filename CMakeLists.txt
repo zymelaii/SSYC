@@ -19,6 +19,17 @@ endif()
 
 option(BUILD_TEST "build test unit" OFF)
 
+SET(
+	PROFILE_FLAGS
+	-fprofile-instr-generate
+	-fcoverage-mapping
+)
+
+if (CMAKE_BUILD_TYPE STREQUAL Debug)
+	add_compile_options(-g)
+	add_link_options(${PROFILE_FLAGS})
+endif()
+
 add_subdirectory(src)
 
 if(BUILD_TEST)
