@@ -49,20 +49,25 @@ export def "search executable" [
     if ($root_dir | path type) != "dir" {
         throw IOError $"root path `($root_dir)` is not a directory" (metadata $root_dir)
     }
-    let executable = ($executable | path expand)
+    let parent = ($executable | path dirname)
+    let executable = if ($parent | is-empty) or $parent == '.' {
+        $executable | path basename
+    } else {
+        $executable | path expand
+    }
     let item = ($executable | path parse)
     let pattern = if ($item.extension | is-empty) {
         $'($item.stem)('(\.\w+)?$')'
     } else {
-    $'($item.stem)\.($item.extension)$'
+        $'($item.stem)\.($item.extension)$'
     }
     let result = (fd --search-path $root_dir -I -t x -S '+1kb' --regex $"'($pattern)'"
         | lines
-        | filter { |e|
+        | filter {|e|
             let e = ($e | path expand | path parse)
-            $item.stem == $e.stem and (($item.parent | is-empty) or $item.parent == $item.parent)
+            $item.stem == $e.stem and (($item.parent | is-empty) or $item.parent == $e.parent)
         }
-        | each { |e|
+        | par-each {|e|
             let path = ($e | path expand)
             let result = ($path | path parse)
             let dir = $result.parent

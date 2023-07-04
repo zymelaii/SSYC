@@ -354,7 +354,7 @@ FunctionDecl *Parser::enterfunc() {
     //! parse function proto
     assert(symbolTable.size() == 1);
     FunctionDecl *fn   = nullptr;
-    const char   *name = lookupStringLiteral(ls.token.detail.data());
+    const char   *name = lookupStringLiteral(ls.token.detail);
     expect(TOKEN::TK_IDENT, "expect unqualified-id");
     Diagnosis::assertTrue(ls.token.id == TOKEN::TK_LPAREN, "expect '('");
     auto params = std::move(funcargs());
@@ -537,7 +537,7 @@ VarDecl *Parser::vardef() {
 InitListExpr *Parser::initlist() {
     assert(ls.token.id == TOKEN::TK_LBRACE);
     next();
-    auto list    = new InitListExpr;
+    auto list    = InitListExpr::create();
     bool hasMore = true;
     while (ls.token.id != TOKEN::TK_RBRACE) {
         list->insertToTail(
@@ -599,7 +599,7 @@ ParamVarDeclList Parser::funcargs() {
         //! collect name of parameter var
         //! NOTE: parameter var may be anonymous
         if (ls.token.id == TOKEN::TK_IDENT) {
-            name = lookupStringLiteral(ls.token.detail.data());
+            name = lookupStringLiteral(ls.token.detail);
             next();
         }
         //! aggregate as incomplete array type if possible

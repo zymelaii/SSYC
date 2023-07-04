@@ -12,10 +12,10 @@
 
 namespace slime::ir {
 
-struct Type;
-struct ArrayType;
-struct PointerType;
-struct FunctionType;
+class Type;
+class ArrayType;
+class PointerType;
+class FunctionType;
 
 enum class TypeKind : uint8_t {
     //! primitive types begin
