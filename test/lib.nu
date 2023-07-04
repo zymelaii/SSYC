@@ -1,19 +1,5 @@
-# Throw an error with the given information.
-export def throw [
-    error: string,      # Error type
-    message: string,    # Extra message
-    meta: any,          # Metadata with span for the error hint
-] {
-    let span = $meta.span
-    error make {
-        msg: $error,
-        label: {
-            text: $message,
-            start: $span.start,
-            end: $span.end,
-        },
-    }
-}
+use utils.nu
+export use utils *
 
 # Get root path of current git workspace.
 export def git-ws [
@@ -82,6 +68,31 @@ export def "search executable" [
         return ($result | first).path
     }
     throw IOError $"cannot find the target executable '($executable)'" (metadata $executable)
+}
+
+# Execute external commands with timing result.
+export def "timing invoke" [
+    job: closure,           # Closure with external commands
+    --convert (-c): string, # Duration type converted into
+    --no-convert (-n),      # Ignore duration conversion
+] {
+    let start_time = (date now)
+    let result = (do -i $job | complete)
+    let duration = ((date now) - $start_time)
+    let time_used = (if $no_convert {
+            $duration | into string
+        } else if not ($convert | is-empty) {
+            $duration | into duration -c $convert
+        } else if $duration > 100ms {
+            $duration | into duration -c ms
+        } else if $duration > 100us {
+            $duration | into duration -c us
+        } else {
+            $duration | into duration -c ns
+        }
+        | str replace ' ' ''
+        )
+    $result | insert time_used $time_used
 }
 
 # Run profile on executables using llvm tool-set.
