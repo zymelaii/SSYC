@@ -7,52 +7,32 @@ namespace ir = slime::ir;
 
 TEST(AstExprCompileTimeEvaluate, SimpleBinaryOp) {
     ASSERT_EQ(
-        3,
-        static_cast<ir::ConstantInt*>(
-            ASTToIRVisitor::evaluateCompileTimeAstExpr(new BinaryExpr(
-                BuiltinType::getIntType(),
-                BinaryOperator::Add,
-                ConstantExpr::createI32(1),
-                ConstantExpr::createI32(2))))
-            ->value);
+        *BinaryExpr::createAdd(
+             ConstantExpr::createI32(1), ConstantExpr::createI32(3))
+             ->tryEvaluate(),
+        4);
 
     ASSERT_EQ(
-        -1,
-        static_cast<ir::ConstantInt*>(
-            ASTToIRVisitor::evaluateCompileTimeAstExpr(new BinaryExpr(
-                BuiltinType::getIntType(),
-                BinaryOperator::Sub,
-                ConstantExpr::createI32(1),
-                ConstantExpr::createI32(2))))
-            ->value);
+        *BinaryExpr::createSub(
+             ConstantExpr::createI32(1), ConstantExpr::createI32(3))
+             ->tryEvaluate(),
+        -2);
 
     ASSERT_EQ(
-        12,
-        static_cast<ir::ConstantInt*>(
-            ASTToIRVisitor::evaluateCompileTimeAstExpr(new BinaryExpr(
-                BuiltinType::getIntType(),
-                BinaryOperator::Mul,
-                ConstantExpr::createI32(4),
-                ConstantExpr::createI32(3))))
-            ->value);
+        *BinaryExpr::createMul(
+             ConstantExpr::createI32(4), ConstantExpr::createI32(3))
+             ->tryEvaluate(),
+        12);
 
     ASSERT_EQ(
-        1,
-        static_cast<ir::ConstantInt*>(
-            ASTToIRVisitor::evaluateCompileTimeAstExpr(new BinaryExpr(
-                BuiltinType::getIntType(),
-                BinaryOperator::Div,
-                ConstantExpr::createI32(4),
-                ConstantExpr::createI32(3))))
-            ->value);
+        *BinaryExpr::createDiv(
+             ConstantExpr::createI32(4), ConstantExpr::createI32(3))
+             ->tryEvaluate(),
+        1);
 
     ASSERT_EQ(
-        2,
-        static_cast<ir::ConstantInt*>(
-            ASTToIRVisitor::evaluateCompileTimeAstExpr(new BinaryExpr(
-                BuiltinType::getIntType(),
-                BinaryOperator::Mod,
-                ConstantExpr::createI32(5),
-                ConstantExpr::createI32(3))))
-            ->value);
+        *BinaryExpr::createMod(
+             ConstantExpr::createI32(5), ConstantExpr::createI32(3))
+             ->tryEvaluate(),
+        2);
 }
