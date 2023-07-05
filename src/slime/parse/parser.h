@@ -45,10 +45,10 @@ public:
         return lexer_;
     }
 
-    Lexer&& move_lexer() {
-        auto lexer = std::move(lexer_);
+    Lexer* move_lexer() {
+        auto lexer = new Lexer(std::move(lexer_));
         new (&lexer_) Lexer;
-        return std::move(lexer);
+        return lexer;
     }
 
     bool        expect(TOKEN token, const char* msg = nullptr);

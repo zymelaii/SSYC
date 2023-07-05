@@ -51,9 +51,9 @@ void Driver::execute() {
         char buf[256]{};
         auto lexer = parser_.move_lexer();
         do {
-            const char* tok = tok2str(lexer.this_token(), buf);
-            puts(pretty_tok2str(lexer.this_token(), buf));
-        } while (!lexer.exact_next().isEOF());
+            const char* tok = tok2str(lexer->this_token(), buf);
+            puts(pretty_tok2str(lexer->this_token(), buf));
+        } while (!lexer->exact_next().isEOF());
         done = true;
     }
 

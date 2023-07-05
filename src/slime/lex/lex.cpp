@@ -593,7 +593,18 @@ LexState::LexState()
 
 LexState::~LexState() = default;
 
-LexState::LexState(LexState&& other) = default;
+LexState::LexState(LexState&& other) {
+    cur        = other.cur;
+    line       = other.line;
+    lastline   = other.lastline;
+    column     = other.column;
+    lastcolumn = other.lastcolumn;
+    token      = other.token;
+    nexttoken  = other.nexttoken;
+    d.reset(other.d.release());
+    strtable = other.strtable;
+    other.strtable.reset();
+}
 
 LexState& LexState::operator=(LexState&& other) {
     new (this) LexState(std::move(other));
