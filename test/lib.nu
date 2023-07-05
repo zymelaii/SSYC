@@ -110,7 +110,7 @@ export def "run profile" [
     if ($test_dir | path type) != dir {
         throw IOError "no directory `test` under the current workspace" (metadata $ws_dir)
     }
-    let executable = (path_to_executable $executable $'($ws_dir)/build')
+    let executable = (search executable $executable $'($ws_dir)/build')
     let name = ($executable | path parse).stem
     let profdata = $'($current_dir)\($name).profdata'
     let profhtml = $'($current_dir)\($output).html'
