@@ -44,6 +44,8 @@ struct Expr : public ExprStmt {
         return static_cast<Expr *>(this);
     }
 
+    ConstantExpr *tryEvaluate() const;
+
     RegisterCastWithoutSuffixDecl(exprId, DeclRef, Expr, ExprID);
     RegisterCastWithoutSuffixDecl(exprId, Constant, Expr, ExprID);
     RegisterCastWithoutSuffixDecl(exprId, Unary, Expr, ExprID);
@@ -105,6 +107,14 @@ struct ConstantExpr : public Expr {
         return new ConstantExpr(data);
     }
 
+    inline bool operator==(int32_t value) const {
+        return type == ConstantType::i32 && value == i32;
+    }
+
+    inline bool operator==(float value) const {
+        return type == ConstantType::f32 && value == i32;
+    }
+
     union {
         int32_t i32;
         float   f32;
@@ -134,11 +144,29 @@ struct BinaryExpr : public Expr {
         , lhs{lhs}
         , rhs{rhs} {}
 
-    BinaryExpr(BinaryOperator op, Expr *lhs, Expr *rhs)
-        : BinaryExpr(
-            resolveType(op, lhs->valueType, rhs->valueType), op, lhs, rhs) {}
-
     static Type *resolveType(BinaryOperator op, Type *lhsType, Type *rhsType);
+
+    static inline BinaryExpr *create(BinaryOperator op, Expr *lhs, Expr *rhs);
+
+    static inline BinaryExpr *createAssign(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createAdd(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createSub(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createMul(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createDiv(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createMod(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createAnd(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createOr(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createXor(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createLAnd(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createLOr(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createLT(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createLE(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createGT(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createGE(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createEQ(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createNE(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createShl(Expr *lhs, Expr *rhs);
+    static inline BinaryExpr *createShr(Expr *lhs, Expr *rhs);
 
     BinaryOperator op;
     Expr          *lhs;
@@ -271,5 +299,86 @@ RegisterCastWithoutSuffixImpl(exprId, Call, Expr, ExprID);
 RegisterCastWithoutSuffixImpl(exprId, Subscript, Expr, ExprID);
 RegisterCastWithoutSuffixImpl(exprId, InitList, Expr, ExprID);
 RegisterCastWithoutSuffixImpl(exprId, NoInit, Expr, ExprID);
+
+inline BinaryExpr *BinaryExpr::create(BinaryOperator op, Expr *lhs, Expr *rhs) {
+    return new BinaryExpr(
+        resolveType(op, lhs->valueType, rhs->valueType), op, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createAssign(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Assign, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createAdd(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Add, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createSub(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Sub, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createMul(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Mul, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createDiv(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Div, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createMod(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Mod, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createAnd(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::And, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createOr(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Or, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createXor(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Xor, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createLAnd(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::LAnd, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createLOr(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::LOr, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createLT(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::LT, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createLE(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::LE, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createGT(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::GT, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createGE(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::GE, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createEQ(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::EQ, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createNE(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::NE, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createShl(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Shl, lhs, rhs);
+}
+
+inline BinaryExpr *BinaryExpr::createShr(Expr *lhs, Expr *rhs) {
+    return BinaryExpr::create(BinaryOperator::Shr, lhs, rhs);
+}
 
 }; // namespace slime::ast

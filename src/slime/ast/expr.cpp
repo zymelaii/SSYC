@@ -1,6 +1,13 @@
 #include "expr.h"
+#include "../visitor/ASTExprSimplifier.h"
 
 namespace slime::ast {
+
+ConstantExpr *Expr::tryEvaluate() const {
+    auto result = visitor::ASTExprSimplifier::tryEvaluateCompileTimeExpr(
+        const_cast<Expr *>(this));
+    return result ? result->tryIntoConstant() : nullptr;
+}
 
 bool Expr::isNoEffectExpr() {
     switch (exprId) {

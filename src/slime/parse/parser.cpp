@@ -939,7 +939,7 @@ Expr *Parser::binexpr(int priority) {
                || (opdesc.priority == priority && !opdesc.assoc)) {
             lexer_.next();
             right = binexpr(opdesc.priority);
-            left  = new BinaryExpr(op, left, right);
+            left  = BinaryExpr::create(op, left, right);
             if (isTerminateTokenForStmtOrExpr(lexer_.this_token())) { break; }
             op     = binastop(lexer_.this_token().id);
             opdesc = lookupOperatorPriority(op);
