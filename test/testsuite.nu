@@ -38,6 +38,7 @@ export def "testcase get" [
 # Run testcases from specific category.
 export def "testcase run" [
     category: string@"testcase list",   # Category of desired testcases
+    --arguments (-v): string,           # Arguments passed to the executable
     --print-failed-only (-f),           # Print failed testcase only
     --quiet (-q),                       # Print test summary only
 ] {
@@ -64,7 +65,7 @@ export def "testcase run" [
         }
         let result = if true {
             let source = $'($dir)/($c.id)_($c.name).sy'
-            timing invoke { ^$compiler $source }
+            timing invoke { nu -c $"^($compiler) ($source) ($arguments)" }
         }
         let pass = ($result.exit_code == 0)
         let should_print = ((not $quiet) and ((not $print_failed_only) or (not $pass)))
