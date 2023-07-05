@@ -2,6 +2,7 @@
 
 #include "../utils/list.h"
 #include "../utils/cast.def"
+#include "../utils/traits.h"
 #include "type.h"
 #include "decl.h"
 #include "stmt.def"
@@ -33,6 +34,10 @@ struct Stmt {
         return static_cast<Stmt*>(this);
     }
 
+    const Stmt* decay() const {
+        return static_cast<const Stmt*>(this);
+    }
+
     RegisterCastDecl(stmtId, Null, Stmt, StmtID);
     RegisterCastDecl(stmtId, Decl, Stmt, StmtID);
     RegisterCastDecl(stmtId, Expr, Stmt, StmtID);
@@ -50,19 +55,17 @@ struct Stmt {
 };
 
 //! sometimes useful
-struct NullStmt : public Stmt {
+struct NullStmt
+    : public Stmt
+    , public utils::UniqueBuildTrait<NullStmt> {
     NullStmt()
         : Stmt(StmtID::Null) {}
-
-    static NullStmt* get() {
-        static NullStmt singleton;
-        return &singleton;
-    }
 };
 
 struct DeclStmt
     : public Stmt
-    , public VarDeclList {
+    , public VarDeclList
+    , public utils::BuildTrait<DeclStmt> {
     DeclStmt()
         : Stmt(StmtID::Decl) {}
 };
@@ -84,16 +87,24 @@ struct ExprStmt : public Stmt {
 //! '{' { Stmt } '}'
 struct CompoundStmt
     : public Stmt
-    , public StmtList {
+    , public StmtList
+    , public utils::BuildTrait<CompoundStmt> {
     CompoundStmt()
         : Stmt(StmtID::Compound) {}
 };
 
 //! if-else
-struct IfStmt : public Stmt {
-    IfStmt()
+struct IfStmt
+    : public Stmt
+    , public utils::BuildTrait<IfStmt> {
+    IfStmt(
+        Expr* condition  = nullptr,
+        Stmt* branchIf   = NullStmt::get(),
+        Stmt* branchElse = NullStmt::get())
         : Stmt(StmtID::If)
-        , condition{nullptr} {}
+        , condition{condition != nullptr ? ExprStmt::from(condition) : nullptr}
+        , branchIf{branchIf}
+        , branchElse{branchElse} {}
 
     bool haveElseBranch() const {
         return !(branchElse == nullptr || branchElse->stmtId == StmtID::Null);
@@ -105,8 +116,9 @@ struct IfStmt : public Stmt {
 };
 
 struct LoopStmt : public Stmt {
-    LoopStmt(StmtID stmtId)
-        : Stmt(stmtId) {}
+    LoopStmt(StmtID stmtId, Stmt* loopBody = NullStmt::get())
+        : Stmt(stmtId)
+        , loopBody{loopBody} {}
 
     bool isEmptyLoop() const {
         return loopBody == nullptr || loopBody->stmtId == StmtID::Null;
@@ -116,40 +128,59 @@ struct LoopStmt : public Stmt {
 };
 
 //! do-while
-struct DoStmt : public LoopStmt {
-    DoStmt()
-        : LoopStmt(StmtID::Do) {}
+struct DoStmt
+    : public LoopStmt
+    , public utils::BuildTrait<DoStmt> {
+    DoStmt(Expr* condition = nullptr, Stmt* loopBody = NullStmt::get())
+        : LoopStmt(StmtID::Do, loopBody)
+        , condition{ExprStmt::from(condition)} {}
 
     Stmt* condition; //<! usually ExprStmt
 };
 
 //! while
-struct WhileStmt : public LoopStmt {
-    WhileStmt()
-        : LoopStmt(StmtID::While) {}
+struct WhileStmt
+    : public LoopStmt
+    , public utils::BuildTrait<WhileStmt> {
+    WhileStmt(Expr* condition = nullptr, Stmt* loopBody = NullStmt::get())
+        : LoopStmt(StmtID::While, loopBody)
+        , condition{ExprStmt::from(condition)} {}
 
     Stmt* condition; //<! usually ExprStmt
 };
 
-struct BreakStmt : public Stmt {
-    BreakStmt()
+struct BreakStmt
+    : public Stmt
+    , public utils::BuildTrait<BreakStmt> {
+    BreakStmt(Stmt* parent = nullptr)
         : Stmt(StmtID::Break)
-        , parent{nullptr} {}
+        , parent{parent} {}
 
     Stmt* parent; //<! always LoopStmt
 };
 
-struct ContinueStmt : public Stmt {
-    ContinueStmt()
+struct ContinueStmt
+    : public Stmt
+    , public utils::BuildTrait<ContinueStmt> {
+    ContinueStmt(Stmt* parent = nullptr)
         : Stmt(StmtID::Continue)
-        , parent{nullptr} {}
+        , parent{parent} {}
 
     Stmt* parent; //<! always LoopStmt
 };
 
-struct ReturnStmt : public Stmt {
+struct ReturnStmt
+    : public Stmt
+    , public utils::BuildTrait<ReturnStmt> {
+    ReturnStmt(Stmt* returnValue)
+        : Stmt(StmtID::Return)
+        , returnValue{returnValue} {}
+
     ReturnStmt()
-        : Stmt(StmtID::Return) {}
+        : ReturnStmt(NullStmt::get()) {}
+
+    ReturnStmt(Expr* value)
+        : ReturnStmt(ExprStmt::from(value)) {}
 
     Type* typeOfReturnValue() {
         return returnValue->implicitValueType();

@@ -15,23 +15,10 @@ namespace slime {
 
 using namespace ast;
 
-struct ParseState {
-    FunctionDecl*     cur_func             = nullptr;
-    int               cur_depth            = 0;
-    DeclID            decl_type            = DeclID::ParamVar;
-    DeclSpecifier*    cur_specifs          = nullptr;
-    ParamVarDeclList* cur_params           = nullptr;
-    TranslationUnit*  tu                   = nullptr;
-    WhileStmt*        cur_loop             = nullptr;
-    bool              next_block_as_fn     = false;
-    bool              ignore_next_funcdecl = false;
-};
-
 class Parser {
 public:
     Parser()
-        : stringSet{lexer_.strtable()}
-        , ps{} {
+        : stringSet{lexer_.strtable()} {
         //! the bottom is always alive for global symbols
         symbolTable.push_back(new SymbolTable);
     }
@@ -41,69 +28,91 @@ public:
         lexer_.reset(stream);
     }
 
-    const Lexer& lexer() const {
-        return lexer_;
-    }
-
-    Lexer* move_lexer() {
-        auto lexer = new Lexer(std::move(lexer_));
-        new (&lexer_) Lexer;
-        return lexer;
-    }
+    inline const Token& token() const;
+    inline const Lexer& lexer() const;
+    inline Lexer*       unbindLexer();
 
     bool        expect(TOKEN token, const char* msg = nullptr);
-    const char* lookupStringLiteral(std::string_view s);
+    const char* lookup(std::string_view s);
 
-protected:
-    void          enterblock();
-    void          leaveblock();
-    void          enterdecl();
-    void          leavedecl();
-    FunctionDecl* enterfunc();
-    void          leavefunc();
-
-public:
-    TranslationUnit* parse();
-    void             addSymbol(NamedDecl* decl);
-
-    void addExternalFunc(
-        const char* name, Type* returnType, ParamVarDeclList& params);
-    void presetFunction();
-
-    void             global_decl();
-    DeclStmt*        decl();
-    VarDecl*         vardef();
-    InitListExpr*    initlist();
-    FunctionDecl*    func();
-    ParamVarDeclList funcargs();
-    Stmt*            statement();
-    IfStmt*          ifstat();
-    WhileStmt*       whilestat();
-    BreakStmt*       breakstat();
-    ContinueStmt*    continuestat();
-    ReturnStmt*      returnstat();
-    CompoundStmt*    block();
-
-    BinaryOperator binastop(TOKEN token);
-
+    void       addSymbol(NamedDecl* decl);
     NamedDecl* findSymbol(std::string_view name, DeclID declID);
 
-    Expr* primaryexpr();
-    Expr* postfixexpr();
-    Expr* unaryexpr();
+    TranslationUnit* parse();
 
-    Expr* binexpr(int priority = std::numeric_limits<int>::max());
-    Expr* commaexpr();
+    void             parseGlobalDecl();
+    DeclStmt*        parseDeclStmt();
+    VarDecl*         parseVarDef();
+    FunctionDecl*    parseFunction();
+    ParamVarDeclList parseFunctionParams();
+    Stmt*            parseStmt();
+    IfStmt*          parseIfStmt();
+    WhileStmt*       parseWhileStmt();
+    BreakStmt*       parseBreakStmt();
+    ContinueStmt*    parseContinueStmt();
+    ReturnStmt*      parseReturnStmt();
+    CompoundStmt*    parseBlock();
+    Expr*            parsePrimaryExpr();
+    Expr*            parsePostfixExpr();
+    Expr*            parseUnaryExpr();
+    inline Expr*     parseBinaryExpr();
+    Expr*            parseCommaExpr();
+    InitListExpr*    parseInitListExpr();
+    ExprList*        parseExprList();
 
-    ExprList* exprlist();
+protected:
+    void          enterDecl();
+    void          leaveDecl();
+    FunctionDecl* enterFunction();
+    void          leaveFunction();
+    void          enterBlock();
+    void          leaveBlock();
+
+private:
+    void addExternalFunction(
+        const char* name, Type* returnType, ParamVarDeclList& params);
+
+    void addPresetSymbols();
+
+    Expr* parseBinaryExprWithPriority(int priority);
 
 private:
     using SymbolTable = std::map<std::string_view, NamedDecl*>;
+
+    struct ParseState {
+        FunctionDecl*     cur_func             = nullptr;
+        int               cur_depth            = 0;
+        DeclID            decl_type            = DeclID::ParamVar;
+        DeclSpecifier*    cur_specifs          = nullptr;
+        ParamVarDeclList* cur_params           = nullptr;
+        TranslationUnit*  tu                   = nullptr;
+        WhileStmt*        cur_loop             = nullptr;
+        bool              next_block_as_fn     = false;
+        bool              ignore_next_funcdecl = false;
+    };
 
     Lexer                                  lexer_;
     ParseState                             ps;
     std::shared_ptr<std::set<const char*>> stringSet;
     std::vector<SymbolTable*>              symbolTable;
 };
+
+inline const Token& Parser::token() const {
+    return lexer().this_token();
+}
+
+inline const Lexer& Parser::lexer() const {
+    return lexer_;
+}
+
+inline Lexer* Parser::unbindLexer() {
+    auto lexer = new Lexer(std::move(lexer_));
+    new (&lexer_) Lexer;
+    return lexer;
+}
+
+inline Expr* Parser::parseBinaryExpr() {
+    return parseBinaryExprWithPriority(std::numeric_limits<int>::max());
+}
 
 } // namespace slime

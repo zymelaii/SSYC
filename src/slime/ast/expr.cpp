@@ -9,6 +9,10 @@ ConstantExpr *Expr::tryEvaluate() const {
     return result ? result->tryIntoConstant() : nullptr;
 }
 
+Expr *Expr::intoSimplified() {
+    return visitor::ASTExprSimplifier::trySimplify(this);
+}
+
 bool Expr::isNoEffectExpr() {
     switch (exprId) {
         case ExprID::DeclRef:
@@ -98,12 +102,12 @@ Type *BinaryExpr::resolveType(BinaryOperator op, Type *lhsType, Type *rhsType) {
                 return BuiltinType::getFloatType();
             }
             return BuiltinType::getIntType();
-        }
+        } break;
         case BinaryOperator::And:
         case BinaryOperator::Or:
         case BinaryOperator::Xor: {
             return BuiltinType::getIntType();
-        }
+        } break;
         case BinaryOperator::LAnd:
         case BinaryOperator::LOr:
         case BinaryOperator::LT:
@@ -118,11 +122,9 @@ Type *BinaryExpr::resolveType(BinaryOperator op, Type *lhsType, Type *rhsType) {
         case BinaryOperator::Shr: {
             return BuiltinType::getIntType();
         } break;
-        case BinaryOperator::Comma: {
-            return rhsType;
-        } break;
-        case BinaryOperator::Subscript: {
-            return Type::getElementType(lhsType);
+        case BinaryOperator::Unreachable: {
+            assert(false && "unreachable");
+            return NoneType::get();
         } break;
     }
 }

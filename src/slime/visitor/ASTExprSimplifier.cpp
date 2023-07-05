@@ -334,11 +334,8 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
                 } break;
             }
         } break;
-        case BinaryOperator::Comma:
-        case BinaryOperator::Subscript: {
-            assert(
-                false
-                && "CommaExpr and SubscriptExpr is unreachable in BinaryExpr");
+        case BinaryOperator::Unreachable: {
+            assert(false && "unreachable binary expression");
             return nullptr;
         } break;
     }

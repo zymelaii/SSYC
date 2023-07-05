@@ -49,7 +49,7 @@ void Driver::execute() {
 
     if (!done && flags_.LexOnly) {
         char buf[256]{};
-        auto lexer = parser_.move_lexer();
+        auto lexer = parser_.unbindLexer();
         do {
             const char* tok = tok2str(lexer->this_token(), buf);
             puts(pretty_tok2str(lexer->this_token(), buf));

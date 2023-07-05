@@ -2,6 +2,7 @@
 
 #include "lex.h"
 
+#include <iostream>
 #include <array>
 #include <memory>
 #include <type_traits>
@@ -73,6 +74,8 @@ public:
 
     const Token& next() const {
         do { state_.next(); } while (isDiscard(state_.token.id));
+        char buffer[64]{};
+        std::cout << pretty_tok2str(this_token(), buffer) << std::endl;
         return state_.token;
     }
 

@@ -24,6 +24,14 @@ struct Token {
         return id;
     }
 
+    operator std::string_view() const {
+        return detail;
+    }
+
+    operator const char*() const {
+        return detail.data();
+    }
+
     inline bool isNone() const;
     inline bool isIdent() const;
     inline bool isComma() const;

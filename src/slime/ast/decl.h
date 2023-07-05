@@ -2,6 +2,7 @@
 
 #include "../utils/list.h"
 #include "../utils/cast.def"
+#include "../utils/traits.h"
 #include "type.h"
 #include "scope.h"
 
@@ -31,7 +32,7 @@ enum class NamedDeclSpecifier {
     Const  = 0b1000,
 };
 
-struct DeclSpecifier {
+struct DeclSpecifier : public utils::BuildTrait<DeclSpecifier> {
     DeclSpecifier()
         : type{nullptr}
         , specifiers{0} {}
@@ -39,10 +40,6 @@ struct DeclSpecifier {
     DeclSpecifier(const DeclSpecifier &specifier)
         : type{specifier.type}
         , specifiers{specifier.specifiers} {}
-
-    static DeclSpecifier *create() {
-        return new DeclSpecifier;
-    }
 
     DeclSpecifier *clone() {
         return new DeclSpecifier(*this);
@@ -126,8 +123,8 @@ struct DeclaratorDecl : public NamedDecl {
         : NamedDecl(declId, name, specifier) {}
 };
 
-struct VarDecl : public DeclaratorDecl {
-    VarDecl(
+struct VarLikeDecl : public DeclaratorDecl {
+    VarLikeDecl(
         DeclID           declId,
         std::string_view name,
         DeclSpecifier   *specifier,
@@ -135,37 +132,30 @@ struct VarDecl : public DeclaratorDecl {
         : DeclaratorDecl(declId, name, specifier)
         , initValue{initValue} {}
 
-    VarDecl(std::string_view name, DeclSpecifier *specifier, Expr *initValue)
-        : DeclaratorDecl(DeclID::Var, name, specifier)
-        , initValue{initValue} {}
-
-    static VarDecl *create(
-        std::string_view name, DeclSpecifier *specifier, Expr *initValue) {
-        return new VarDecl(name, specifier, initValue);
-    }
-
     Expr *initValue;
 };
 
-struct ParamVarDecl : public VarDecl {
+struct VarDecl final
+    : public VarLikeDecl
+    , public utils::BuildTrait<VarDecl> {
+    VarDecl(std::string_view name, DeclSpecifier *specifier, Expr *initValue)
+        : VarLikeDecl(DeclID::Var, name, specifier, initValue) {}
+
+    VarDecl(std::string_view name, DeclSpecifier *specifier);
+};
+
+struct ParamVarDecl final
+    : public VarLikeDecl
+    , public utils::BuildTrait<ParamVarDecl> {
     ParamVarDecl(std::string_view name, DeclSpecifier *specifier);
     ParamVarDecl(DeclSpecifier *specifier);
-
-    static ParamVarDecl *create(
-        std::string_view name, DeclSpecifier *specifier) {
-        return new ParamVarDecl(name, specifier);
-    }
-
-    static ParamVarDecl *create(DeclSpecifier *specifier) {
-        return new ParamVarDecl(specifier);
-    }
 
     bool isNoEffectParam() {
         return name.empty();
     }
 };
 
-struct FunctionDecl
+struct FunctionDecl final
     : public DeclaratorDecl
     , public ParamVarDeclList {
     FunctionDecl(
@@ -204,7 +194,7 @@ struct FunctionDecl
 
     static FunctionDecl *create(
         std::string_view  name,
-        DeclSpecifier    *specifier,
+        DeclSpecifier    *specifier, //<! contains return tyle only
         ParamVarDeclList &params,
         CompoundStmt     *body) {
         TypeList list;
@@ -224,7 +214,7 @@ struct FunctionDecl
 };
 
 inline ParamVarDecl *DeclSpecifier::createParamVarDecl(std::string_view name) {
-    return ParamVarDecl::create(name, this);
+    return utils::BuildTrait<ParamVarDecl>::create(name, this);
 }
 
 inline FunctionDecl *DeclSpecifier::createFunctionDecl(

@@ -3,11 +3,14 @@
 
 namespace slime::ast {
 
+VarDecl::VarDecl(std::string_view name, DeclSpecifier *specifier)
+    : VarDecl(name, specifier, NoInitExpr::get()) {}
+
 ParamVarDecl::ParamVarDecl(std::string_view name, DeclSpecifier *specifier)
-    : VarDecl(DeclID::ParamVar, name, specifier, NoInitExpr::get()) {}
+    : VarLikeDecl(DeclID::ParamVar, name, specifier, NoInitExpr::get()) {}
 
 ParamVarDecl::ParamVarDecl(DeclSpecifier *specifier)
-    : VarDecl(DeclID::ParamVar, "", specifier, NoInitExpr::get()) {}
+    : ParamVarDecl("", specifier) {}
 
 VarDecl *DeclSpecifier::createVarDecl(std::string_view name) {
     return VarDecl::create(name, this, NoInitExpr::get());

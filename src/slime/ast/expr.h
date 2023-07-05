@@ -2,6 +2,7 @@
 
 #include "../utils/list.h"
 #include "../utils/cast.def"
+#include "../utils/traits.h"
 #include "type.h"
 #include "stmt.h"
 #include "operators.def"
@@ -44,7 +45,12 @@ struct Expr : public ExprStmt {
         return static_cast<Expr *>(this);
     }
 
+    ExprStmt *intoStmt() {
+        return ExprStmt::from(this);
+    }
+
     ConstantExpr *tryEvaluate() const;
+    Expr         *intoSimplified();
 
     RegisterCastWithoutSuffixDecl(exprId, DeclRef, Expr, ExprID);
     RegisterCastWithoutSuffixDecl(exprId, Constant, Expr, ExprID);
@@ -65,19 +71,25 @@ struct Expr : public ExprStmt {
 };
 
 //! variable or function
-struct DeclRefExpr : public Expr {
-    DeclRefExpr()
-        : Expr(ExprID::DeclRef, UnresolvedType::get()) {}
+struct DeclRefExpr
+    : public Expr
+    , utils::BuildTrait<DeclRefExpr> {
+    DeclRefExpr(NamedDecl *source = nullptr)
+        : Expr(ExprID::DeclRef, UnresolvedType::get()) {
+        setSource(source);
+    }
 
     void setSource(NamedDecl *source) {
         this->source = source;
-        valueType    = this->source->type();
+        if (source != nullptr) { valueType = this->source->type(); }
     }
 
     NamedDecl *source;
 };
 
-struct ConstantExpr : public Expr {
+struct ConstantExpr
+    : public Expr
+    , public utils::BuildTrait<ConstantExpr> {
     template <typename T>
     ConstantExpr(T data)
         : Expr(ExprID::Constant, UnresolvedType::get()) {
@@ -99,19 +111,14 @@ struct ConstantExpr : public Expr {
         }
     }
 
-    static ConstantExpr *createF32(float data) {
-        return new ConstantExpr(data);
-    }
+    static inline ConstantExpr *createF32(float data);
+    static inline ConstantExpr *createI32(int32_t data);
 
-    static ConstantExpr *createI32(int32_t data) {
-        return new ConstantExpr(data);
-    }
-
-    inline bool operator==(int32_t value) const {
+    bool operator==(int32_t value) const {
         return type == ConstantType::i32 && value == i32;
     }
 
-    inline bool operator==(float value) const {
+    bool operator==(float value) const {
         return type == ConstantType::f32 && value == i32;
     }
 
@@ -124,29 +131,43 @@ struct ConstantExpr : public Expr {
 };
 
 //! BinaryExpr -> UnaryOperator Expr
-struct UnaryExpr : public Expr {
-    UnaryExpr(UnaryOperator op, Expr *operand)
-        : Expr(ExprID::Unary, resolveType(op, operand->valueType))
+struct UnaryExpr
+    : public Expr
+    , public utils::BuildTrait<UnaryExpr> {
+    UnaryExpr(Type *type, UnaryOperator op, Expr *operand)
+        : Expr(ExprID::Unary, type)
         , op{op}
         , operand{operand} {}
 
+    UnaryExpr(UnaryOperator op, Expr *operand)
+        : UnaryExpr(resolveType(op, operand->valueType), op, operand) {}
+
     static Type *resolveType(UnaryOperator op, Type *type);
+
+    static inline UnaryExpr *createNot(Expr *operand);
+    static inline UnaryExpr *createInv(Expr *operand);
 
     UnaryOperator op;
     Expr         *operand;
 };
 
 //! BinaryExpr -> Expr BinaryOperator Expr
-struct BinaryExpr : public Expr {
+struct BinaryExpr
+    : public Expr
+    , utils::BuildTrait<BinaryExpr> {
     BinaryExpr(Type *type, BinaryOperator op, Expr *lhs, Expr *rhs)
         : Expr(ExprID::Binary, type)
         , op{op}
         , lhs{lhs}
         , rhs{rhs} {}
 
-    static Type *resolveType(BinaryOperator op, Type *lhsType, Type *rhsType);
+    BinaryExpr(BinaryOperator op, Expr *lhs, Expr *rhs)
+        : Expr(ExprID::Binary, resolveType(op, lhs->valueType, rhs->valueType))
+        , op{op}
+        , lhs{lhs}
+        , rhs{rhs} {}
 
-    static inline BinaryExpr *create(BinaryOperator op, Expr *lhs, Expr *rhs);
+    static Type *resolveType(BinaryOperator op, Type *lhsType, Type *rhsType);
 
     static inline BinaryExpr *createAssign(Expr *lhs, Expr *rhs);
     static inline BinaryExpr *createAdd(Expr *lhs, Expr *rhs);
@@ -176,7 +197,8 @@ struct BinaryExpr : public Expr {
 //! CommaExpr -> Expr { ',' Expr }
 struct CommaExpr
     : public Expr
-    , public ExprList {
+    , public ExprList
+    , public utils::BuildTrait<CommaExpr> {
     CommaExpr()
         : Expr(ExprID::Comma, NoneType::get()) {}
 
@@ -193,14 +215,12 @@ struct CommaExpr
 };
 
 //! ParenExpr -> '(' Expr ')'
-struct ParenExpr : public Expr {
+struct ParenExpr
+    : public Expr
+    , public utils::BuildTrait<ParenExpr> {
     ParenExpr(Expr *inner)
         : Expr(ExprID::Paren, inner->valueType)
         , inner{inner} {}
-
-    static ParenExpr *create(Expr *inner) {
-        return new ParenExpr(inner);
-    }
 
     Expr *inner;
 };
@@ -208,14 +228,16 @@ struct ParenExpr : public Expr {
 //! StmtExpr -> '(' CompoundStmt ')'
 //! TODO: complete after Stmt done
 struct StmtExpr : public Expr {
-    StmtExpr(CompoundStmt *stmt);
-    StmtExpr(Stmt *stmt);
+    StmtExpr(CompoundStmt *stmt) = delete;
+    StmtExpr(Stmt *stmt)         = delete;
 
     Stmt *inner;
 };
 
 //! CallExpr -> Expr '(' { Expr } ')'
-struct CallExpr : public Expr {
+struct CallExpr
+    : public Expr
+    , public utils::BuildTrait<CallExpr> {
     CallExpr(Expr *callable)
         : Expr(ExprID::Call, callable->valueType->asFunctionProto()->returnType)
         , callable{callable} {}
@@ -225,20 +247,14 @@ struct CallExpr : public Expr {
         , callable{callable}
         , argList(std::move(argList)) {}
 
-    static CallExpr *create(Expr *callable) {
-        return new CallExpr(callable);
-    }
-
-    static CallExpr *create(Expr *callable, ExprList &argList) {
-        return new CallExpr(callable, argList);
-    }
-
     Expr    *callable;
     ExprList argList;
 };
 
 //! SubscriptExpr -> Expr '[' Expr ']'
-struct SubscriptExpr : public Expr {
+struct SubscriptExpr
+    : public Expr
+    , public utils::BuildTrait<SubscriptExpr> {
     SubscriptExpr()
         : Expr(ExprID::Subscript, UnresolvedType::get())
         , lhs{nullptr}
@@ -249,10 +265,6 @@ struct SubscriptExpr : public Expr {
         , lhs{lhs}
         , rhs{rhs} {}
 
-    static SubscriptExpr *create(Expr *lhs, Expr *rhs) {
-        return new SubscriptExpr(lhs, rhs);
-    }
-
     Expr *lhs;
     Expr *rhs;
 };
@@ -260,32 +272,22 @@ struct SubscriptExpr : public Expr {
 //! InitListExpr -> '{' [ Expr { ',' Expr } ] '}'
 struct InitListExpr
     : public Expr
-    , public ExprList {
+    , public ExprList
+    , public utils::BuildTrait<InitListExpr> {
     InitListExpr()
         : Expr(ExprID::InitList, UnresolvedType::get()) {}
 
     InitListExpr(ExprList &list)
         : Expr(ExprID::InitList, UnresolvedType::get())
         , ExprList(std::move(list)) {}
-
-    static InitListExpr *create() {
-        return new InitListExpr;
-    }
-
-    static InitListExpr *create(ExprList &list) {
-        return new InitListExpr(list);
-    }
 };
 
 //! sugar expr to mark up var decl without init
-struct NoInitExpr : public Expr {
+struct NoInitExpr
+    : public Expr
+    , public utils::UniqueBuildTrait<NoInitExpr> {
     NoInitExpr()
         : Expr(ExprID::NoInit, UnresolvedType::get()) {}
-
-    static NoInitExpr *get() {
-        static NoInitExpr singleton;
-        return &singleton;
-    }
 };
 
 RegisterCastWithoutSuffixImpl(exprId, DeclRef, Expr, ExprID);
@@ -300,85 +302,96 @@ RegisterCastWithoutSuffixImpl(exprId, Subscript, Expr, ExprID);
 RegisterCastWithoutSuffixImpl(exprId, InitList, Expr, ExprID);
 RegisterCastWithoutSuffixImpl(exprId, NoInit, Expr, ExprID);
 
-inline BinaryExpr *BinaryExpr::create(BinaryOperator op, Expr *lhs, Expr *rhs) {
-    return new BinaryExpr(
-        resolveType(op, lhs->valueType, rhs->valueType), op, lhs, rhs);
+inline ConstantExpr *ConstantExpr::createF32(float data) {
+    return create(data);
+}
+
+inline ConstantExpr *ConstantExpr::createI32(int32_t data) {
+    return create(data);
+}
+
+inline UnaryExpr *UnaryExpr::createNot(Expr *operand) {
+    return create(UnaryOperator::Not, operand);
+}
+
+inline UnaryExpr *UnaryExpr::createInv(Expr *operand) {
+    return create(UnaryOperator::Inv, operand);
 }
 
 inline BinaryExpr *BinaryExpr::createAssign(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Assign, lhs, rhs);
+    return create(BinaryOperator::Assign, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createAdd(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Add, lhs, rhs);
+    return create(BinaryOperator::Add, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createSub(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Sub, lhs, rhs);
+    return create(BinaryOperator::Sub, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createMul(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Mul, lhs, rhs);
+    return create(BinaryOperator::Mul, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createDiv(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Div, lhs, rhs);
+    return create(BinaryOperator::Div, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createMod(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Mod, lhs, rhs);
+    return create(BinaryOperator::Mod, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createAnd(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::And, lhs, rhs);
+    return create(BinaryOperator::And, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createOr(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Or, lhs, rhs);
+    return create(BinaryOperator::Or, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createXor(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Xor, lhs, rhs);
+    return create(BinaryOperator::Xor, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createLAnd(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::LAnd, lhs, rhs);
+    return create(BinaryOperator::LAnd, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createLOr(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::LOr, lhs, rhs);
+    return create(BinaryOperator::LOr, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createLT(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::LT, lhs, rhs);
+    return create(BinaryOperator::LT, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createLE(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::LE, lhs, rhs);
+    return create(BinaryOperator::LE, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createGT(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::GT, lhs, rhs);
+    return create(BinaryOperator::GT, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createGE(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::GE, lhs, rhs);
+    return create(BinaryOperator::GE, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createEQ(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::EQ, lhs, rhs);
+    return create(BinaryOperator::EQ, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createNE(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::NE, lhs, rhs);
+    return create(BinaryOperator::NE, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createShl(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Shl, lhs, rhs);
+    return create(BinaryOperator::Shl, lhs, rhs);
 }
 
 inline BinaryExpr *BinaryExpr::createShr(Expr *lhs, Expr *rhs) {
-    return BinaryExpr::create(BinaryOperator::Shr, lhs, rhs);
+    return create(BinaryOperator::Shr, lhs, rhs);
 }
 
 }; // namespace slime::ast

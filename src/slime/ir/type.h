@@ -98,13 +98,12 @@ private:
     Type *elementType_;
 };
 
-class ArrayType : public SequentialType {
+class ArrayType
+    : public SequentialType
+    , public utils::BuildTrait<ArrayType> {
 public:
-    static inline ArrayType *create(Type *elementType, size_t size);
-
     inline size_t size() const;
 
-protected:
     ArrayType(Type *elementType, size_t size)
         : SequentialType(TypeKind::Array, elementType)
         , size_{size} {
@@ -115,16 +114,17 @@ private:
     size_t size_;
 };
 
-class PointerType : public SequentialType {
+class PointerType
+    : public SequentialType
+    , public utils::BuildTrait<PointerType> {
 public:
-    static inline PointerType *create(Type *elementType);
-
-protected:
     PointerType(Type *elementType)
         : SequentialType(TypeKind::Pointer, elementType) {}
 };
 
-class FunctionType : public Type {
+class FunctionType
+    : public Type
+    , public utils::BuildTrait<FunctionType> {
 public:
     template <typename... Args>
     static FunctionType *create(Type *returnType, Args &&...args);
@@ -133,11 +133,35 @@ public:
     inline Type  *paramTypeAt(int index) const;
     inline size_t totalParams() const;
 
-protected:
     FunctionType(Type *returnType)
         : Type(TypeKind::Function)
         , returnType_{returnType} {
         assert(returnType != nullptr);
+    }
+
+    template <typename... Args>
+    FunctionType(Type *returnType, Args &&...args)
+        : FunctionType(returnType) {
+        if constexpr (sizeof...(Args) > 0) {
+            using first_type = utils::nth_type<0, Args...>;
+            //! case1: create(returnType, paramType1, paramType2, ...)
+            constexpr bool case1 =
+                std::is_pointer_v<first_type>
+                && std::is_base_of_v<Type, std::remove_pointer_t<first_type>>;
+            //! case2: create(returnType, iterableContainer)
+            constexpr bool case2 = utils::is_iterable_as<first_type, Type *>;
+            static_assert(
+                case1 || case2,
+                "unexpected arguments for FunctionType::create(...)");
+            if constexpr (case1) {
+                std::initializer_list<Type *> paramTypes{
+                    std::forward<Args>(args)...};
+                paramsTypes_.assign(paramTypes.begin(), paramTypes.end());
+            } else if constexpr (case2) {
+                auto &list = utils::firstValueOfTArguments(args...);
+                paramsTypes_.assign(list.begin(), list.end());
+            }
+        }
     }
 
 private:
@@ -256,42 +280,8 @@ inline Type *SequentialType::elementType() const {
     return elementType_;
 }
 
-inline ArrayType *ArrayType::create(Type *elementType, size_t size) {
-    return new ArrayType(elementType, size);
-}
-
 inline size_t ArrayType::size() const {
     return size_;
-}
-
-inline PointerType *PointerType::create(Type *elementType) {
-    return new PointerType(elementType);
-}
-
-template <typename... Args>
-FunctionType *FunctionType::create(Type *returnType, Args &&...args) {
-    auto type = new FunctionType(returnType);
-    if constexpr (sizeof...(Args) > 0) {
-        using first_type = utils::nth_type<0, Args...>;
-        //! case1: create(returnType, paramType1, paramType2, ...)
-        constexpr bool case1 =
-            std::is_pointer_v<first_type>
-            && std::is_base_of_v<Type, std::remove_pointer_t<first_type>>;
-        //! case2: create(returnType, iterableContainer)
-        constexpr bool case2 = utils::is_iterable_as<first_type, Type *>;
-        static_assert(
-            case1 || case2,
-            "unexpected arguments for FunctionType::create(...)");
-        if constexpr (case1) {
-            std::initializer_list<Type *> paramTypes{
-                std::forward<Args>(args)...};
-            type->paramsTypes_.assign(paramTypes.begin(), paramTypes.end());
-        } else if constexpr (case2) {
-            auto &list = utils::firstValueOfTArguments(args...);
-            type->paramsTypes_.assign(list.begin(), list.end());
-        }
-    }
-    return type;
 }
 
 inline Type *FunctionType::returnType() const {

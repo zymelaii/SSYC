@@ -399,11 +399,8 @@ Value* ASTToIRVisitor::visit(BasicBlock* block, BinaryExpr* e) {
             assert(type->isInt());
             instr = new BinaryOperatorInst(InstructionID::AShr, lhs, rhs);
         } break;
-        case BinaryOperator::Comma: {
-            assert(false && "comma expr always appears as CommaExpr");
-        } break;
-        case BinaryOperator::Subscript: {
-            assert(false && "comma expr always appears as SubscriptExpr");
+        case BinaryOperator::Unreachable: {
+            assert(false && "unreachable binary expression");
         } break;
     }
     assert(instr != nullptr);
