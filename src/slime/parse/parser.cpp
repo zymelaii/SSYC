@@ -395,7 +395,6 @@ IfStmt *Parser::parseIfStmt() {
     Diagnosis::assertConditionalExpression(
         stmt->condition->asExprStmt()->unwrap());
     expect(TOKEN::TK_RPAREN, "expect ')'");
-    enterBlock();
     stmt->branchIf = parseStmt(true);
     if (token() == TOKEN::TK_ELSE) {
         lexer_.next();
