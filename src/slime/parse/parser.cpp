@@ -97,34 +97,34 @@ bool Parser::expect(TOKEN token, const char *msg) {
 const char *Parser::lookup(std::string_view s) {
     if (s.empty()) { return nullptr; }
     auto result = s.data();
-    if (!stringSet->count(result)) {
+    if (!stringSet_->count(result)) {
         result = strdup(result);
         assert(result != nullptr);
-        auto [_, ok] = stringSet->insert(result);
+        auto [_, ok] = stringSet_->insert(result);
         assert(ok);
     }
     return result;
 }
 
 void Parser::addSymbol(NamedDecl *decl) {
-    assert(ps.cur_depth + 1 == symbolTable.size());
+    assert(state_.cur_depth + 1 == symbolTableStack_.size());
     if (decl->name.empty()) { return; }
-    decl->scope.depth = ps.cur_depth;
+    decl->scope.depth = state_.cur_depth;
     if (!decl->scope.isGlobal()) {
-        assert(ps.cur_func != nullptr);
-        decl->scope.scope = lookup(ps.cur_func->name);
+        assert(state_.cur_func != nullptr);
+        decl->scope.scope = lookup(state_.cur_func->name);
     }
-    symbolTable.back()->insert_or_assign(lookup(decl->name), decl);
+    symbolTableStack_.back()->insert_or_assign(lookup(decl->name), decl);
 }
 
 NamedDecl *Parser::findSymbol(std::string_view name, DeclID declId) {
-    assert(symbolTable.size() >= 1);
+    assert(symbolTableStack_.size() >= 1);
     assert(declId != DeclID::ParamVar);
     switch (declId) {
         case DeclID::Var:
         case DeclID::ParamVar: {
-            auto       it  = symbolTable.rbegin();
-            const auto end = symbolTable.rend();
+            auto       it  = symbolTableStack_.rbegin();
+            const auto end = symbolTableStack_.rend();
             while (it != end) {
                 if (auto result = (*it)->find(name); result != (*it)->end()) {
                     auto &[_, decl] = *result;
@@ -137,7 +137,7 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declId) {
             }
         } break;
         case DeclID::Function: {
-            auto &symbols = symbolTable.front();
+            auto &symbols = symbolTableStack_.front();
             if (auto it = symbols->find(name); it != symbols->end()) {
                 auto &[_, decl] = *it;
                 if (decl->tryIntoFunctionDecl()) { return decl; }
@@ -148,25 +148,25 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declId) {
 }
 
 TranslationUnit *Parser::parse() {
-    ps.tu = TranslationUnit::create();
+    state_.tu = TranslationUnit::create();
     addPresetSymbols();
     if (lexer_.isDiscard(token())) { lexer_.next(); }
     while (!token().isEOF()) { parseGlobalDecl(); }
-    return ps.tu;
+    return state_.tu;
 }
 
 void Parser::parseGlobalDecl() {
-    assert(ps.tu != nullptr);
-    assert(symbolTable.size() == 1);
+    assert(state_.tu != nullptr);
+    assert(symbolTableStack_.size() == 1);
     enterDecl();
     while (!token().isEOF()) {
         //! parse global variable
         if (lexer_.lookahead() != TOKEN::TK_LPAREN) {
             Diagnosis::assertTrue(
-                !ps.cur_specifs->type->asBuiltin()->isVoid(),
+                !state_.cur_specifs->type->asBuiltin()->isVoid(),
                 "variable has incomplete type 'void'");
-            ps.tu->insertToTail(parseVarDef());
-            ps.decl_type = DeclID::Var;
+            state_.tu->insertToTail(parseVarDef());
+            state_.decl_type = DeclID::Var;
             if (token() == TOKEN::TK_SEMICOLON) {
                 break;
             } else {
@@ -176,9 +176,9 @@ void Parser::parseGlobalDecl() {
         }
         //! parse function
         auto fn = parseFunction();
-        if (!ps.ignore_next_funcdecl) { ps.tu->insertToTail(fn); }
-        ps.ignore_next_funcdecl = false;
-        ps.decl_type            = DeclID::Function;
+        if (!state_.ignore_next_funcdecl) { state_.tu->insertToTail(fn); }
+        state_.ignore_next_funcdecl = false;
+        state_.decl_type            = DeclID::Function;
         break;
     }
     leaveDecl();
@@ -187,13 +187,13 @@ void Parser::parseGlobalDecl() {
 DeclStmt *Parser::parseDeclStmt() {
     auto stmt = DeclStmt::create();
     enterDecl();
-    ps.decl_type = DeclID::Var;
+    state_.decl_type = DeclID::Var;
     while (!token().isEOF()) {
         Diagnosis::assertTrue(
             lexer_.lookahead() != TOKEN::TK_LPAREN,
             "nested function definition is not allowed");
         Diagnosis::assertTrue(
-            !ps.cur_specifs->type->asBuiltin()->isVoid(),
+            !state_.cur_specifs->type->asBuiltin()->isVoid(),
             "variable has incomplete type 'void'");
         stmt->insertToTail(parseVarDef());
         if (token() == TOKEN::TK_SEMICOLON) {
@@ -211,12 +211,12 @@ VarDecl *Parser::parseVarDef() {
     const char *name      = lookup(token());
     ArrayType  *arrayType = nullptr;
     VarDecl    *decl      = nullptr;
-    auto        spec      = ps.cur_specifs;
+    auto        spec      = state_.cur_specifs;
     expect(TOKEN::TK_IDENT, "expect identifier");
     //! aggregate as array type if possible
     if (token() == TOKEN::TK_LBRACKET) {
-        assert(ps.cur_specifs->type->tryIntoBuiltin());
-        arrayType = ArrayType::create(ps.cur_specifs->type);
+        assert(state_.cur_specifs->type->tryIntoBuiltin());
+        arrayType = ArrayType::create(state_.cur_specifs->type);
         while (token() == TOKEN::TK_LBRACKET) {
             lexer_.next();
             arrayType->insertToTail(parseBinaryExpr());
@@ -234,12 +234,12 @@ VarDecl *Parser::parseVarDef() {
                  : parseBinaryExpr();
     }
     //! initialize global array with zeros explicitly
-    if (spec->type->isArrayLike() && ps.cur_depth == 0) {
+    if (spec->type->isArrayLike() && state_.cur_depth == 0) {
         init = InitListExpr::create();
     }
     //! create var decl and update symbol table
     Diagnosis::assertTrue(
-        symbolTable.back()->count(name) == 0, "redefination of variable");
+        symbolTableStack_.back()->count(name) == 0, "redefination of variable");
     decl = VarDecl::create(name, spec, init);
     addSymbol(decl);
     return decl;
@@ -332,8 +332,8 @@ ParamVarDeclList Parser::parseFunctionParams() {
         if (token() == TOKEN::TK_EOF) { break; }
     }
     expect(TOKEN::TK_RPAREN, "expect ')'");
-    ps.cur_params = params;
-    return *ps.cur_params;
+    state_.cur_params = params;
+    return *state_.cur_params;
 }
 
 Stmt *Parser::parseStmt() {
@@ -407,10 +407,10 @@ WhileStmt *Parser::parseWhileStmt() {
     Diagnosis::assertConditionalExpression(
         stmt->condition->asExprStmt()->unwrap());
     expect(TOKEN::TK_RPAREN, "expect ')'");
-    auto upper_loop = ps.cur_loop;
-    ps.cur_loop     = stmt;
+    auto upper_loop = state_.cur_loop;
+    state_.cur_loop = stmt;
     stmt->loopBody  = parseStmt();
-    ps.cur_loop     = upper_loop;
+    state_.cur_loop = upper_loop;
     return stmt;
 }
 
@@ -430,13 +430,13 @@ ForStmt *Parser::parseForStmt() {
     expect(TOKEN::TK_RPAREN, "expect ')'");
     //! if follows with a CompoundStmt, do not deepen the depth
     if (token() == TOKEN::TK_LBRACE) {
-        ps.not_deepen_next_block = true;
-        shouldRunLeaveBlock      = false;
+        state_.not_deepen_next_block = true;
+        shouldRunLeaveBlock          = false;
     }
-    auto upper_loop = ps.cur_loop;
-    ps.cur_loop     = stmt;
+    auto upper_loop = state_.cur_loop;
+    state_.cur_loop = stmt;
     stmt->loopBody  = parseStmt();
-    ps.cur_loop     = upper_loop;
+    state_.cur_loop = upper_loop;
     if (shouldRunLeaveBlock) { leaveBlock(); }
     Diagnosis::assertWellFormedForStatement(stmt);
     return stmt;
@@ -445,7 +445,7 @@ ForStmt *Parser::parseForStmt() {
 BreakStmt *Parser::parseBreakStmt() {
     assert(token() == TOKEN::TK_BREAK);
     lexer_.next();
-    auto stmt = BreakStmt::create(ps.cur_loop);
+    auto stmt = BreakStmt::create(state_.cur_loop);
     Diagnosis::assertWellFormedBreakStatement(stmt);
     expect(TOKEN::TK_SEMICOLON, "expect ';' after break statement");
     return stmt;
@@ -454,7 +454,7 @@ BreakStmt *Parser::parseBreakStmt() {
 ContinueStmt *Parser::parseContinueStmt() {
     assert(token() == TOKEN::TK_CONTINUE);
     lexer_.next();
-    auto stmt = ContinueStmt::create(ps.cur_loop);
+    auto stmt = ContinueStmt::create(state_.cur_loop);
     Diagnosis::assertWellFormedContinueStatement(stmt);
     expect(TOKEN::TK_SEMICOLON, "expect ';' after continue statement");
     return stmt;
@@ -462,12 +462,12 @@ ContinueStmt *Parser::parseContinueStmt() {
 
 ReturnStmt *Parser::parseReturnStmt() {
     assert(token() == TOKEN::TK_RETURN);
-    assert(ps.cur_func != nullptr);
+    assert(state_.cur_func != nullptr);
     auto stmt = !lexer_.next().isSemicolon()
                   ? ReturnStmt::create(parseCommaExpr())
                   : ReturnStmt::create();
     Diagnosis::assertWellFormedReturnStatement(
-        stmt, ps.cur_func->type()->asFunctionProto());
+        stmt, state_.cur_func->type()->asFunctionProto());
     expect(TOKEN::TK_SEMICOLON, "expect ';' after return statement");
     return stmt;
 }
@@ -475,12 +475,12 @@ ReturnStmt *Parser::parseReturnStmt() {
 CompoundStmt *Parser::parseBlock() {
     enterBlock();
     //! add function params to symbol table
-    if (ps.cur_params != nullptr) {
-        auto &symbols = symbolTable.back();
-        for (auto &param : *ps.cur_params) {
+    if (state_.cur_params != nullptr) {
+        auto &symbols = symbolTableStack_.back();
+        for (auto &param : *state_.cur_params) {
             symbols->insert_or_assign(param->name, param);
         }
-        ps.cur_params = nullptr;
+        state_.cur_params = nullptr;
     }
     assert(token() == TOKEN::TK_LBRACE);
     lexer_.next();
@@ -672,34 +672,34 @@ void Parser::enterDecl() {
         }
         lexer_.next();
     }
-    ps.cur_specifs = spec;
+    state_.cur_specifs = spec;
 }
 
 void Parser::leaveDecl() {
     //! clear decl environment
-    //! NOTE: ps.cur_specifs != nullptr is not always true,
+    //! NOTE: state_.cur_specifs != nullptr is not always true,
     /// if the current decl is a function then the defination
     /// will probably eat the cur_specifs
-    assert(ps.decl_type != DeclID::ParamVar);
-    if (ps.decl_type == DeclID::Var) {
+    assert(state_.decl_type != DeclID::ParamVar);
+    if (state_.decl_type == DeclID::Var) {
         expect(TOKEN::TK_SEMICOLON, "expect ';'");
     }
-    ps.cur_specifs = nullptr;
+    state_.cur_specifs = nullptr;
 }
 
 FunctionDecl *Parser::enterFunction() {
     //! parse function proto
-    assert(symbolTable.size() == 1);
+    assert(symbolTableStack_.size() == 1);
     FunctionDecl *fn   = nullptr;
     const char   *name = lookup(token());
     expect(TOKEN::TK_IDENT, "expect unqualified-id");
     Diagnosis::assertTrue(token() == TOKEN::TK_LPAREN, "expect '('");
     auto params = std::move(parseFunctionParams());
-    fn          = FunctionDecl::create(name, ps.cur_specifs, params, nullptr);
+    fn = FunctionDecl::create(name, state_.cur_specifs, params, nullptr);
     bool          haveBody = token() == TOKEN::TK_LBRACE;
     bool          skip     = false;
     FunctionDecl *rewrite  = nullptr;
-    auto          symbols  = symbolTable.back();
+    auto          symbols  = symbolTableStack_.back();
     if (auto it = symbols->find(name); it != symbols->end()) {
         auto [_, decl] = *it;
         bool duplicate = !fn->proto()->equals(decl->type());
@@ -708,7 +708,7 @@ FunctionDecl *Parser::enterFunction() {
             if (func->body && haveBody) {
                 duplicate = true;
             } else if (!haveBody) {
-                ps.ignore_next_funcdecl = skip = true;
+                state_.ignore_next_funcdecl = skip = true;
             } else {
                 rewrite    = func;
                 it->second = fn;
@@ -719,7 +719,7 @@ FunctionDecl *Parser::enterFunction() {
     if (!skip && !rewrite) { addSymbol(fn); }
     if (rewrite != nullptr) {
         bool done = false;
-        auto node = ps.tu->head();
+        auto node = state_.tu->head();
         assert(node != nullptr);
         while (!done) {
             if (auto target = node->value()->tryIntoFunctionDecl();
@@ -727,23 +727,23 @@ FunctionDecl *Parser::enterFunction() {
                 node->removeFromList();
                 done = true;
             }
-            if (node == ps.tu->tail()) { break; }
+            if (node == state_.tu->tail()) { break; }
             node = node->next();
         }
     }
-    ps.cur_func = fn;
+    state_.cur_func = fn;
     if (haveBody) {
         enterBlock();
-        ps.not_deepen_next_block = true;
+        state_.not_deepen_next_block = true;
     }
     for (auto param : *fn) { addSymbol(param); }
-    return ps.cur_func;
+    return state_.cur_func;
 }
 
 void Parser::leaveFunction() {
-    assert(ps.cur_func != nullptr);
+    assert(state_.cur_func != nullptr);
     //! only allow external function to be undefined
-    auto fn = ps.cur_func;
+    auto fn = state_.cur_func;
     Diagnosis::assertTrue(
         fn->body != nullptr || fn->specifier->isExtern(),
         "missing defination of local function");
@@ -751,22 +751,24 @@ void Parser::leaveFunction() {
         fn->specifier->removeSpecifier(NamedDeclSpecifier::Extern);
     }
     //! reset current function
-    ps.cur_func = nullptr;
+    state_.cur_func = nullptr;
 }
 
 void Parser::enterBlock() {
-    if (!ps.not_deepen_next_block) {
-        ++ps.cur_depth;
-        symbolTable.push_back(new SymbolTable);
+    if (!state_.not_deepen_next_block) {
+        ++state_.cur_depth;
+        symbolTableStack_.push_back(new SymbolTable);
     }
-    ps.not_deepen_next_block = false;
+    state_.not_deepen_next_block = false;
 }
 
 void Parser::leaveBlock() {
-    --ps.cur_depth;
-    symbolTable.pop_back();
-    assert(ps.cur_depth >= 0);
-    assert(symbolTable.size() >= 1);
+    --state_.cur_depth;
+    auto table = symbolTableStack_.back();
+    symbolTableStack_.pop_back();
+    delete table;
+    assert(state_.cur_depth >= 0);
+    assert(symbolTableStack_.size() >= 1);
 }
 
 void Parser::addExternalFunction(

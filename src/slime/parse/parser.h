@@ -18,9 +18,9 @@ using namespace ast;
 class Parser {
 public:
     Parser()
-        : stringSet{lexer_.strtable()} {
+        : stringSet_{lexer_.strtable()} {
         //! the bottom is always alive for global symbols
-        symbolTable.push_back(new SymbolTable);
+        symbolTableStack_.push_back(new SymbolTable);
     }
 
     template <typename T>
@@ -93,9 +93,9 @@ private:
     };
 
     Lexer                                  lexer_;
-    ParseState                             ps;
-    std::shared_ptr<std::set<const char*>> stringSet;
-    std::vector<SymbolTable*>              symbolTable;
+    ParseState                             state_;
+    std::shared_ptr<std::set<const char*>> stringSet_;
+    std::vector<SymbolTable*>              symbolTableStack_;
 };
 
 inline const Token& Parser::token() const {
