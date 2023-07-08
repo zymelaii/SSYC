@@ -45,8 +45,9 @@ public:
     VarDecl*         parseVarDef();
     FunctionDecl*    parseFunction();
     ParamVarDeclList parseFunctionParams();
-    Stmt*            parseStmt();
+    Stmt*            parseStmt(bool standalone = false);
     IfStmt*          parseIfStmt();
+    DoStmt*          parseDoStmt();
     WhileStmt*       parseWhileStmt();
     ForStmt*         parseForStmt();
     BreakStmt*       parseBreakStmt();

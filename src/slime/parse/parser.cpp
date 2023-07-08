@@ -336,7 +336,7 @@ ParamVarDeclList Parser::parseFunctionParams() {
     return *state_.cur_params;
 }
 
-Stmt *Parser::parseStmt() {
+Stmt *Parser::parseStmt(bool standalone) {
     Stmt *stmt = nullptr;
     switch (token()) {
         case TOKEN::TK_SEMICOLON: {
@@ -345,6 +345,9 @@ Stmt *Parser::parseStmt() {
         } break;
         case TOKEN::TK_IF: {
             stmt = parseIfStmt();
+        } break;
+        case TOKEN::TK_DO: {
+            stmt = parseDoStmt();
         } break;
         case TOKEN::TK_WHILE: {
             stmt = parseWhileStmt();
@@ -371,7 +374,9 @@ Stmt *Parser::parseStmt() {
         case TOKEN::TK_VOID:
         case TOKEN::TK_INT:
         case TOKEN::TK_FLOAT: {
+            if (standalone) { enterBlock(); }
             stmt = parseDeclStmt();
+            if (standalone) { leaveBlock(); }
         } break;
         default: {
             stmt = ExprStmt::from(parseCommaExpr());
@@ -390,11 +395,30 @@ IfStmt *Parser::parseIfStmt() {
     Diagnosis::assertConditionalExpression(
         stmt->condition->asExprStmt()->unwrap());
     expect(TOKEN::TK_RPAREN, "expect ')'");
-    stmt->branchIf = parseStmt();
+    enterBlock();
+    stmt->branchIf = parseStmt(true);
     if (token() == TOKEN::TK_ELSE) {
         lexer_.next();
-        stmt->branchElse = parseStmt();
+        stmt->branchElse = parseStmt(true);
     }
+    return stmt;
+}
+
+DoStmt *Parser::parseDoStmt() {
+    assert(token() == TOKEN::TK_DO);
+    auto stmt = DoStmt::create();
+    lexer_.next();
+    auto upper_loop = state_.cur_loop;
+    state_.cur_loop = stmt;
+    stmt->loopBody  = parseStmt(true);
+    expect(TOKEN::TK_WHILE, "expect 'while' in do statement");
+    expect(TOKEN::TK_LPAREN, "expect '(' after 'while'");
+    auto expr = parseCommaExpr();
+    Diagnosis::assertConditionalExpression(expr);
+    stmt->condition = expr;
+    expect(TOKEN::TK_RPAREN, "expect ')'");
+    expect(TOKEN::TK_SEMICOLON, "expect ';'");
+    state_.cur_loop = upper_loop;
     return stmt;
 }
 
@@ -409,7 +433,7 @@ WhileStmt *Parser::parseWhileStmt() {
     expect(TOKEN::TK_RPAREN, "expect ')'");
     auto upper_loop = state_.cur_loop;
     state_.cur_loop = stmt;
-    stmt->loopBody  = parseStmt();
+    stmt->loopBody  = parseStmt(true);
     state_.cur_loop = upper_loop;
     return stmt;
 }
