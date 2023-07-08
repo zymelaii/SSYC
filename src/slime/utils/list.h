@@ -221,7 +221,7 @@ public:
     public:
         using iterator_category = std::forward_iterator_tag;
         using difference_type   = std::ptrdiff_t;
-        using value_type        = ListTrait::value_type;
+        using value_type        = value_type;
         using pointer           = value_type *;
         using reference         = value_type &;
 
@@ -239,27 +239,15 @@ public:
             return *this;
         }
 
-        const iterator &operator++() const {
-            return const_cast<iterator *>(this)->operator++();
-        }
-
         iterator operator++(int) {
             auto it = *this;
             ++*this;
             return it;
         }
 
-        iterator operator++(int) const {
-            return (*const_cast<iterator *>(this))++;
-        }
-
         reference operator*() {
             assert(ptr_ != parent_->tailGuard());
             return ptr_->value();
-        }
-
-        reference operator*() const {
-            return const_cast<iterator *>(this)->operator*();
         }
 
         pointer operator->() {
@@ -301,27 +289,15 @@ public:
             return *this;
         }
 
-        const const_iterator &operator++() const {
-            return const_cast<const_iterator *>(this)->operator++();
-        }
-
         const_iterator operator++(int) {
             auto it = *this;
             ++*this;
             return it;
         }
 
-        const_iterator operator++(int) const {
-            return (*const_cast<const_iterator *>(this))++;
-        }
-
         reference operator*() {
             assert(ptr_ != parent_->tailGuard());
             return ptr_->value();
-        }
-
-        reference operator*() const {
-            return const_cast<const_iterator *>(this)->operator*();
         }
 
         pointer operator->() {
@@ -363,27 +339,15 @@ public:
             return *this;
         }
 
-        const reverse_iterator &operator++() const {
-            return const_cast<reverse_iterator *>(this)->operator++();
-        }
-
         reverse_iterator operator++(int) {
             auto it = *this;
             ++*this;
             return it;
         }
 
-        reverse_iterator operator++(int) const {
-            return (*const_cast<reverse_iterator *>(this))++;
-        }
-
         reference operator*() {
             assert(ptr_ != parent_->headGuard());
             return ptr_->value();
-        }
-
-        reference operator*() const {
-            return const_cast<reverse_iterator *>(this)->operator*();
         }
 
         pointer operator->() {
@@ -395,6 +359,56 @@ public:
         }
 
         bool operator!=(const reverse_iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
+    class node_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = node_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        node_iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        node_iterator(const node_iterator &other)
+            : node_iterator(other.ptr_) {}
+
+        node_iterator &operator++() {
+            if (ptr_ != parent_->tailGuard()) { ptr_ = ptr_->next(); }
+            return *this;
+        }
+
+        node_iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->tailGuard());
+            return ptr_;
+        }
+
+        pointer operator->() {
+            return ptr_;
+        }
+
+        bool operator==(const node_iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const node_iterator &other) const {
             return parent_ != other.parent_ || ptr_ != other.ptr_;
         }
 
@@ -433,6 +447,14 @@ public:
 
     reverse_iterator rend() {
         return reverse_iterator(headGuard());
+    }
+
+    node_iterator node_begin() {
+        return node_iterator(headGuard()->next_);
+    }
+
+    node_iterator node_end() {
+        return node_iterator(tailGuard());
     }
 
     ListTrait() {
