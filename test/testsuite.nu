@@ -97,7 +97,7 @@ export def "testcase run" [
         if $should_print {
             print $status
             if (not $pass) and (not ($result.stderr | is-empty)) {
-                print $result.stderr
+                print ($result.stderr | str trim)
             }
         }
         $total_time_used = $total_time_used + ($result.time_used | into duration)
