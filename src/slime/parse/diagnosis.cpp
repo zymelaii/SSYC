@@ -83,6 +83,22 @@ void Diagnosis::assertWellFormedContinueStatement(ContinueStmt *stmt) {
     }
 }
 
+void Diagnosis::assertWellFormedForStatement(ast::ForStmt *stmt) {
+    assert(stmt != nullptr);
+    bool isTypeOk = stmt->init->tryIntoNullStmt()
+                 || stmt->init->tryIntoExprStmt()
+                 || stmt->init->tryIntoDeclStmt();
+    isTypeOk = isTypeOk
+            && (stmt->condition->tryIntoNullStmt()
+                || stmt->condition->tryIntoExprStmt());
+    isTypeOk = isTypeOk && stmt->increment->tryIntoNullStmt()
+            || stmt->increment->tryIntoExprStmt();
+    if (!isTypeOk) { assertAlwaysFalse("ill-formed for statement"); }
+    if (auto condition = stmt->condition->tryIntoExprStmt()) {
+        assertConditionalExpression(condition->unwrap());
+    }
+}
+
 void Diagnosis::assertWellFormedCommaExpression(Expr *expr) {
     assert(expr != nullptr);
     if (!checkNotNull(expr)) {

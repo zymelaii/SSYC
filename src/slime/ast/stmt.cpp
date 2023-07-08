@@ -10,6 +10,7 @@ Type* Stmt::implicitValueType() {
         case StmtID::If:
         case StmtID::Do:
         case StmtID::While:
+        case StmtID::For:
         case StmtID::Break:
         case StmtID::Continue: {
             return BuiltinType::getVoidType();

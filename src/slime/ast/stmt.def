@@ -10,6 +10,7 @@ enum class StmtID {
     If,
     Do,
     While,
+    For,
     Break,
     Continue,
     Return,

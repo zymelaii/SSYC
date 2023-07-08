@@ -238,6 +238,8 @@ VarDecl *Parser::parseVarDef() {
         init = InitListExpr::create();
     }
     //! create var decl and update symbol table
+    Diagnosis::assertTrue(
+        symbolTable.back()->count(name) == 0, "redefination of variable");
     decl = VarDecl::create(name, spec, init);
     addSymbol(decl);
     return decl;
@@ -347,6 +349,9 @@ Stmt *Parser::parseStmt() {
         case TOKEN::TK_WHILE: {
             stmt = parseWhileStmt();
         } break;
+        case TOKEN::TK_FOR: {
+            stmt = parseForStmt();
+        } break;
         case TOKEN::TK_BREAK: {
             stmt = parseBreakStmt();
         } break;
@@ -406,6 +411,34 @@ WhileStmt *Parser::parseWhileStmt() {
     ps.cur_loop     = stmt;
     stmt->loopBody  = parseStmt();
     ps.cur_loop     = upper_loop;
+    return stmt;
+}
+
+ForStmt *Parser::parseForStmt() {
+    assert(token() == TOKEN::TK_FOR);
+    auto stmt                = ForStmt::create();
+    bool shouldRunLeaveBlock = true;
+    lexer_.next();
+    //! NOTE: ForStmt::init can be DeclStmt, and its depth differs from the
+    //! current scope but is at the same level of the loop body
+    enterBlock();
+    expect(TOKEN::TK_LPAREN, "expect '(' after 'for'");
+    stmt->init = parseStmt();
+    if (token() != TOKEN::TK_SEMICOLON) { stmt->condition = parseCommaExpr(); }
+    expect(TOKEN::TK_SEMICOLON, "expect ';'");
+    if (token() != TOKEN::TK_RPAREN) { stmt->increment = parseCommaExpr(); }
+    expect(TOKEN::TK_RPAREN, "expect ')'");
+    //! if follows with a CompoundStmt, do not deepen the depth
+    if (token() == TOKEN::TK_LBRACE) {
+        ps.not_deepen_next_block = true;
+        shouldRunLeaveBlock      = false;
+    }
+    auto upper_loop = ps.cur_loop;
+    ps.cur_loop     = stmt;
+    stmt->loopBody  = parseStmt();
+    ps.cur_loop     = upper_loop;
+    if (shouldRunLeaveBlock) { leaveBlock(); }
+    Diagnosis::assertWellFormedForStatement(stmt);
     return stmt;
 }
 
@@ -701,7 +734,7 @@ FunctionDecl *Parser::enterFunction() {
     ps.cur_func = fn;
     if (haveBody) {
         enterBlock();
-        ps.next_block_as_fn = true;
+        ps.not_deepen_next_block = true;
     }
     for (auto param : *fn) { addSymbol(param); }
     return ps.cur_func;
@@ -722,11 +755,11 @@ void Parser::leaveFunction() {
 }
 
 void Parser::enterBlock() {
-    if (!ps.next_block_as_fn) {
+    if (!ps.not_deepen_next_block) {
         ++ps.cur_depth;
         symbolTable.push_back(new SymbolTable);
     }
-    ps.next_block_as_fn = false;
+    ps.not_deepen_next_block = false;
 }
 
 void Parser::leaveBlock() {

@@ -162,6 +162,9 @@ BasicBlock* ASTToIRVisitor::visit(Function* fn, BasicBlock* block, Stmt* e) {
         case StmtID::While: {
             block = visit(fn, block, e->asWhileStmt());
         } break;
+        case StmtID::For: {
+            block = visit(fn, block, e->asForStmt());
+        } break;
         case StmtID::Break: {
             visit(fn, block, e->asBreakStmt());
         } break;

@@ -38,6 +38,9 @@ struct Diagnosis {
     //! assert: continue statement appears in a loop statement
     static void assertWellFormedContinueStatement(ast::ContinueStmt *stmt);
 
+    //! assert: for statement is well-formed
+    static void assertWellFormedForStatement(ast::ForStmt *stmt);
+
     //! assert: comma is not left alone in a comma expression
     static void assertWellFormedCommaExpression(ast::Expr *expr);
 
@@ -52,7 +55,8 @@ struct Diagnosis {
     static void assertSubscriptableValue(ast::Expr *value);
 
     //! assert: the initialization is well formed
-    static void assertWellFormedInitialization(ast::Type *type, ast::Expr *value);
+    static void assertWellFormedInitialization(
+        ast::Type *type, ast::Expr *value);
 
     //! assert: the given callable is valid
     static void assertCallable(ast::Expr *callable);

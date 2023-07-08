@@ -87,6 +87,15 @@ void ASTDumpVisitor::visit(Stmt* e) {
             visit(stmt->condition);
             visit(stmt->loopBody);
         } break;
+        case StmtID::For: {
+            os() << "ForStmt" << std::endl;
+            auto       stmt = e->asForStmt();
+            DepthGuard guard(depth_);
+            visit(stmt->init);
+            visit(stmt->condition);
+            visit(stmt->increment);
+            visit(stmt->loopBody);
+        } break;
         case StmtID::Break: {
             os() << "BreakStmt" << std::endl;
         } break;

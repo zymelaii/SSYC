@@ -19,6 +19,7 @@ struct CompoundStmt;
 struct IfStmt;
 struct DoStmt;
 struct WhileStmt;
+struct ForStmt;
 struct BreakStmt;
 struct ContinueStmt;
 struct ReturnStmt;
@@ -45,6 +46,7 @@ struct Stmt {
     RegisterCastDecl(stmtId, If, Stmt, StmtID);
     RegisterCastDecl(stmtId, Do, Stmt, StmtID);
     RegisterCastDecl(stmtId, While, Stmt, StmtID);
+    RegisterCastDecl(stmtId, For, Stmt, StmtID);
     RegisterCastDecl(stmtId, Break, Stmt, StmtID);
     RegisterCastDecl(stmtId, Continue, Stmt, StmtID);
     RegisterCastDecl(stmtId, Return, Stmt, StmtID);
@@ -76,6 +78,7 @@ struct ExprStmt : public Stmt {
         : Stmt(StmtID::Expr) {}
 
     static ExprStmt* from(Expr* expr) {
+        assert(expr != nullptr);
         return reinterpret_cast<ExprStmt*>(expr);
     }
 
@@ -133,7 +136,7 @@ struct DoStmt
     , public utils::BuildTrait<DoStmt> {
     DoStmt(Expr* condition = nullptr, Stmt* loopBody = NullStmt::get())
         : LoopStmt(StmtID::Do, loopBody)
-        , condition{ExprStmt::from(condition)} {}
+        , condition{condition ? ExprStmt::from(condition) : nullptr} {}
 
     Stmt* condition; //<! usually ExprStmt
 };
@@ -144,9 +147,30 @@ struct WhileStmt
     , public utils::BuildTrait<WhileStmt> {
     WhileStmt(Expr* condition = nullptr, Stmt* loopBody = NullStmt::get())
         : LoopStmt(StmtID::While, loopBody)
-        , condition{ExprStmt::from(condition)} {}
+        , condition{condition ? ExprStmt::from(condition) : nullptr} {}
 
     Stmt* condition; //<! usually ExprStmt
+};
+
+struct ForStmt
+    : public LoopStmt
+    , public utils::BuildTrait<ForStmt> {
+    ForStmt(
+        Stmt* init      = NullStmt::get(),
+        Stmt* condition = NullStmt::get(),
+        Stmt* increment = NullStmt::get(),
+        Stmt* body      = NullStmt::get())
+        : LoopStmt(StmtID::For, body)
+        , init{init}
+        , condition{condition}
+        , increment{increment} {}
+
+    //! NOTE: if condition is a NullStmt, probably this will decay into a plain
+    //! endless loop.
+
+    Stmt* init;      //<! always NullStmt or DeclStmt or ExprStmt
+    Stmt* condition; //<! always NullStmt or ExprStmt
+    Stmt* increment; //<! always NullStmt or ExprStmt
 };
 
 struct BreakStmt
@@ -196,6 +220,7 @@ RegisterCastImpl(stmtId, Compound, Stmt, StmtID);
 RegisterCastImpl(stmtId, If, Stmt, StmtID);
 RegisterCastImpl(stmtId, Do, Stmt, StmtID);
 RegisterCastImpl(stmtId, While, Stmt, StmtID);
+RegisterCastImpl(stmtId, For, Stmt, StmtID);
 RegisterCastImpl(stmtId, Break, Stmt, StmtID);
 RegisterCastImpl(stmtId, Continue, Stmt, StmtID);
 RegisterCastImpl(stmtId, Return, Stmt, StmtID);

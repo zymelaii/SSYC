@@ -48,6 +48,7 @@ public:
     Stmt*            parseStmt();
     IfStmt*          parseIfStmt();
     WhileStmt*       parseWhileStmt();
+    ForStmt*         parseForStmt();
     BreakStmt*       parseBreakStmt();
     ContinueStmt*    parseContinueStmt();
     ReturnStmt*      parseReturnStmt();
@@ -80,15 +81,15 @@ private:
     using SymbolTable = std::map<std::string_view, NamedDecl*>;
 
     struct ParseState {
-        FunctionDecl*     cur_func             = nullptr;
-        int               cur_depth            = 0;
-        DeclID            decl_type            = DeclID::ParamVar;
-        DeclSpecifier*    cur_specifs          = nullptr;
-        ParamVarDeclList* cur_params           = nullptr;
-        TranslationUnit*  tu                   = nullptr;
-        WhileStmt*        cur_loop             = nullptr;
-        bool              next_block_as_fn     = false;
-        bool              ignore_next_funcdecl = false;
+        FunctionDecl*     cur_func              = nullptr;
+        int               cur_depth             = 0;
+        DeclID            decl_type             = DeclID::ParamVar;
+        DeclSpecifier*    cur_specifs           = nullptr;
+        ParamVarDeclList* cur_params            = nullptr;
+        TranslationUnit*  tu                    = nullptr;
+        LoopStmt*         cur_loop              = nullptr;
+        bool              not_deepen_next_block = false;
+        bool              ignore_next_funcdecl  = false;
     };
 
     Lexer                                  lexer_;
