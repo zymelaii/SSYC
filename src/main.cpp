@@ -14,6 +14,7 @@ int main(int argc, char* argv[]) {
     static option opts[]{
         {"lex-only", no_argument, 0, 0},
         {"dump-ast", no_argument, 0, 0},
+        {"emit-ir",  no_argument, 0, 0},
     };
 
     int optval = -1;
@@ -26,6 +27,8 @@ int main(int argc, char* argv[]) {
                 if (flags.DumpAST) { flags.DumpAST = false; }
             } else if (strcmp(opts[optidx].name, "dump-ast") == 0) {
                 if (!flags.LexOnly) { flags.DumpAST = true; }
+            } else if (strcmp(opts[optidx].name, "emit-ir") == 0) {
+                flags.EmitIR = true;
             }
         }
     }

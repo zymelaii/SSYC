@@ -1,5 +1,6 @@
 #include "driver.h"
 #include "../visitor/ASTDumpVisitor.h"
+#include "../visitor/ASTToIRTranslator.h"
 
 #include <iostream>
 #include <sstream>
@@ -44,8 +45,8 @@ bool Driver::isReady() const {
 void Driver::execute() {
     assert(isReady() && "driver is not ready");
 
-    TranslationUnit* module = nullptr;
-    bool             done   = parser_.lexer().this_token().isEOF();
+    TranslationUnit* unit = nullptr;
+    bool             done = parser_.lexer().this_token().isEOF();
 
     if (!done && flags_.LexOnly) {
         char buf[256]{};
@@ -58,13 +59,17 @@ void Driver::execute() {
     }
 
     if (!done) {
-        module = parser_.parse();
-        assert(module != nullptr && "invalid parse result");
+        unit = parser_.parse();
+        assert(unit != nullptr && "invalid parse result");
     }
 
     if (!done && flags_.DumpAST) {
         auto visitor = visitor::ASTDumpVisitor::createWithOstream(&std::cout);
-        visitor->visit(module);
+        visitor->visit(unit);
+    }
+
+    if (!done && flags_.EmitIR) {
+        auto module = visitor::ASTToIRTranslator::translate("default", unit);
     }
 
     ready_ = false;

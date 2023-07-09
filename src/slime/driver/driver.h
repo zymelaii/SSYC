@@ -11,6 +11,7 @@ public:
     struct Flags {
         bool LexOnly = false;
         bool DumpAST = false;
+        bool EmitIR  = false;
     };
 
     static Driver* create();
