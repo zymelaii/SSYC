@@ -820,6 +820,12 @@ void Parser::addPresetSymbols() {
     auto paramFloat      = ParamVarDecl::create(specFloat);
     auto paramFloatArray = ParamVarDecl::create(specFloatArray);
 
+    //! void starttime()
+    addExternalFunction("starttime", BuiltinType::getVoidType(), params);
+
+    //! void stoptime()
+    addExternalFunction("stoptime", BuiltinType::getVoidType(), params);
+
     //! int getint()
     addExternalFunction("getint", BuiltinType::getIntType(), params);
 
@@ -835,6 +841,12 @@ void Parser::addPresetSymbols() {
 
     //! void putch(int)
     addExternalFunction("putch", BuiltinType::getVoidType(), params);
+
+    //! void _sysy_starttime(int)
+    addExternalFunction("_sysy_starttime", BuiltinType::getVoidType(), params);
+
+    //! void _sysy_stoptime(int)
+    addExternalFunction("_sysy_stoptime", BuiltinType::getVoidType(), params);
 
     //! void putarray(int, int[])
     auto pIntArray = params.insertToTail(paramIntArray);
