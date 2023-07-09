@@ -1,9 +1,7 @@
 #include <gtest/gtest.h>
-#include <slime/visitor/ASTToIRVisitor.h>
+#include <slime/visitor/ASTExprSimplifier.h>
 
-using slime::visitor::ASTToIRVisitor;
 using namespace slime::ast;
-namespace ir = slime::ir;
 
 TEST(AstExprCompileTimeEvaluate, SimpleBinaryOp) {
     ASSERT_EQ(
