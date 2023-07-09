@@ -234,7 +234,7 @@ VarDecl *Parser::parseVarDef() {
                  : parseBinaryExpr();
     }
     //! initialize global array with zeros explicitly
-    if (spec->type->isArrayLike() && state_.cur_depth == 0) {
+    if (!init && spec->type->isArrayLike() && state_.cur_depth == 0) {
         init = InitListExpr::create();
     }
     //! create var decl and update symbol table
