@@ -18,8 +18,8 @@ public:
 
     inline std::string_view name() const;
 
-    ConstantInt*   createInt(int32_t value);
-    ConstantFloat* createFloat(float value);
+    ConstantInt*   createI32(int32_t value);
+    ConstantFloat* createF32(float value);
 
     bool acceptFunction(Function* fn);
     bool acceptGlobalVariable(GlobalVariable* var);

@@ -15,8 +15,8 @@ class ConstantData;
 class ConstantInt;
 class ConstantFloat;
 
-using BasicBlockList   = slime::utils::ListTrait<BasicBlock*>;
-using ConstantDataList = slime::utils::ListTrait<ConstantData*>;
+using BasicBlockList   = utils::ListTrait<BasicBlock*>;
+using ConstantDataList = utils::ListTrait<ConstantData*>;
 
 class Constant : public User<0> {
 public:

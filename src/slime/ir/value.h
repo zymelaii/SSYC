@@ -26,6 +26,7 @@ class Function;
 
 using UseList         = utils::ListTrait<Use *>;
 using InstructionList = utils::ListTrait<Instruction *>;
+using BasicBlockList  = utils::ListTrait<BasicBlock *>;
 
 enum class ValueTag : uint32_t {
     //! static value
@@ -114,7 +115,14 @@ private:
     Type            *valueType_ = nullptr;
     uint32_t         tag_       = 0;
     mutable UseList  useList_;
-    mutable void    *patch_ = nullptr;
+
+    //! WARNING: under no circumstances should patch_ be initilaized since it
+    //! might be modified by the external object at any time, initialization
+    //! will probably cause the modification invalid
+    //! e.g. an instruction user is orderly constructed by Instruction, User<N>,
+    //! etc, where ctor of User<N> will construct the Value instance which may
+    //! cover the modification of Instruction ctor
+    mutable void *patch_;
 };
 
 class Use {
@@ -309,8 +317,17 @@ public:
 
     inline Function *parent() const;
 
+    inline bool isInserted() const;
+
+    void insertOrMoveToHead();
+    void insertOrMoveToTail();
+
+    bool insertOrMoveAfter(BasicBlock *block);
+    bool insertOrMoveBefore(BasicBlock *block);
+
 private:
-    Function *parent_;
+    Function *const            parent_;
+    BasicBlockList::node_type *node_;
 };
 
 class Parameter final
@@ -492,10 +509,15 @@ inline Use::operator const Value *() const {
 
 inline BasicBlock::BasicBlock(Function *parent)
     : Value(Type::getVoidType(), ValueTag::Label | 0)
-    , parent_{parent} {}
+    , parent_{parent}
+    , node_{nullptr} {}
 
 inline Function *BasicBlock::parent() const {
     return parent_;
+}
+
+inline bool BasicBlock::isInserted() const {
+    return node_ != nullptr;
 }
 
 inline Parameter::Parameter()

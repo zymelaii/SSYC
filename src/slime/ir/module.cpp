@@ -16,14 +16,14 @@ Module::~Module() {
     for (auto& [k, v] : f32DataMap_) { delete v; }
 }
 
-ConstantInt* Module::createInt(int32_t value) {
+ConstantInt* Module::createI32(int32_t value) {
     if (i32DataMap_.count(value) == 0) {
         i32DataMap_[value] = ConstantData::createI32(value);
     }
     return i32DataMap_.at(value);
 }
 
-ConstantFloat* Module::createFloat(float value) {
+ConstantFloat* Module::createF32(float value) {
     if (f32DataMap_.count(value) == 0) {
         f32DataMap_[value] = ConstantData::createF32(value);
     }

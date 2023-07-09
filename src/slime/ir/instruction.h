@@ -5,6 +5,7 @@
 #include "instruction.def"
 #include "../utils/traits.h"
 
+#include <iostream>
 #include <assert.h>
 
 namespace slime::ir {
@@ -80,7 +81,8 @@ public:
     static inline LoadInst  *createLoad(Value *address);
     static inline StoreInst *createStore(Value *address, Value *value);
 
-    static inline RetInst *createRet(Value *value = nullptr);
+    static inline RetInst *createRet();
+    static inline RetInst *createRet(Value *value);
     static inline BrInst  *createBr(BasicBlock *block);
     static inline BrInst  *createBr(
          Value *condition, BasicBlock *branchIf, BasicBlock *branchElse);
@@ -212,7 +214,8 @@ public:
     GetElementPtrInst(Value *address, Value *index)
         : Instruction(InstructionID::GetElementPtr, this)
         , User<2>(
-              address->type()->tryGetElementType(), ValueTag::Instruction | 0) {
+              Type::createPointerType(address->type()->tryGetElementType()),
+              ValueTag::Instruction | 0) {
         lhs() = address;
         rhs() = index;
     }
@@ -628,6 +631,10 @@ inline StoreInst *Instruction::createStore(Value *address, Value *value) {
     assert(address->type()->tryGetElementType() != nullptr);
     assert(address->type()->tryGetElementType()->equals(value->type()));
     return StoreInst::create(address, value);
+}
+
+inline RetInst *Instruction::createRet() {
+    return RetInst::create();
 }
 
 inline RetInst *Instruction::createRet(Value *value) {
