@@ -3,7 +3,6 @@
 #include "../utils/cast.def"
 #include "../utils/traits.h"
 
-#include <tuple>
 #include <vector>
 #include <type_traits>
 #include <assert.h>
@@ -41,6 +40,8 @@ enum class TypeKind : uint8_t {
 
 class Type {
 public:
+    inline TypeKind kind() const;
+
     inline bool isToken() const;
     inline bool isLabel() const;
     inline bool isVoid() const;
@@ -69,6 +70,9 @@ public:
     static inline PointerType *createPointerType(Type *elementType);
     template <typename... Args>
     static inline FunctionType *createFunctionType(Args &&...args);
+
+    static inline Type *tryGetElementTypeOf(Type *type);
+    inline Type        *tryGetElementType();
 
     RegisterCastDecl(kind, Function, Type, TypeKind);
     RegisterCastDecl(kind, Array, Type, TypeKind);
@@ -126,9 +130,6 @@ class FunctionType
     : public Type
     , public utils::BuildTrait<FunctionType> {
 public:
-    template <typename... Args>
-    static FunctionType *create(Type *returnType, Args &&...args);
-
     inline Type  *returnType() const;
     inline Type  *paramTypeAt(int index) const;
     inline size_t totalParams() const;
@@ -168,6 +169,10 @@ private:
     Type               *returnType_;
     std::vector<Type *> paramsTypes_;
 };
+
+inline TypeKind Type::kind() const {
+    return kind_;
+}
 
 inline bool Type::isToken() const {
     return kind_ == TypeKind::Token;
@@ -274,6 +279,17 @@ inline PointerType *Type::createPointerType(Type *elementType) {
 template <typename... Args>
 inline FunctionType *Type::createFunctionType(Args &&...args) {
     return FunctionType::create(std::forward<Args>(args)...);
+}
+
+inline Type *Type::tryGetElementTypeOf(Type *type) {
+    if (type->isArray() || type->isPointer()) {
+        return static_cast<SequentialType *>(type)->elementType();
+    }
+    return nullptr;
+}
+
+inline Type *Type::tryGetElementType() {
+    return Type::tryGetElementTypeOf(this);
 }
 
 inline Type *SequentialType::elementType() const {
