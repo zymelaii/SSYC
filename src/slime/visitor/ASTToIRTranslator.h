@@ -35,9 +35,10 @@ protected:
     void translateVarDecl(ast::VarDecl *decl);
     void translateFunctionDecl(ast::FunctionDecl *decl);
 
-    void translateStmt(ir::BasicBlock *block, ast::Stmt *stmt);
-    void translateDeclStmt(ir::BasicBlock *block, ast::DeclStmt *stmt);
-    void translateCompoundStmt(ir::BasicBlock *block, ast::CompoundStmt *stmt);
+    void        translateStmt(ir::BasicBlock *block, ast::Stmt *stmt);
+    inline void translateDeclStmt(ir::BasicBlock *block, ast::DeclStmt *stmt);
+    inline void translateCompoundStmt(
+        ir::BasicBlock *block, ast::CompoundStmt *stmt);
     void translateIfStmt(ir::BasicBlock *block, ast::IfStmt *stmt);
     void translateDoStmt(ir::BasicBlock *block, ast::DoStmt *stmt);
     void translateWhileStmt(ir::BasicBlock *block, ast::WhileStmt *stmt);
@@ -55,7 +56,8 @@ protected:
     ir::Value *translateBinaryExpr(
         ir::BasicBlock *block, ast::BinaryExpr *expr);
     ir::Value *translateCommaExpr(ir::BasicBlock *block, ast::CommaExpr *expr);
-    ir::Value *translateParenExpr(ir::BasicBlock *block, ast::ParenExpr *expr);
+    inline ir::Value *translateParenExpr(
+        ir::BasicBlock *block, ast::ParenExpr *expr);
     ir::Value *translateCallExpr(ir::BasicBlock *block, ast::CallExpr *expr);
     ir::Value *translateSubscriptExpr(
         ir::BasicBlock *block, ast::SubscriptExpr *expr);
@@ -80,6 +82,7 @@ private:
         //! appears only when the expr is a void one
         //! NOTE: valueOfPrevExpr indicates the value of previous expression
         //! even it is actually an address value
+        //! WANRING: never use it before an explicit expr-translation is called
         ir::Value *valueOfPrevExpr   = nullptr;
         ir::Value *addressOfPrevExpr = nullptr;
         //! the block where the current translation point is actually located
@@ -97,5 +100,21 @@ private:
     std::unique_ptr<ir::Module> module_;
     TranslateState              state_;
 };
+
+inline void ASTToIRTranslator::translateDeclStmt(
+    ir::BasicBlock *block, ast::DeclStmt *stmt) {
+    for (auto decl : *stmt) { translateVarDecl(decl); }
+}
+
+inline void ASTToIRTranslator::translateCompoundStmt(
+    ir::BasicBlock *block, ast::CompoundStmt *stmt) {
+    for (auto e : *stmt) { translateStmt(state_.currentBlock, e); }
+}
+
+inline ir::Value *ASTToIRTranslator::translateParenExpr(
+    ir::BasicBlock *block, ast::ParenExpr *expr) {
+    //! paren-expr derives the attribute of value, so forward it directly
+    return translateExpr(block, expr->inner);
+}
 
 } // namespace slime::visitor
