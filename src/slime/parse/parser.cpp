@@ -799,7 +799,9 @@ void Parser::addExternalFunction(
     auto spec = DeclSpecifier::create();
     spec->addSpecifier(NamedDeclSpecifier::Extern);
     spec->type = returnType;
-    addSymbol(FunctionDecl::create(name, spec, params, nullptr));
+    auto decl  = FunctionDecl::create(name, spec, params, nullptr);
+    addSymbol(decl);
+    state_.tu->insertToTail(decl);
 }
 
 void Parser::addPresetSymbols() {
@@ -807,10 +809,10 @@ void Parser::addPresetSymbols() {
 
     auto specInt         = DeclSpecifier::create();
     auto specFloat       = DeclSpecifier::create();
-    auto specIntArray    = specInt->clone();
-    auto specFloatArray  = specFloat->clone();
     specInt->type        = BuiltinType::getIntType();
     specFloat->type      = BuiltinType::getFloatType();
+    auto specIntArray    = specInt->clone();
+    auto specFloatArray  = specFloat->clone();
     specIntArray->type   = IncompleteArrayType::create(specIntArray->type);
     specFloatArray->type = IncompleteArrayType::create(specFloatArray->type);
     auto paramInt        = ParamVarDecl::create(specInt);
