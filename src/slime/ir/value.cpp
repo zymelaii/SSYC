@@ -1,3 +1,4 @@
+#include "user.h"
 #include "instruction.h"
 
 namespace slime::ir {
@@ -42,6 +43,36 @@ GlobalVariable *Value::tryIntoGlobalVariable() {
 
 Function *Value::tryIntoFunction() {
     return isFunction() ? static_cast<Function *>(this) : nullptr;
+}
+
+void BasicBlock::insertOrMoveToHead() {
+    if (!isInserted()) {
+        node_ = parent_->insertToHead(this);
+    } else {
+        node_->insertToHead(*parent_);
+    }
+}
+
+void BasicBlock::insertOrMoveToTail() {
+    if (!isInserted()) {
+        node_ = parent_->insertToTail(this);
+    } else {
+        node_->insertToTail(*parent_);
+    }
+}
+
+bool BasicBlock::insertOrMoveBefore(BasicBlock *block) {
+    if (block->parent_ != parent_ || !block->isInserted()) { return false; }
+    if (!isInserted()) { node_ = parent_->insertToHead(this); }
+    node_->insertBefore(block->node_);
+    return true;
+}
+
+bool BasicBlock::insertOrMoveAfter(BasicBlock *block) {
+    if (block->parent_ != parent_ || !block->isInserted()) { return false; }
+    if (!isInserted()) { node_ = parent_->insertToTail(this); }
+    node_->insertAfter(block->node_);
+    return true;
 }
 
 } // namespace slime::ir

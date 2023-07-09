@@ -109,7 +109,7 @@ struct IfStmt
         , branchIf{branchIf}
         , branchElse{branchElse} {}
 
-    bool haveElseBranch() const {
+    bool hasBranchElse() const {
         return !(branchElse == nullptr || branchElse->stmtId == StmtID::Null);
     }
 
