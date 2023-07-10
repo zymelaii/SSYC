@@ -105,8 +105,8 @@ public:
     inline void  setPatch(void *patch) const;
     inline void *patch() const;
 
-protected:
     inline void setName(std::string_view name, bool force = false);
+    inline void setIdUnsafe(int32_t id, uint32_t version = 0);
 
 private:
     std::string_view name_      = "";
@@ -320,6 +320,9 @@ public:
 
     inline bool isInserted() const;
 
+    inline InstructionList       &instructions();
+    inline const InstructionList &instructions() const;
+
     void insertOrMoveToHead();
     void insertOrMoveToTail();
 
@@ -479,6 +482,11 @@ inline void Value::setName(std::string_view name, bool force) {
     if (name_.empty() || force) { name_ = name; }
 }
 
+inline void Value::setIdUnsafe(int32_t id, uint32_t version) {
+    id_      = id;
+    version_ = version;
+}
+
 inline void Use::reset(const Value *value) {
     if (value != value_) {
         if (value_ != nullptr) { value_->removeUse(this); }
@@ -523,6 +531,14 @@ inline Function *BasicBlock::parent() const {
 
 inline bool BasicBlock::isInserted() const {
     return node_ != nullptr;
+}
+
+inline InstructionList &BasicBlock::instructions() {
+    return *this;
+}
+
+inline const InstructionList &BasicBlock::instructions() const {
+    return *this;
 }
 
 inline Parameter::Parameter()
