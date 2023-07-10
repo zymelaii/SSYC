@@ -332,6 +332,8 @@ public:
     bool insertOrMoveAfter(BasicBlock *block);
     bool insertOrMoveBefore(BasicBlock *block);
 
+    bool remove();
+
 private:
     Function *const            parent_;
     BasicBlockList::node_type *node_;
@@ -501,7 +503,7 @@ inline void Value::resetValueTypeUnsafe(Type *valueType) {
 inline void Use::reset(const Value *value) {
     if (value != value_) {
         if (value_ != nullptr) { value_->removeUse(this); }
-        value->addUse(this);
+        if (value != nullptr) { value->addUse(this); }
         value_ = value;
     }
 }

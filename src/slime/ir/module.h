@@ -74,8 +74,8 @@ public:
 
     inline std::string_view name() const;
 
-    ConstantInt*   createI32(int32_t value);
-    ConstantFloat* createF32(float value);
+    [[nodiscard]] ConstantInt*   createI32(int32_t value);
+    [[nodiscard]] ConstantFloat* createF32(float value);
 
     bool acceptFunction(Function* fn);
     bool acceptGlobalVariable(GlobalVariable* var);
@@ -85,6 +85,12 @@ public:
 
     inline GlobalObjectList&       globalObjects();
     inline const GlobalObjectList& globalObjects() const;
+
+    [[nodiscard]] CallInst* createMemset(
+        Value* address, uint8_t value, size_t n);
+
+protected:
+    void initializeBuiltinFunctions();
 
 private:
     const char* moduleName_;

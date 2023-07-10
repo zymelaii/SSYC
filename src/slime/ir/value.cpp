@@ -75,4 +75,11 @@ bool BasicBlock::insertOrMoveAfter(BasicBlock *block) {
     return true;
 }
 
+bool BasicBlock::remove() {
+    if (totalInBlocks() > 0) { return false; }
+    resetBranch();
+    node_->removeFromList();
+    return true;
+}
+
 } // namespace slime::ir

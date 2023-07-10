@@ -170,23 +170,21 @@ public:
     FunctionType(Type *returnType, Args &&...args)
         : FunctionType(returnType) {
         if constexpr (sizeof...(Args) > 0) {
-            using first_type = utils::nth_type<0, Args...>;
-            //! case1: create(returnType, paramType1, paramType2, ...)
-            constexpr bool case1 =
+            using first_type =
+                std::remove_reference_t<utils::nth_type<0, Args...>>;
+            if constexpr (
                 std::is_pointer_v<first_type>
-                && std::is_base_of_v<Type, std::remove_pointer_t<first_type>>;
-            //! case2: create(returnType, iterableContainer)
-            constexpr bool case2 = utils::is_iterable_as<first_type, Type *>;
-            static_assert(
-                case1 || case2,
-                "unexpected arguments for FunctionType::create(...)");
-            if constexpr (case1) {
+                && std::is_base_of_v<Type, std::remove_pointer_t<first_type>>) {
+                //! case1: create(returnType, paramType1, paramType2, ...)
                 std::initializer_list<Type *> paramTypes{
                     std::forward<Args>(args)...};
                 paramsTypes_.assign(paramTypes.begin(), paramTypes.end());
-            } else if constexpr (case2) {
+            } else if constexpr (utils::is_iterable_as<first_type, Type *>) {
+                //! case2: create(returnType, iterableContainer)
                 auto &list = utils::firstValueOfTArguments(args...);
                 paramsTypes_.assign(list.begin(), list.end());
+            } else {
+                abort();
             }
         }
     }

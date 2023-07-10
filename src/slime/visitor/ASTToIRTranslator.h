@@ -12,9 +12,9 @@ class ASTToIRTranslator {
 public:
     struct BooleanSimplifyResult {
         ir::Value *value;
-        bool       changed             = false;
-        bool       shouldReplace       = false;
-        bool       shouldInsertFront   = false;
+        bool       changed           = false;
+        bool       shouldReplace     = false;
+        bool       shouldInsertFront = false;
 
         BooleanSimplifyResult(ir::Value *value)
             : value{value} {}
@@ -59,6 +59,8 @@ protected:
     ir::Value *translateCallExpr(ir::BasicBlock *block, ast::CallExpr *expr);
     ir::Value *translateSubscriptExpr(
         ir::BasicBlock *block, ast::SubscriptExpr *expr);
+
+    void translateArrayInitAssign(ir::Value *address, ast::InitListExpr *data);
 
 protected:
     ASTToIRTranslator(std::string_view name)

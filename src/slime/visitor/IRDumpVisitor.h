@@ -21,7 +21,7 @@ public:
 protected:
     std::ostream& dumpType(ir::Type* type, bool decay = false);
     std::ostream& dumpValueRef(ir::Value* value);
-    std::ostream& dumpConstant(ir::ConstantData *data);
+    std::ostream& dumpConstant(ir::ConstantData* data);
     std::ostream& dumpArrayData(ir::ConstantArray* data);
 
     void dumpFunction(ir::Function* func);

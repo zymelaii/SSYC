@@ -5,20 +5,26 @@
 
 namespace slime::ir {
 
+void CFGNode::resetBranch() {
+    //! NOTE: CFGNode derives the BasicBlock
+    auto self = static_cast<BasicBlock*>(this);
+    if (control_ != nullptr) {
+        control_ = nullptr;
+        jmpIf_->unlinkFrom(self);
+        jmpElse_->unlinkFrom(self);
+    } else if (jmpIf_ != nullptr) {
+        jmpIf_->unlinkFrom(self);
+    }
+    control_ = nullptr;
+    jmpIf_   = nullptr;
+    jmpElse_ = nullptr;
+}
+
 void CFGNode::resetBranch(BasicBlock* block) {
     assert(block != nullptr);
     //! NOTE: CFGNode derives the BasicBlock
     auto self = static_cast<BasicBlock*>(this);
-
-    if (jmpIf_ != nullptr) {
-        if (control_ != nullptr) {
-            control_ = nullptr;
-            jmpElse_->unlinkFrom(self);
-            jmpElse_ = nullptr;
-        } else if (jmpIf_ != block) {
-            jmpIf_->unlinkFrom(self);
-        }
-    }
+    resetBranch();
     jmpIf_ = block;
     block->addIncoming(self);
 }
@@ -30,15 +36,7 @@ void CFGNode::resetBranch(
     assert(branchElse != nullptr);
     //! NOTE: CFGNode derives the BasicBlock
     auto self = static_cast<BasicBlock*>(this);
-    if (jmpIf_ != nullptr) {
-        if (!control_) {
-            jmpIf_->unlinkFrom(self);
-            jmpIf_ = nullptr;
-        } else {
-            jmpIf_->unlinkFrom(self);
-            jmpElse_->unlinkFrom(self);
-        }
-    }
+    resetBranch();
     control_ = control;
     jmpIf_   = branchIf;
     jmpElse_ = branchElse;
