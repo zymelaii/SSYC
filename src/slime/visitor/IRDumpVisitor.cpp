@@ -28,22 +28,6 @@ void IRDumpVisitor::dump(Module* module) {
     currentModule_ = nullptr;
 }
 
-int IRDumpVisitor::idOf(Value* value) {
-    if (value->isGlobal() || value->isImmediate()) { return -1; }
-    if (auto inst = value->tryIntoInstruction()) {
-        if (inst->id() == InstructionID::Store
-            || inst->id() == InstructionID::Br
-            || inst->id() == InstructionID::Ret) {
-            return -2;
-        }
-    }
-    if (!numberingTable_.count(value)) {
-        int nextId             = numberingTable_.size();
-        numberingTable_[value] = nextId;
-    }
-    return numberingTable_[value];
-}
-
 std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
     switch (type->kind()) {
         case TypeKind::Void: {
@@ -67,7 +51,7 @@ std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
                 os() << "[" << array->size() << " x "
                      << dumpType(array->elementType(), false) << "]";
             }
-        }
+        } break;
         case TypeKind::Label: {
             os() << "label";
         } break;
@@ -95,14 +79,12 @@ std::ostream& IRDumpVisitor::dumpValueRef(Value* value) {
     } else if (value->isLabel() && !value->name().empty()) {
         os() << "%" << value->name();
     } else {
-        os() << "%" << idOf(value);
+        os() << "%" << value->id();
     }
     return os();
 }
 
 void IRDumpVisitor::dumpFunction(Function* func) {
-    numberingTable_.clear();
-
     bool declareOnly = func->size() == 0;
     if (declareOnly) {
         os() << "declare ";
@@ -128,7 +110,7 @@ void IRDumpVisitor::dumpFunction(Function* func) {
         if (!block->name().empty()) {
             os() << block->name() << ":\n";
         } else {
-            os() << idOf(block) << ":\n";
+            os() << block->id() << ":\n";
         }
         for (auto inst : *block) {
             os() << "    ";
