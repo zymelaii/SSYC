@@ -33,16 +33,24 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
         case ast::TypeID::Array: {
             auto array = type->asArray();
             auto type  = getCompatibleIRType(array->type);
-            for (auto n : *array) {
-                type = ir::Type::createArrayType(type, n->asConstant()->i32);
+            auto it    = array->rbegin();
+            auto end   = array->rend();
+            while (it != end) {
+                type =
+                    ir::Type::createArrayType(type, (*it)->asConstant()->i32);
+                ++it;
             }
             return type;
         } break;
         case ast::TypeID::IncompleteArray: {
             auto array = type->asIncompleteArray();
             auto type  = getCompatibleIRType(array->type);
-            for (auto n : *array) {
-                type = ir::Type::createArrayType(type, n->asConstant()->i32);
+            auto it    = array->rbegin();
+            auto end   = array->rend();
+            while (it != end) {
+                type =
+                    ir::Type::createArrayType(type, (*it)->asConstant()->i32);
+                ++it;
             }
             return ir::Type::createPointerType(type);
         } break;
@@ -985,11 +993,17 @@ Value *ASTToIRTranslator::translateCallExpr(BasicBlock *block, CallExpr *expr) {
 
 Value *ASTToIRTranslator::translateSubscriptExpr(
     BasicBlock *block, SubscriptExpr *expr) {
-    auto address  = translateExpr(state_.currentBlock, expr->lhs);
-    auto index    = translateExpr(state_.currentBlock, expr->rhs);
-    auto valuePtr = GetElementPtrInst::create(address, index);
+    auto         address  = translateExpr(state_.currentBlock, expr->lhs);
+    Instruction *valuePtr = nullptr;
+    if (state_.addressOfPrevExpr != nullptr) {
+        address    = state_.addressOfPrevExpr;
+        auto index = translateExpr(state_.currentBlock, expr->rhs);
+        valuePtr   = GetElementPtrInst::create(address, index);
+    } else {
+        assert(false && "only accept lhs as symref");
+    }
     valuePtr->insertToTail(state_.currentBlock);
-    auto value = Instruction::createLoad(valuePtr);
+    auto value = Instruction::createLoad(valuePtr->unwrap());
     value->insertToTail(state_.currentBlock);
     state_.addressOfPrevExpr = valuePtr->unwrap();
     state_.valueOfPrevExpr   = value->unwrap();
@@ -997,5 +1011,3 @@ Value *ASTToIRTranslator::translateSubscriptExpr(
 }
 
 } // namespace slime::visitor
-
-//} // namespace slime::visitor

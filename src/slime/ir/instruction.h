@@ -248,7 +248,8 @@ public:
     GetElementPtrInst(Value *address, Value *index)
         : Instruction(InstructionID::GetElementPtr, this)
         , User<2>(
-              Type::createPointerType(address->type()->tryGetElementType()),
+              Type::createPointerType(
+                  address->type()->tryGetElementType()->tryGetElementType()),
               ValueTag::Instruction | 0) {
         lhs() = address;
         rhs() = index;
