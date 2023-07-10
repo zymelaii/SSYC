@@ -887,7 +887,9 @@ void Parser::dropUnusedExternalSymbols() {
     while (it != end) {
         auto &node = *it++;
         auto  decl = static_cast<NamedDecl *>(node.value());
-        if (state_.symref_set.count(decl) == 0) { node.removeFromList(); }
+        if (state_.symref_set.count(decl) == 0 && decl->specifier->isExtern()) {
+            node.removeFromList();
+        }
     }
 }
 
