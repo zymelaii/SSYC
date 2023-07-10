@@ -1,6 +1,7 @@
 #include "driver.h"
 #include "../visitor/ASTDumpVisitor.h"
 #include "../visitor/ASTToIRTranslator.h"
+#include "../visitor/IRDumpVisitor.h"
 
 #include <iostream>
 #include <sstream>
@@ -69,7 +70,9 @@ void Driver::execute() {
     }
 
     if (!done && flags_.EmitIR) {
-        auto module = visitor::ASTToIRTranslator::translate("default", unit);
+        auto visitor = visitor::IRDumpVisitor::createWithOstream(&std::cout);
+        auto module  = visitor::ASTToIRTranslator::translate("default", unit);
+        visitor->dump(module);
     }
 
     ready_ = false;
