@@ -12,9 +12,9 @@ class ASTToIRTranslator {
 public:
     struct BooleanSimplifyResult {
         ir::Value *value;
-        bool       changed           = false;
-        bool       shouldReplace     = false;
-        bool       shouldInsertFront = false;
+        bool       changed             = false;
+        bool       shouldReplace       = false;
+        bool       shouldInsertFront   = false;
 
         BooleanSimplifyResult(ir::Value *value)
             : value{value} {}

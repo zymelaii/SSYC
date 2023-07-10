@@ -30,6 +30,7 @@ public:
     ConstantData(Type* type, uint32_t tag)
         : Constant(type, tag) {}
 
+    static inline ConstantInt*   getBoolean(bool value);
     static inline ConstantInt*   createI32(int32_t data);
     static inline ConstantFloat* createF32(float data);
 };
@@ -38,8 +39,8 @@ class ConstantInt final
     : public ConstantData
     , public utils::BuildTrait<ConstantInt> {
 public:
-    ConstantInt(int32_t value)
-        : ConstantData(Type::getIntegerType(), ValueTag::Immediate | 0)
+    ConstantInt(int32_t value, Type* type = Type::getIntegerType())
+        : ConstantData(type, ValueTag::Immediate | 0)
         , value{value} {}
 
 public:
@@ -181,6 +182,12 @@ public:
 private:
     std::unique_ptr<Parameter> params_;
 };
+
+inline ConstantInt* ConstantData::getBoolean(bool value) {
+    static ConstantInt trueSingleton(value, Type::getBooleanType());
+    static ConstantInt falseSingleton(value, Type::getBooleanType());
+    return value ? &trueSingleton : &falseSingleton;
+}
 
 inline ConstantInt* ConstantData::createI32(int32_t data) {
     return ConstantInt::create(data);

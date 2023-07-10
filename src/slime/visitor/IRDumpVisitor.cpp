@@ -34,7 +34,7 @@ std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
             os() << "void";
         } break;
         case TypeKind::Integer: {
-            os() << "i32";
+            os() << (type->isBoolean() ? "i1" : "i32");
         } break;
         case TypeKind::Float: {
             os() << "float";

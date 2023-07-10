@@ -123,135 +123,50 @@ Value *ASTToIRTranslator::getCompatibleIRValue(
 Value *ASTToIRTranslator::getMinimumBooleanExpression(
     BooleanSimplifyResult &in, Module *module) {
     auto v               = in.value;
+    auto type            = v->type();
     in.changed           = false;
     in.shouldReplace     = false;
     in.shouldInsertFront = false;
     assert(v != nullptr);
-    if (v->isCompareInst()) { return v; }
+    if (type->isBoolean()) { return v; }
     if (v->isImmediate()) {
         auto imm = v->asConstantData();
         if (imm->type()->isInteger()) {
-            auto i32 = static_cast<ConstantInt *>(imm);
-            if (i32->value != 0 && i32->value != 1) {
-                i32 =
-                    !module ? ConstantData::createI32(1) : module->createI32(1);
-                in.changed       = true;
-                in.shouldReplace = true;
-            }
-            return i32;
+            auto i32         = static_cast<ConstantInt *>(imm)->value;
+            in.changed       = true;
+            in.shouldReplace = true;
+            return ConstantData::getBoolean(i32 != 0);
         } else {
             assert(imm->type()->isFloat());
-            auto f32    = static_cast<ConstantFloat *>(imm);
-            auto result = !module ? ConstantData::createI32(f32->value == 0.f)
-                                  : module->createI32(f32->value == 0.f);
-            in.changed  = true;
+            auto f32         = static_cast<ConstantFloat *>(imm)->value;
+            in.changed       = true;
             in.shouldReplace = true;
-            return result;
+            return ConstantData::getBoolean(f32 != 0.f);
         }
     }
-    if (v->isInstruction()) {
-        auto inst = v->asInstruction();
-        switch (inst->id()) {
-            case InstructionID::Alloca:
-            case InstructionID::GetElementPtr:
-            case InstructionID::Add:
-            case InstructionID::Sub:
-            case InstructionID::Mul:
-            case InstructionID::UDiv:
-            case InstructionID::SDiv:
-            case InstructionID::URem:
-            case InstructionID::SRem:
-            case InstructionID::Shl:
-            case InstructionID::LShr:
-            case InstructionID::AShr:
-            case InstructionID::And:
-            case InstructionID::Or:
-            case InstructionID::Xor:
-            case InstructionID::FPToUI:
-            case InstructionID::FPToSI: {
-                auto value = ICmpInst::createNE(
-                    inst->unwrap(),
-                    !module ? ConstantData::createI32(0)
-                            : module->createI32(0));
-                in.changed           = true;
-                in.shouldReplace     = true;
-                in.shouldInsertFront = true;
-                return value;
-            } break;
-            case InstructionID::FNeg:
-            case InstructionID::FAdd:
-            case InstructionID::FSub:
-            case InstructionID::FMul:
-            case InstructionID::FDiv:
-            case InstructionID::FRem:
-            case InstructionID::UIToFP:
-            case InstructionID::SIToFP: {
-                auto value = FCmpInst::createUNE(
-                    inst->unwrap(),
-                    !module ? ConstantData::createF32(0.f)
-                            : module->createF32(0.f));
-                in.changed           = true;
-                in.shouldReplace     = true;
-                in.shouldInsertFront = true;
-                return value;
-            } break;
-            case InstructionID::Phi:
-            case InstructionID::Call:
-            case InstructionID::Load: {
-                if (v->type()->isInteger()) {
-                    auto value = ICmpInst::createNE(
-                        inst->unwrap(),
-                        !module ? ConstantData::createI32(0)
-                                : module->createI32(0));
-                    in.changed           = true;
-                    in.shouldReplace     = true;
-                    in.shouldInsertFront = true;
-                    return value;
-                } else if (v->type()->isFloat()) {
-                    auto value = FCmpInst::createUNE(
-                        inst->unwrap(),
-                        !module ? ConstantData::createF32(0.f)
-                                : module->createF32(0.f));
-                    in.changed           = true;
-                    in.shouldReplace     = true;
-                    in.shouldInsertFront = true;
-                    return value;
-                } else {
-                    return nullptr;
-                }
-            } break;
-            default: {
-                return nullptr;
-            } break;
-        }
-    }
-    if (v->isFunction() || v->isReadOnly()) {
-        auto value =
-            !module ? ConstantData::createI32(1) : module->createI32(1);
+    if (v->isGlobal() || v->isReadOnly()) {
+        //! global objects always represent as its address
         in.changed       = true;
         in.shouldReplace = true;
-        return value;
+        return ConstantData::getBoolean(true);
     }
-    if (v->isGlobal() || v->isParameter()) {
-        if (v->type()->isInteger()) {
-            auto value = ICmpInst::createNE(
-                v, !module ? ConstantData::createI32(0) : module->createI32(0));
-            in.changed           = true;
-            in.shouldReplace     = true;
-            in.shouldInsertFront = true;
-            return value;
-        } else if (v->type()->isFloat()) {
-            auto value = FCmpInst::createUNE(
-                v,
-                !module ? ConstantData::createF32(0.f)
-                        : module->createF32(0.f));
-            in.changed           = true;
-            in.shouldReplace     = true;
-            in.shouldInsertFront = true;
-            return value;
-        } else {
-            return nullptr;
+    if (v->isParameter() || v->isInstruction()) {
+        Value *value = nullptr;
+        if (type->isInteger()) {
+            auto rhs =
+                !module ? ConstantData::createI32(0) : module->createI32(0);
+            value = ICmpInst::createNE(v, rhs);
+        } else if (type->isFloat()) {
+            auto rhs =
+                !module ? ConstantData::createF32(0.f) : module->createF32(0.f);
+            value = FCmpInst::createUNE(v, rhs);
         }
+        if (value != nullptr) {
+            in.changed           = true;
+            in.shouldReplace     = true;
+            in.shouldInsertFront = true;
+        }
+        return value;
     }
     return nullptr;
 }
@@ -851,7 +766,7 @@ Value *ASTToIRTranslator::translateBinaryExpr(
         }
         Instruction::createBr(exitBlock)->insertToTail(nextBlock);
 
-        auto phi = Instruction::createPhi(ir::Type::getIntegerType());
+        auto phi = Instruction::createPhi(lhs->type());
         phi->addIncomingValue(lhs, block);
         phi->addIncomingValue(rhs, nextBlock);
         phi->insertToTail(exitBlock);
