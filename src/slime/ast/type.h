@@ -1,12 +1,9 @@
 #pragma once
 
-#include "../utils/list.h"
-#include "../utils/cast.def"
-
+#include <slime/utils/list.h>
+#include <slime/utils/cast.def>
 #include <vector>
 #include <assert.h>
-#include <type_traits>
-#include <tuple>
 
 namespace slime::ast {
 
@@ -17,8 +14,8 @@ struct ArrayType;
 struct IncompleteArrayType;
 struct FunctionProtoType;
 
-using ExprList = slime::utils::ListTrait<Expr*>;
-using TypeList = slime::utils::ListTrait<Type*>;
+using ExprList = utils::ListTrait<Expr*>;
+using TypeList = utils::ListTrait<Type*>;
 
 enum class TypeID {
     None,

@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../ast/expr.h"
-
+#include <slime/ast/expr.h>
 #include <string_view>
 
 namespace slime {

@@ -1,6 +1,6 @@
 #include "ASTExprSimplifier.h"
-#include "../utils/list.h"
 
+#include <slime/utils/list.h>
 #include <vector>
 
 namespace slime::visitor {

@@ -1,11 +1,9 @@
 #pragma once
 
-#include "../ir/module.h"
-#include "../ir/value.h"
-#include "../ast/ast.h"
-#include "../ast/type.h"
-#include "../ast/expr.h"
-
+#include <slime/ast/ast.h>
+#include <slime/ast/stmt.h>
+#include <slime/ast/expr.h>
+#include <slime/ir/module.h>
 #include <memory>
 
 namespace slime::visitor {

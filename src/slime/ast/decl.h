@@ -1,11 +1,11 @@
 #pragma once
 
-#include "../utils/list.h"
-#include "../utils/cast.def"
-#include "../utils/traits.h"
 #include "type.h"
 #include "scope.h"
 
+#include <slime/utils/list.h>
+#include <slime/utils/cast.def>
+#include <slime/utils/traits.h>
 #include <stdint.h>
 #include <string_view>
 
@@ -17,7 +17,7 @@ struct ParamVarDecl;
 struct VarDecl;
 struct FunctionDecl;
 
-using ParamVarDeclList = slime::utils::ListTrait<ParamVarDecl *>;
+using ParamVarDeclList = utils::ListTrait<ParamVarDecl *>;
 
 enum class DeclID {
     Var,

@@ -1,9 +1,8 @@
 #include "diagnosis.h"
-#include "../visitor/ASTExprSimplifier.h"
-#include "../ast/decl.h"
-#include "../ast/stmt.h"
-#include "../ast/type.h"
 
+#include <slime/ast/decl.h>
+#include <slime/ast/stmt.h>
+#include <slime/visitor/ASTExprSimplifier.h>
 #include <iostream>
 #include <stdlib.h>
 

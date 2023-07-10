@@ -3,8 +3,8 @@
 #include "value.h"
 #include "user.h"
 #include "instruction.def"
-#include "../utils/traits.h"
 
+#include <slime/utils/traits.h>
 #include <iostream>
 #include <assert.h>
 

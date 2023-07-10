@@ -1,8 +1,6 @@
 #pragma once
 
-#include "../ir/value.h"
-#include "../ir/module.h"
-
+#include <slime/ir/module.h>
 #include <map>
 #include <memory>
 #include <iostream>

@@ -1,10 +1,6 @@
 #pragma once
 
-#include "../ast/ast.h"
-#include "../ast/decl.h"
-#include "../ast/stmt.h"
-#include "../ast/expr.h"
-
+#include <slime/ast/ast.h>
 #include <iostream>
 #include <iomanip>
 #include <stddef.h>

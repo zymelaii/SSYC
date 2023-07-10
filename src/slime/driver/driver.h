@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../parse/parser.h"
-
+#include <slime/parse/parser.h>
 #include <istream>
 
 namespace slime {

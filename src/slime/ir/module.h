@@ -1,18 +1,69 @@
 #pragma once
 
-#include "../utils/list.h"
-
+#include <slime/utils/list.h>
 #include <stdint.h>
 #include <string_view>
 #include <map>
 
 namespace slime::ir {
 
+class Type;
+class SequentialType;
+class ArrayType;
+class PointerType;
+class FunctionType;
+
+class Value;
+class Use;
+template <int N>
+class User;
+
+class BasicBlock;
+class Parameter;
+
+class Constant;
+class ConstantData;
 class ConstantInt;
 class ConstantFloat;
+class ConstantArray;
 class GlobalObject;
-class Function;
 class GlobalVariable;
+class Function;
+
+class Instruction;
+class AllocaInst;
+class LoadInst;
+class StoreInst;
+class RetInst;
+class BrInst;
+class GetElementPtrInst;
+class AddInst;
+class SubInst;
+class MulInst;
+class UDivInst;
+class SDivInst;
+class URemInst;
+class SRemInst;
+class FNegInst;
+class FAddInst;
+class FSubInst;
+class FMulInst;
+class FDivInst;
+class FRemInst;
+class ShlInst;
+class LShrInst;
+class AShrInst;
+class AndInst;
+class OrInst;
+class XorInst;
+class FPToUIInst;
+class FPToSIInst;
+class UIToFPInst;
+class SIToFPInst;
+class ICmpInst;
+class FCmpInst;
+class PhiInst;
+class CallInst;
 
 using GlobalObjectList = utils::ListTrait<GlobalObject*>;
 

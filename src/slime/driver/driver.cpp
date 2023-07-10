@@ -1,8 +1,8 @@
 #include "driver.h"
-#include "../visitor/ASTDumpVisitor.h"
-#include "../visitor/ASTToIRTranslator.h"
-#include "../visitor/IRDumpVisitor.h"
 
+#include <slime/visitor/ASTDumpVisitor.h>
+#include <slime/visitor/ASTToIRTranslator.h>
+#include <slime/visitor/IRDumpVisitor.h>
 #include <iostream>
 #include <sstream>
 #include <fstream>
