@@ -1,7 +1,7 @@
 #include "ASTToIRTranslator.h"
-#include "../ir/user.h"
-#include "../ir/instruction.h"
 
+#include <slime/ir/user.h>
+#include <slime/ir/instruction.h>
 #include <assert.h>
 
 namespace slime::visitor {

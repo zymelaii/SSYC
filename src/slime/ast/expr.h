@@ -1,13 +1,13 @@
 #pragma once
 
-#include "../utils/list.h"
-#include "../utils/cast.def"
-#include "../utils/traits.h"
 #include "type.h"
 #include "stmt.h"
 #include "operators.def"
 #include "expr.def"
 
+#include <slime/utils/list.h>
+#include <slime/utils/cast.def>
+#include <slime/utils/traits.h>
 #include <type_traits>
 
 namespace slime::ast {

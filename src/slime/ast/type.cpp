@@ -1,6 +1,6 @@
 #include "type.h"
-#include "../visitor/ASTExprSimplifier.h"
 
+#include <slime/visitor/ASTExprSimplifier.h>
 #include <vector>
 
 namespace slime::ast {

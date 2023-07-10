@@ -1,8 +1,8 @@
 #include "parser.h"
 #include "priority.h"
 #include "diagnosis.h"
-#include "../visitor/ASTExprSimplifier.h"
 
+#include <slime/visitor/ASTExprSimplifier.h>
 #include <cstddef>
 #include <iostream>
 #include <sstream>

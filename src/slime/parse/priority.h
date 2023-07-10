@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../ast/operators.def"
-
+#include <slime/ast/operators.def>
 #include <array>
 #include <stddef.h>
 #include <assert.h>

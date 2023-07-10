@@ -1,9 +1,9 @@
 #pragma once
 
 #include "value.h"
-#include "../utils/list.h"
-#include "../utils/traits.h"
 
+#include <slime/utils/list.h>
+#include <slime/utils/traits.h>
 #include <stdint.h>
 #include <stddef.h>
 

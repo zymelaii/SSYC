@@ -2,8 +2,8 @@
 
 #include "type.h"
 #include "cfg.h"
-#include "../utils/list.h"
 
+#include <slime/utils/list.h>
 #include <stdint.h>
 #include <string_view>
 #include <array>

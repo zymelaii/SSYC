@@ -1,8 +1,7 @@
 #pragma once
 
-#include "../utils/cast.def"
-#include "../utils/traits.h"
-
+#include <slime/utils/cast.def>
+#include <slime/utils/traits.h>
 #include <vector>
 #include <type_traits>
 #include <assert.h>

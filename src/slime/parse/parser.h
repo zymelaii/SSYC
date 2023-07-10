@@ -1,10 +1,9 @@
 #pragma once
 
-#include "../lex/lexer.h"
-#include "../ast/ast.h"
-#include "../ast/stmt.h"
-#include "../ast/expr.h"
-
+#include <slime/lex/lexer.h>
+#include <slime/ast/ast.h>
+#include <slime/ast/stmt.h>
+#include <slime/ast/expr.h>
 #include <set>
 #include <map>
 #include <vector>

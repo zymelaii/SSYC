@@ -1,5 +1,9 @@
 #include "ASTDumpVisitor.h"
 
+#include <slime/ast/decl.h>
+#include <slime/ast/stmt.h>
+#include <slime/ast/expr.h>
+
 namespace slime::visitor {
 
 using namespace ast;
