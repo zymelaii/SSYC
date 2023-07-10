@@ -84,6 +84,47 @@ std::ostream& IRDumpVisitor::dumpValueRef(Value* value) {
     return os();
 }
 
+std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
+    if (data->type()->isInteger()) {
+        os() << "i32 " << static_cast<ConstantInt*>(data)->value;
+    } else if (data->type()->isFloat()) {
+        os() << "float " << static_cast<ConstantFloat*>(data)->value;
+    } else {
+        assert(data->type()->isArray());
+        os() << dumpArrayData(static_cast<ConstantArray*>(data));
+    }
+    return os();
+}
+
+std::ostream& IRDumpVisitor::dumpArrayData(ConstantArray* data) {
+    os() << dumpType(data->type()) << " ";
+    if (data->size() == 0) {
+        os() << "zeroinitializer";
+    } else {
+        os() << "[";
+        for (int i = 0; i < data->size(); ++i) {
+            os() << dumpConstant(data->at(i));
+            if (i + 1 < data->size()) { os() << ", "; }
+        }
+        ConstantData* value = nullptr;
+        const int     n     = data->type()->asArrayType()->size();
+        auto          type  = data->type()->tryGetElementType();
+        if (type->isArray()) {
+            value = ConstantArray::create(type->asArrayType());
+        } else if (type->isInteger()) {
+            value = ConstantInt::create(0);
+        } else if (type->isFloat()) {
+            value = ConstantFloat::create(0);
+        }
+        assert(value != nullptr);
+        for (int i = data->size(); i < n; ++i) {
+            os() << ", " << dumpConstant(value);
+        }
+        os() << "]";
+    }
+    return os();
+}
+
 void IRDumpVisitor::dumpFunction(Function* func) {
     bool declareOnly = func->size() == 0;
     if (declareOnly) {
@@ -121,7 +162,14 @@ void IRDumpVisitor::dumpFunction(Function* func) {
     os() << "}\n\n";
 }
 
-void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {}
+void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {
+    assert(object->data() != nullptr);
+    auto type = object->type()->tryGetElementType();
+    assert(type->isInteger() || type->isFloat() || type->isArray());
+    os() << "@" << object->name() << " = global "
+         << dumpConstant(const_cast<ConstantData*>(object->data()))
+         << ", align 4\n";
+}
 
 void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
     static constexpr auto INST_LOOKUP = std::array<
