@@ -137,6 +137,14 @@ public:
         setName(name);
     }
 
+    inline BasicBlockList& basicBlocks() {
+        return *this;
+    }
+
+    inline const BasicBlockList& basicBlocks() const {
+        return *this;
+    }
+
     inline BasicBlock* front() {
         assert(size() > 0);
         return head()->value();

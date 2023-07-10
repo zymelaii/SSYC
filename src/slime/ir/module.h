@@ -83,6 +83,9 @@ public:
     Function*       lookupFunction(std::string_view name);
     GlobalVariable* lookupGlobalVariable(std::string_view name);
 
+    inline GlobalObjectList&       globalObjects();
+    inline const GlobalObjectList& globalObjects() const;
+
 private:
     const char* moduleName_;
 
@@ -95,6 +98,14 @@ private:
 
 inline std::string_view Module::name() const {
     return moduleName_;
+}
+
+inline GlobalObjectList& Module::globalObjects() {
+    return *this;
+}
+
+inline const GlobalObjectList& Module::globalObjects() const {
+    return *this;
 }
 
 } // namespace slime::ir
