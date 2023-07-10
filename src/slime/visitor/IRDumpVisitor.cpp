@@ -223,9 +223,14 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::GetElementPtr: {
             auto inst = instruction->asGetElementPtr();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(inst->lhs()->type()->tryGetElementType())
-                 << ", ptr " << dumpValueRef(inst->lhs()) << ", i32 0, i32 "
-                 << dumpValueRef(inst->rhs());
+                 << dumpType(inst->op<0>()->type()->tryGetElementType())
+                 << ", ptr " << dumpValueRef(inst->op<0>()) << ", ";
+            if (inst->op<2>() != nullptr) {
+                os() << "i32 " << dumpValueRef(inst->op<1>()) << ", i32 "
+                     << dumpValueRef(inst->op<2>());
+            } else {
+                os() << "i32 " << dumpValueRef(inst->op<1>());
+            }
         } break;
         case InstructionID::Add:
         case InstructionID::Sub:
@@ -275,7 +280,8 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::ICmp: {
             auto inst = instruction->asICmp();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << getPredicateName(inst->predicate()) << " i32 "
+                 << getPredicateName(inst->predicate()) << " "
+                 << dumpType(inst->lhs()->type()) << " "
                  << dumpValueRef(inst->lhs()) << ", "
                  << dumpValueRef(inst->rhs());
         } break;

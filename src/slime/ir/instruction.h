@@ -119,6 +119,8 @@ public:
 
     static inline GetElementPtrInst *createGetElementPtr(
         Value *address, Value *index);
+    static inline GetElementPtrInst *createGetElementPtr(
+        Value *address, Value *zero, Value *index);
 
     static inline AddInst  *createAdd(Value *lhs, Value *rhs);
     static inline SubInst  *createSub(Value *lhs, Value *rhs);
@@ -294,21 +296,35 @@ public:
 
 class GetElementPtrInst final
     : public Instruction
-    , public User<2>
+    , public User<3>
     , public utils::BuildTrait<GetElementPtrInst> {
 public:
+    GetElementPtrInst(Value *address, Value *zero, Value *index)
+        : Instruction(
+            InstructionID::GetElementPtr,
+            this,
+            &Instruction::delegateTotalOperands<User<3>>,
+            &Instruction::delegateOperands<User<3>>)
+        , User<3>(
+              Type::createPointerType(
+                  address->type()->tryGetElementType()->tryGetElementType()),
+              ValueTag::Instruction | 0) {
+        op<0>() = address;
+        op<1>() = zero;
+        op<2>() = index;
+    }
+
     GetElementPtrInst(Value *address, Value *index)
         : Instruction(
             InstructionID::GetElementPtr,
             this,
-            &Instruction::delegateTotalOperands<User<2>>,
-            &Instruction::delegateOperands<User<2>>)
-        , User<2>(
-              Type::createPointerType(
-                  address->type()->tryGetElementType()->tryGetElementType()),
+            &Instruction::delegateTotalOperands<User<3>>,
+            &Instruction::delegateOperands<User<3>>)
+        , User<3>(
+              Type::createPointerType(address->type()->tryGetElementType()),
               ValueTag::Instruction | 0) {
-        lhs() = address;
-        rhs() = index;
+        op<0>() = address;
+        op<1>() = index;
     }
 };
 
@@ -867,6 +883,14 @@ inline GetElementPtrInst *Instruction::createGetElementPtr(
     return GetElementPtrInst::create(address, index);
 }
 
+inline GetElementPtrInst *Instruction::createGetElementPtr(
+    Value *address, Value *zero, Value *index) {
+    assert(address->type()->tryGetElementType() != nullptr);
+    assert(index->type()->equals(Type::getIntegerType()));
+    assert(zero->type()->equals(Type::getIntegerType()));
+    return GetElementPtrInst::create(address, zero, index);
+}
+
 inline AddInst *Instruction::createAdd(Value *lhs, Value *rhs) {
     assert(lhs->type()->equals(Type::getIntegerType()));
     assert(rhs->type()->equals(Type::getIntegerType()));
@@ -1290,5 +1314,4 @@ inline FCmpInst *FCmpInst::createUNO(Value *lhs, Value *rhs) {
 inline FCmpInst *FCmpInst::createTRUE(Value *lhs, Value *rhs) {
     return FCmpInst::create(ComparePredicationType::TRUE, lhs, rhs);
 }
-
 }; // namespace slime::ir
