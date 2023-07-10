@@ -2,6 +2,7 @@
 
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
+#include <slime/pass/ValueNumbering.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -271,7 +272,11 @@ Module *ASTToIRTranslator::translate(
             } break;
         }
     }
-    return translator.module_.release();
+    auto module = translator.module_.release();
+
+    pass::ValueNumberingPass pass;
+    pass.run(module);
+    return module;
 }
 
 void ASTToIRTranslator::translateVarDecl(VarDecl *decl) {
