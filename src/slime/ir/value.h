@@ -127,11 +127,12 @@ private:
 
 class Use {
 public:
-    inline void         reset(const Value *value = nullptr);
-    inline Use         &operator=(const Value *value);
-    inline Use         &operator=(Use &use); //<! always move the use
-    inline const Value *value() const;
-    inline              operator const Value *() const;
+    inline void   reset(const Value *value = nullptr);
+    inline Use   &operator=(const Value *value);
+    inline Use   &operator=(Use &use); //<! always move the use
+    inline Value *value() const;
+    inline        operator Value *() const;
+    inline Value *operator->() const;
 
 private:
     const Value *value_ = nullptr;
@@ -499,16 +500,20 @@ inline Use &Use::operator=(Use &use) {
     return *this;
 }
 
-inline const Value *Use::value() const {
-    return value_;
+inline Value *Use::value() const {
+    return const_cast<Value *>(value_);
 }
 
-inline Use::operator const Value *() const {
-    return value_;
+inline Value *Use::operator->() const {
+    return value();
+}
+
+inline Use::operator Value *() const {
+    return value();
 }
 
 inline BasicBlock::BasicBlock(Function *parent)
-    : Value(Type::getVoidType(), ValueTag::Label | 0)
+    : Value(Type::getLabelType(), ValueTag::Label | 0)
     , parent_{parent}
     , node_{nullptr} {}
 

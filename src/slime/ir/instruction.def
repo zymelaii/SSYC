@@ -36,6 +36,7 @@ enum class InstructionID {
     FCmp,          //<! cmp (float)
     Phi,           //<! Phi node instruction
     Call,          //<! call
+    LAST_INST = Call,
 };
 
 enum class ComparePredicationType {
