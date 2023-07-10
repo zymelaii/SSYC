@@ -60,6 +60,8 @@ protected:
     inline Value(Type *type, uint32_t tag = 0);
 
 public:
+    inline const UseList &uses() const;
+
     inline void addUse(Use *use) const;
     inline void removeUse(Use *use) const;
 
@@ -367,6 +369,10 @@ inline uint32_t operator|(ValueTag tag1, uint32_t tag2) {
 inline Value::Value(Type *type, uint32_t tag)
     : valueType_{type}
     , tag_{tag} {}
+
+inline const UseList &Value::uses() const {
+    return useList_;
+}
 
 inline void Value::addUse(Use *use) const {
     for (auto e : useList_) {

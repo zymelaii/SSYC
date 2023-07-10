@@ -4,6 +4,7 @@ BUILD_*/
 debug/
 release/
 
+*.ll
 *.o
 *.obj
 *.a

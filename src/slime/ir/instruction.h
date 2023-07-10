@@ -81,8 +81,7 @@ public:
     static inline LoadInst  *createLoad(Value *address);
     static inline StoreInst *createStore(Value *address, Value *value);
 
-    static inline RetInst *createRet();
-    static inline RetInst *createRet(Value *value);
+    static inline RetInst *createRet(Value *value = nullptr);
     static inline BrInst  *createBr(BasicBlock *block);
     static inline BrInst  *createBr(
          Value *condition, BasicBlock *branchIf, BasicBlock *branchElse);
@@ -208,14 +207,9 @@ class RetInst final
     , public User<1>
     , public utils::BuildTrait<RetInst> {
 public:
-    RetInst()
+    RetInst(Value *value = nullptr)
         : Instruction(InstructionID::Ret, this)
-        , User<1>(Type::getVoidType(), ValueTag::Instruction | 0) {}
-
-    RetInst(Value *value)
-        : Instruction(InstructionID::Ret, this)
-        , User<1>(value->type(), ValueTag::Instruction | 0) {
-        assert(value != nullptr);
+        , User<1>(Type::getVoidType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
 };
@@ -681,10 +675,6 @@ inline StoreInst *Instruction::createStore(Value *address, Value *value) {
     assert(address->type()->tryGetElementType() != nullptr);
     assert(address->type()->tryGetElementType()->equals(value->type()));
     return StoreInst::create(address, value);
-}
-
-inline RetInst *Instruction::createRet() {
-    return RetInst::create();
 }
 
 inline RetInst *Instruction::createRet(Value *value) {

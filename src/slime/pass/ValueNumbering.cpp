@@ -8,12 +8,6 @@ namespace slime::pass {
 
 using namespace ir;
 
-void ValueNumberingPass::run(Module *target) {
-    for (auto fn : target->globalObjects()) {
-        if (fn->isFunction()) { runOnFunction(fn->asFunction()); }
-    }
-}
-
 void ValueNumberingPass::runOnFunction(Function *target) {
     nextId_ = 0;
     doneSet_.clear();
