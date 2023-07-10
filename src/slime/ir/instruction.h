@@ -556,7 +556,7 @@ class ICmpInst final
 public:
     ICmpInst(ComparePredicationType cmp, Value *lhs, Value *rhs)
         : Instruction(InstructionID::ICmp, this)
-        , User<2>(Type::getIntegerType(), ValueTag::CompareInst | 0)
+        , User<2>(Type::getBooleanType(), ValueTag::CompareInst | 0)
         , predicate_{cmp} {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -588,7 +588,7 @@ class FCmpInst final
 public:
     FCmpInst(ComparePredicationType cmp, Value *lhs, Value *rhs)
         : Instruction(InstructionID::FCmp, this)
-        , User<2>(Type::getIntegerType(), ValueTag::CompareInst | 0)
+        , User<2>(Type::getBooleanType(), ValueTag::CompareInst | 0)
         , predicate_{cmp} {
         this->lhs() = lhs;
         this->rhs() = rhs;
