@@ -109,6 +109,7 @@ public:
 
     inline void setName(std::string_view name, bool force = false);
     inline void setIdUnsafe(int32_t id, uint32_t version = 0);
+    inline void resetValueTypeUnsafe(Type *valueType);
 
 private:
     std::string_view name_      = "";
@@ -491,6 +492,10 @@ inline void Value::setName(std::string_view name, bool force) {
 inline void Value::setIdUnsafe(int32_t id, uint32_t version) {
     id_      = id;
     version_ = version;
+}
+
+inline void Value::resetValueTypeUnsafe(Type *valueType) {
+    valueType_ = valueType;
 }
 
 inline void Use::reset(const Value *value) {

@@ -176,6 +176,7 @@ public:
         if (index >= totalParams()) { return; }
         auto& param = params_.get()[index];
         param.setName(name);
+        param.resetValueTypeUnsafe(proto()->paramTypeAt(index));
         param.attachTo(this, index);
     }
 

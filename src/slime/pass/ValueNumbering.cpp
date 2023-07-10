@@ -12,6 +12,11 @@ void ValueNumberingPass::runOnFunction(Function *target) {
     nextId_ = 0;
     doneSet_.clear();
 
+    for (int i = 0; i < target->totalParams(); ++i) {
+        auto param = const_cast<Parameter *>(&target->params()[i]);
+        param->setIdUnsafe(nextId_++, 0);
+    }
+
     for (auto block : target->basicBlocks()) {
         if (block->name().empty()) {
             block->setIdUnsafe(nextId_++);
