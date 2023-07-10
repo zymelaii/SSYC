@@ -1,46 +1,117 @@
 #include "regalloc.h"
 
+#include <cstdint>
 #include <slime/ir/value.h>
 #include <slime/ir/instruction.h>
 
 namespace slime::backend {
-const char *regTable[] = {
-    "r0",
-    "r1",
-    "r2",
-    "r3",
-    "r4",
-    "r5",
-    "r6",
-    "r7",
-    "r8",
-    "r9",
-    "r10",
-    "r11",
-    "r12",
-    "sp",
-    "lr",
-    "pc"};
+
+bool Allocator::isVariable(Value *val) {
+    return !(val->isConstant() || val->isImmediate() || val->isLabel());
+}
 
 void Allocator::initVarInterval(Function *func) {
     for (auto block : func->basicBlocks()) {
+        auto valVarTable = new ValVarTable;
+        blockVarTable->insert({block, valVarTable});
+        total_inst += block->instructions().size();
         for (auto inst : block->instructions()) {
-            total_inst += inst->totalOperands();
-            
-            inst->operands()[0]->isConstant()
-                | inst->operands()[0]->isImmediate();
-            inst->operands()[0].value();
-            varLiveIntervals->insert({});
+            for (int i = 0; i < inst->totalOperands(); i++) {
+                if (isVariable(inst->useAt(i))) {
+                    Value *val = inst->useAt(i).value();
+                    valVarTable->insert({val, Variable::create(val)});
+                }
+            }
+            if (!inst->unwrap()->type()->isVoid())
+                //! NOTE:
+                //! map.insert在插入键值对时如果已经存在将插入的键值时应该是会插入失败的
+                valVarTable->insert(
+                    {inst->unwrap(), Variable::create(inst->unwrap())});
         }
-        // LiveInterval *interval = LiveInterval::create();
     }
 }
 
 void Allocator::computeInterval(Function *func) {
+    initVarInterval(func);
     auto bit  = func->basicBlocks().rbegin();
     auto bend = func->basicBlocks().rend();
+    cur_inst  = total_inst;
     while (bit != bend) {
         //! TODO: 获取LIVE IN、LIVE OUT
+        auto it          = (*bit)->instructions().rbegin();
+        auto end         = (*bit)->instructions().rend();
+        auto valVarTable = blockVarTable->find(*(bit))->second;
+        while (it != end) {
+            Instruction *inst = *it;
+            //! update live-in
+            for (int i = 0; i < inst->totalOperands(); i++) {
+                if (isVariable(inst->useAt(i))) {
+                    auto interval =
+                        valVarTable->find(inst->useAt(i))->second->livIntvl;
+                    interval->end = std::max(interval->end, cur_inst);
+                    if (inst->useAt(i)->isGlobal()
+                        && interval->start == UINT64_MAX) {
+                        interval->start = interval->end;
+                    }
+                }
+            }
+            //! update live-out
+            if (!inst->unwrap()->type()->isVoid()) {
+                auto interval =
+                    valVarTable->find(inst->unwrap())->second->livIntvl;
+                assert(
+                    interval->start == UINT64_MAX && "SSA only assign ONCE!");
+                interval->start = cur_inst;
+            }
+            --cur_inst;
+            ++it;
+        }
+        ++bit;
+    }
+
+    for (auto e : func->basicBlocks()) {
+        auto e2 = blockVarTable->find(e)->second;
+        for (auto e3 : *e2) {
+            printf(
+                "begin:%lu end:%lu\n",
+                e3.second->livIntvl->start,
+                e3.second->livIntvl->end);
+        }
+    }
+    assert(cur_inst == 0);
+}
+
+ARMGeneralRegs Allocator::allocateRegister() {
+    for (int i = 0; i < 12; i++) {
+        if (regAllocatedMap[i]) { return static_cast<ARMGeneralRegs>(i); }
+    }
+    return ARMGeneralRegs::None;
+}
+
+void Allocator::releaseRegister(ARMGeneralRegs reg) {
+    assert(regAllocatedMap[static_cast<int>(reg)] && "It must be a bug here!");
+    assert(static_cast<int>(reg) < 12);
+    regAllocatedMap[static_cast<int>(reg)] = false;
+}
+
+//! TODO: 添加spill逻辑
+void Allocator::updateAllocation(BasicBlock *block, uint64_t instnum) {
+    auto valVarTable = blockVarTable->find(block)->second;
+    for (auto e : *valVarTable) {
+        auto     var   = e.second;
+        uint64_t start = var->livIntvl->start;
+        uint64_t end   = var->livIntvl->end;
+        if (instnum == start) {
+            ARMGeneralRegs allocReg = allocateRegister();
+            if (allocReg != ARMGeneralRegs::None)
+                var->reg = allocReg;
+            else {
+                //! TODO: spill
+                assert(0);
+            }
+        } else if (instnum > end && !var->is_spilled) {
+            releaseRegister(var->reg);
+        }
     }
 }
 

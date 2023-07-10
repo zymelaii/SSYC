@@ -1,122 +1,135 @@
 #include "gencode.h"
 #include "slime/ir/instruction.def"
 #include "slime/ir/value.h"
+#include "slime/ir/user.h"
 #include "slime/ir/instruction.h"
 
 namespace slime::backend {
-void Generator::GenAssembly(Function *func) {
-    assert(generator_.asmFile != nullptr);
+
+Generator *Generator::generate() {
+    return new Generator();
+}
+
+void Generator::genCode(FILE *fp, Module *module) {
+    generator_.asmFile = fp;
     generator_.allocator = Allocator::create();
-    for (auto block : func->basicBlocks()) {
-        GenInstList(&block->instructions());
+    for (auto e : *module) {
+        if (e->type()->isFunction()) { genAssembly(static_cast<Function *>(e)); }
     }
 }
 
-void Generator::GenInstList(InstructionList *instlist) {
-    for (auto inst : *instlist) { GenInst(inst); }
+void Generator::genAssembly(Function *func) {
+    generator_.allocator->computeInterval(func);
+    for (auto block : func->basicBlocks()) {
+        genInstList(&block->instructions());
+    }
 }
 
-void Generator::GenInst(Instruction *inst) {
+void Generator::genInstList(InstructionList *instlist) {
+    for (auto inst : *instlist) { genInst(inst); }
+}
+
+void Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
-    generator_.allocator->updateAllocation(inst);
+    // generator_.allocator->updateAllocation(inst);
     switch (inst->id()) {
         case InstructionID::Alloca:
-            GenAllocaInst(inst->asAlloca());
+            genAllocaInst(inst->asAlloca());
             break;
         case InstructionID::Load:
-            GenLoadInst(inst->asLoad());
+            genLoadInst(inst->asLoad());
             break;
         case InstructionID::Store:
-            GenStoreInst(inst->asStore());
+            genStoreInst(inst->asStore());
             break;
         case InstructionID::Ret:
-            GenRetInst(inst->asRet());
+            genRetInst(inst->asRet());
             break;
         case InstructionID::Br:
-            GenBrInst(inst->asBr());
+            genBrInst(inst->asBr());
         case InstructionID::GetElementPtr:
-            GenGetElemPtrInst(inst->asGetElementPtr());
+            genGetElemPtrInst(inst->asGetElementPtr());
             break;
         case InstructionID::Add:
-            GenAddInst(inst->asAdd());
+            genAddInst(inst->asAdd());
             break;
         case InstructionID::Sub:
-            GenSubInst(inst->asSub());
+            genSubInst(inst->asSub());
             break;
         case InstructionID::Mul:
-            GenMulInst(inst->asMul());
+            genMulInst(inst->asMul());
             break;
         case InstructionID::UDiv:
-            GenUDivInst(inst->asUDiv());
+            genUDivInst(inst->asUDiv());
             break;
         case InstructionID::SDiv:
-            GenSDivInst(inst->asSDiv());
+            genSDivInst(inst->asSDiv());
             break;
         case InstructionID::URem:
-            GenURemInst(inst->asURem());
+            genURemInst(inst->asURem());
             break;
         case InstructionID::SRem:
-            GenSRemInst(inst->asSRem());
+            genSRemInst(inst->asSRem());
             break;
         case InstructionID::FNeg:
-            GenFNegInst(inst->asFNeg());
+            genFNegInst(inst->asFNeg());
             break;
         case InstructionID::FAdd:
-            GenFAddInst(inst->asFAdd());
+            genFAddInst(inst->asFAdd());
             break;
         case InstructionID::FSub:
-            GenFSubInst(inst->asFSub());
+            genFSubInst(inst->asFSub());
             break;
         case InstructionID::FMul:
-            GenFMulInst(inst->asFMul());
+            genFMulInst(inst->asFMul());
             break;
         case InstructionID::FDiv:
-            GenFDivInst(inst->asFDiv());
+            genFDivInst(inst->asFDiv());
             break;
         case InstructionID::FRem:
-            GenFRemInst(inst->asFRem());
+            genFRemInst(inst->asFRem());
             break;
         case InstructionID::Shl:
-            GenShlInst(inst->asShl());
+            genShlInst(inst->asShl());
             break;
         case InstructionID::LShr:
-            GenLShrInst(inst->asLShr());
+            genLShrInst(inst->asLShr());
             break;
         case InstructionID::AShr:
-            GenAShrInst(inst->asAShr());
+            genAShrInst(inst->asAShr());
             break;
         case InstructionID::And:
-            GenAndInst(inst->asAnd());
+            genAndInst(inst->asAnd());
             break;
         case InstructionID::Or:
-            GenOrInst(inst->asOr());
+            genOrInst(inst->asOr());
             break;
         case InstructionID::Xor:
-            GenXorInst(inst->asXor());
+            genXorInst(inst->asXor());
             break;
         case InstructionID::FPToUI:
-            GenFPToUIInst(inst->asFPToUI());
+            genFPToUIInst(inst->asFPToUI());
             break;
         case InstructionID::FPToSI:
-            GenFPToSIInst(inst->asFPToSI());
+            genFPToSIInst(inst->asFPToSI());
             break;
         case InstructionID::UIToFP:
-            GenUIToFPInst(inst->asUIToFP());
+            genUIToFPInst(inst->asUIToFP());
             break;
         case InstructionID::SIToFP:
-            GenSIToFPInst(inst->asSIToFP());
+            genSIToFPInst(inst->asSIToFP());
             break;
         case InstructionID::ICmp:
-            GenICmpInst(inst->asICmp());
+            genICmpInst(inst->asICmp());
             break;
         case InstructionID::FCmp:
-            GenFCmpInst(inst->asFCmp());
+            genFCmpInst(inst->asFCmp());
             break;
         case InstructionID::Phi:
-            GenPhiInst(inst->asPhi());
+            genPhiInst(inst->asPhi());
             break;
         case InstructionID::Call:
-            GenCallInst(inst->asCall());
+            genCallInst(inst->asCall());
             break;
         default:
             fprintf(stderr, "Unkown ir inst type:%d!\n", instID);
@@ -124,136 +137,136 @@ void Generator::GenInst(Instruction *inst) {
     }
 }
 
-void Generator::GenAllocaInst(AllocaInst *inst) {
+void Generator::genAllocaInst(AllocaInst *inst) {
     fprintf(generator_.asmFile, "sub sp, 4\n");
 }
 
-void Generator::GenLoadInst(LoadInst *inst) {
+void Generator::genLoadInst(LoadInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenStoreInst(StoreInst *inst) {
+void Generator::genStoreInst(StoreInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenRetInst(RetInst *inst) {
+void Generator::genRetInst(RetInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenBrInst(BrInst *inst) {
+void Generator::genBrInst(BrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenGetElemPtrInst(GetElementPtrInst *inst) {
+void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenAddInst(AddInst *inst) {
+void Generator::genAddInst(AddInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenSubInst(SubInst *inst) {
+void Generator::genSubInst(SubInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenMulInst(MulInst *inst) {
+void Generator::genMulInst(MulInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenUDivInst(UDivInst *inst) {
+void Generator::genUDivInst(UDivInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenSDivInst(SDivInst *inst) {
+void Generator::genSDivInst(SDivInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenURemInst(URemInst *inst) {
+void Generator::genURemInst(URemInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenSRemInst(SRemInst *inst) {
+void Generator::genSRemInst(SRemInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFNegInst(FNegInst *inst) {
+void Generator::genFNegInst(FNegInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFAddInst(FAddInst *inst) {
+void Generator::genFAddInst(FAddInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFSubInst(FSubInst *inst) {
+void Generator::genFSubInst(FSubInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFMulInst(FMulInst *inst) {
+void Generator::genFMulInst(FMulInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFDivInst(FDivInst *inst) {
+void Generator::genFDivInst(FDivInst *inst) {
     assert(0 && "unfinished yet!\n");
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFRemInst(FRemInst *inst) {
+void Generator::genFRemInst(FRemInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenShlInst(ShlInst *inst) {
+void Generator::genShlInst(ShlInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenLShrInst(LShrInst *inst) {
+void Generator::genLShrInst(LShrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenAShrInst(AShrInst *inst) {
+void Generator::genAShrInst(AShrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenAndInst(AndInst *inst) {
+void Generator::genAndInst(AndInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenOrInst(OrInst *inst) {
+void Generator::genOrInst(OrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenXorInst(XorInst *inst) {
+void Generator::genXorInst(XorInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFPToUIInst(FPToUIInst *inst) {
+void Generator::genFPToUIInst(FPToUIInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFPToSIInst(FPToSIInst *inst) {
+void Generator::genFPToSIInst(FPToSIInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenUIToFPInst(UIToFPInst *inst) {
+void Generator::genUIToFPInst(UIToFPInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenSIToFPInst(SIToFPInst *inst) {
+void Generator::genSIToFPInst(SIToFPInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenICmpInst(ICmpInst *inst) {
+void Generator::genICmpInst(ICmpInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenFCmpInst(FCmpInst *inst) {
+void Generator::genFCmpInst(FCmpInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenPhiInst(PhiInst *inst) {
+void Generator::genPhiInst(PhiInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::GenCallInst(CallInst *inst) {
+void Generator::genCallInst(CallInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 

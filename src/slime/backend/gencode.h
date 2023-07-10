@@ -5,6 +5,8 @@
 #include <slime/ir/module.h>
 #include <slime/utils/list.h>
 #include <slime/ir/instruction.h>
+#include <bits/types/FILE.h>
+
 #include <cstdint>
 #include <cstddef>
 
@@ -16,44 +18,46 @@ class Generator {
     Generator(){};
 
 public:
-    void GenAssembly(Function *func);
+    static Generator *generate();
+    void              genCode(FILE *fp, Module *module);
+    void              genAssembly(Function *func);
 
 protected:
-    void GenInstList(InstructionList *instlist);
-    void GenInst(Instruction *inst);
-    void GenAllocaInst(AllocaInst *inst);
-    void GenLoadInst(LoadInst *inst);
-    void GenStoreInst(StoreInst *inst);
-    void GenRetInst(RetInst *inst);
-    void GenBrInst(BrInst *inst);
-    void GenGetElemPtrInst(GetElementPtrInst *inst);
-    void GenAddInst(AddInst *inst);
-    void GenSubInst(SubInst *inst);
-    void GenMulInst(MulInst *inst);
-    void GenUDivInst(UDivInst *inst);
-    void GenSDivInst(SDivInst *inst);
-    void GenURemInst(URemInst *inst);
-    void GenSRemInst(SRemInst *inst);
-    void GenFNegInst(FNegInst *inst);
-    void GenFAddInst(FAddInst *inst);
-    void GenFSubInst(FSubInst *inst);
-    void GenFMulInst(FMulInst *inst);
-    void GenFDivInst(FDivInst *inst);
-    void GenFRemInst(FRemInst *inst);
-    void GenShlInst(ShlInst *inst);
-    void GenLShrInst(LShrInst *inst);
-    void GenAShrInst(AShrInst *inst);
-    void GenAndInst(AndInst *inst);
-    void GenOrInst(OrInst *inst);
-    void GenXorInst(XorInst *inst);
-    void GenFPToUIInst(FPToUIInst *inst);
-    void GenFPToSIInst(FPToSIInst *inst);
-    void GenUIToFPInst(UIToFPInst *inst);
-    void GenSIToFPInst(SIToFPInst *inst);
-    void GenICmpInst(ICmpInst *inst);
-    void GenFCmpInst(FCmpInst *inst);
-    void GenPhiInst(PhiInst *inst);
-    void GenCallInst(CallInst *inst);
+    void genInstList(InstructionList *instlist);
+    void genInst(Instruction *inst);
+    void genAllocaInst(AllocaInst *inst);
+    void genLoadInst(LoadInst *inst);
+    void genStoreInst(StoreInst *inst);
+    void genRetInst(RetInst *inst);
+    void genBrInst(BrInst *inst);
+    void genGetElemPtrInst(GetElementPtrInst *inst);
+    void genAddInst(AddInst *inst);
+    void genSubInst(SubInst *inst);
+    void genMulInst(MulInst *inst);
+    void genUDivInst(UDivInst *inst);
+    void genSDivInst(SDivInst *inst);
+    void genURemInst(URemInst *inst);
+    void genSRemInst(SRemInst *inst);
+    void genFNegInst(FNegInst *inst);
+    void genFAddInst(FAddInst *inst);
+    void genFSubInst(FSubInst *inst);
+    void genFMulInst(FMulInst *inst);
+    void genFDivInst(FDivInst *inst);
+    void genFRemInst(FRemInst *inst);
+    void genShlInst(ShlInst *inst);
+    void genLShrInst(LShrInst *inst);
+    void genAShrInst(AShrInst *inst);
+    void genAndInst(AndInst *inst);
+    void genOrInst(OrInst *inst);
+    void genXorInst(XorInst *inst);
+    void genFPToUIInst(FPToUIInst *inst);
+    void genFPToSIInst(FPToSIInst *inst);
+    void genUIToFPInst(UIToFPInst *inst);
+    void genSIToFPInst(SIToFPInst *inst);
+    void genICmpInst(ICmpInst *inst);
+    void genFCmpInst(FCmpInst *inst);
+    void genPhiInst(PhiInst *inst);
+    void genCallInst(CallInst *inst);
 
     void Push();
     void Pop();
