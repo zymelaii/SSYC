@@ -132,28 +132,26 @@ public:
     }
 
     void insertBefore(ListNode *node) {
+        assert(node != nullptr);
         assert(node->parent_ != nullptr);
+        if (parent_ != nullptr) { removeFromList(); }
+        parent_      = node->parent_;
         prev_        = node->prev();
         next_        = node;
-        prev_->next_ = this;
         next_->prev_ = this;
-        if (parent_ != node->parent_) {
-            removeFromList();
-            parent_ = node->parent_;
-        }
+        prev_->next_ = this;
         ++parent_->size_;
     }
 
     void insertAfter(ListNode *node) {
+        assert(node != nullptr);
         assert(node->parent_ != nullptr);
+        if (parent_ != nullptr) { removeFromList(); }
+        parent_      = node->parent_;
         prev_        = node;
         next_        = node->next();
         prev_->next_ = this;
         next_->prev_ = this;
-        if (parent_ != node->parent_) {
-            removeFromList();
-            parent_ = node->parent_;
-        }
         ++parent_->size_;
     }
 
