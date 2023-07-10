@@ -17,7 +17,7 @@ void IRDumpVisitor::dump(Module* module) {
     assert(!currentModule_);
     assert(module != nullptr);
     currentModule_ = module;
-    for (auto object : *module) {
+    for (auto object : module->globalObjects()) {
         assert(object->isGlobal());
         if (object->isFunction()) {
             dumpFunction(object->asFunction());
@@ -147,13 +147,13 @@ void IRDumpVisitor::dumpFunction(Function* func) {
     }
 
     os() << ") {\n";
-    for (auto block : *func) {
+    for (auto block : func->basicBlocks()) {
         if (!block->name().empty()) {
             os() << block->name() << ":\n";
         } else {
             os() << block->id() << ":\n";
         }
-        for (auto inst : *block) {
+        for (auto inst : block->instructions()) {
             os() << "    ";
             dumpInstruction(inst);
             os() << "\n";
@@ -168,7 +168,7 @@ void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {
     assert(type->isInteger() || type->isFloat() || type->isArray());
     os() << "@" << object->name() << " = global "
          << dumpConstant(const_cast<ConstantData*>(object->data()))
-         << ", align 4\n";
+         << ", align 4\n\n";
 }
 
 void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
@@ -219,7 +219,6 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
                      << ", label " << dumpValueRef(inst->op<1>()) << ", label "
                      << dumpValueRef(inst->op<2>());
             }
-            os() << "\n";
         } break;
         case InstructionID::GetElementPtr: {
             auto inst = instruction->asGetElementPtr();

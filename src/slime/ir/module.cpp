@@ -1,12 +1,15 @@
 #include "module.h"
 #include "user.h"
+#include "instruction.h"
 
 #include <string.h>
 
 namespace slime::ir {
 
 Module::Module(const char* name)
-    : moduleName_{strdup(name)} {}
+    : moduleName_{strdup(name)} {
+    initializeBuiltinFunctions();
+}
 
 Module::~Module() {
     free(const_cast<char*>(moduleName_));
@@ -72,6 +75,31 @@ Function* Module::lookupFunction(std::string_view name) {
 GlobalVariable* Module::lookupGlobalVariable(std::string_view name) {
     return globalVariables_.count(name) > 0 ? globalVariables_.at(name)
                                             : nullptr;
+}
+
+CallInst* Module::createMemset(Value* address, uint8_t value, size_t n) {
+    assert(address != nullptr);
+    auto fn = lookupFunction("memset");
+    assert(fn != nullptr);
+    auto call        = Instruction::createCall(fn);
+    call->paramAt(0) = address;
+    call->paramAt(1) = createI32(value);
+    call->paramAt(2) = createI32(n);
+    return call;
+}
+
+void Module::initializeBuiltinFunctions() {
+    bool ok = false;
+    //! void* memset(void*, int, size_t)
+    auto builtinMemset = Function::create(
+        "memset",
+        FunctionType::create(
+            Type::createPointerType(Type::getVoidType()),
+            Type::createPointerType(Type::getVoidType()),
+            Type::getIntegerType(),
+            Type::getIntegerType()));
+    ok = acceptFunction(builtinMemset);
+    assert(ok);
 }
 
 } // namespace slime::ir

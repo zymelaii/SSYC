@@ -69,7 +69,7 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
 
 Value *ASTToIRTranslator::getCompatibleIRValue(
     Expr *value, ir::Type *desired, Module *module) {
-    //! NOTE: assume the value is already regular
+    //! NOTE: assume the value is already regulated
     if (value->tryIntoNoInit() && desired != nullptr) {
         switch (desired->kind()) {
             case TypeKind::Integer: {
@@ -198,6 +198,7 @@ Module *ASTToIRTranslator::translate(
     }
     auto module = translator.module_.release();
     pass::DeadCodeEliminationPass{}.run(module);
+    pass::DeadCodeEliminationPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
     return module;
 }
@@ -218,6 +219,16 @@ void ASTToIRTranslator::translateVarDecl(VarDecl *decl) {
 
         if (!decl->initValue->tryIntoNoInit()) {
             if (auto list = decl->initValue->tryIntoInitList()) {
+                assert(type->isArray());
+                size_t nbytes = 4;
+                auto   t      = type;
+                while (t->isArray()) {
+                    nbytes *= t->asArrayType()->size();
+                    t      = t->tryGetElementType();
+                }
+                module_->createMemset(address, 0, nbytes)
+                    ->insertToTail(state_.currentBlock);
+                translateArrayInitAssign(address, list);
                 //! TODO: handle init-list value-by-value copy assign
             } else {
                 assert(type->isBuiltinType());
@@ -279,13 +290,17 @@ void ASTToIRTranslator::translateFunctionDecl(FunctionDecl *decl) {
         auto it    = decl->begin();
         for (auto param : *decl) {
             auto type = fn->proto()->paramTypeAt(index);
-            fn->setParam(param->name, index++);
+            fn->setParam(param->name, index);
             if (!param->name.empty()) {
                 VarLikeDecl *ptr     = *it;
                 auto         address = Instruction::createAlloca(type);
                 address->insertToTail(entryBlock);
+                auto store = Instruction::createStore(
+                    address, const_cast<Parameter *>(fn->paramAt(index)));
+                store->insertToTail(entryBlock);
                 addressTable[ptr] = address->unwrap();
             }
+            ++index;
             ++it;
         }
 
@@ -557,6 +572,8 @@ void ASTToIRTranslator::translateReturnStmt(
     }
     assert(inst != nullptr);
     inst->insertToTail(block);
+    state_.currentBlock = BasicBlock::create(block->parent());
+    state_.currentBlock->insertOrMoveAfter(block);
     state_.addressOfPrevExpr = nullptr;
     state_.valueOfPrevExpr   = nullptr;
 }
@@ -1008,6 +1025,49 @@ Value *ASTToIRTranslator::translateSubscriptExpr(
     state_.addressOfPrevExpr = valuePtr->unwrap();
     state_.valueOfPrevExpr   = value->unwrap();
     return state_.valueOfPrevExpr;
+}
+
+void ASTToIRTranslator::translateArrayInitAssign(
+    Value *address, InitListExpr *data) {
+    //! assume that init-list is regulated
+    int  index = 0;
+    auto type  = address->type()->tryGetElementType()->tryGetElementType();
+    if (type->isArray()) {
+        for (auto e : *data) {
+            auto list = e->tryIntoInitList();
+            assert(list != nullptr);
+            if (list->size() > 0) {
+                auto inst = GetElementPtrInst::create(
+                    address, module_->createI32(index));
+                inst->insertToTail(state_.currentBlock);
+                translateArrayInitAssign(inst->unwrap(), list);
+            }
+            ++index;
+        }
+    } else {
+        for (auto e : *data) {
+            auto inst =
+                GetElementPtrInst::create(address, module_->createI32(index));
+            inst->insertToTail(state_.currentBlock);
+            auto value = translateExpr(state_.currentBlock, e);
+            assert(value->type()->isBuiltinType() && type->isBuiltinType());
+            if (!value->type()->equals(type)) {
+                if (type->isInteger()) {
+                    auto inst = Instruction::createFPToSI(value);
+                    inst->insertToTail(state_.currentBlock);
+                    value = inst->unwrap();
+                } else {
+                    auto inst = Instruction::createSIToFP(value);
+                    inst->insertToTail(state_.currentBlock);
+                    value = inst->unwrap();
+                }
+            }
+            assert(value->type()->equals(type));
+            Instruction::createStore(inst->unwrap(), value)
+                ->insertToTail(state_.currentBlock);
+            ++index;
+        }
+    }
 }
 
 } // namespace slime::visitor
