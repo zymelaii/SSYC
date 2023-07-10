@@ -6,6 +6,7 @@
 #include <slime/utils/traits.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <memory>
 
 namespace slime::ir {
 
