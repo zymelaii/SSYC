@@ -49,9 +49,28 @@ std::string_view getPredicateName(ComparePredicationType predicate);
 
 class Instruction {
 protected:
-    Instruction(InstructionID id, Value *instruction)
+    using FnTotalOperandsPtr = size_t (*)(Instruction *);
+    using FnOperandsPtr      = Use *(*)(Instruction *);
+
+    template <typename T>
+    static size_t delegateTotalOperands(Instruction *self) {
+        return static_cast<T *>(self->unwrap())->totalUse();
+    }
+
+    template <typename T>
+    static Use *delegateOperands(Instruction *self) {
+        return static_cast<T *>(self->unwrap())->op();
+    }
+
+    Instruction(
+        InstructionID      id,
+        Value             *instruction,
+        FnTotalOperandsPtr totalOperandsPtr,
+        FnOperandsPtr      operandsPtr)
         : id_{id}
-        , instruction_{instruction} {
+        , instruction_{instruction}
+        , totalOperandsPtr_{totalOperandsPtr}
+        , operandsPtr_{operandsPtr} {
         instruction->setPatch(reinterpret_cast<void *>(this));
     }
 
@@ -66,6 +85,18 @@ public:
 
     BasicBlock *parent() const {
         return parent_;
+    }
+
+    size_t totalOperands() const {
+        return totalOperandsPtr_(const_cast<Instruction *>(this));
+    }
+
+    Use *operands() const {
+        return operandsPtr_(const_cast<Instruction *>(this));
+    }
+
+    Use &useAt(size_t index) const {
+        return operands()[index];
     }
 
     bool insertToHead(BasicBlock *block);
@@ -164,6 +195,9 @@ private:
     Value *const           instruction_;
     BasicBlock            *parent_ = nullptr;
     BasicBlock::node_type *self_   = nullptr;
+
+    const FnTotalOperandsPtr totalOperandsPtr_;
+    const FnOperandsPtr      operandsPtr_;
 };
 
 class AllocaInst final
@@ -172,7 +206,11 @@ class AllocaInst final
     , public utils::BuildTrait<AllocaInst> {
 public:
     AllocaInst(Type *type)
-        : Instruction(InstructionID::Alloca, this)
+        : Instruction(
+            InstructionID::Alloca,
+            this,
+            &Instruction::delegateTotalOperands<User<0>>,
+            &Instruction::delegateOperands<User<0>>)
         , User<0>(Type::createPointerType(type), ValueTag::Instruction | 0) {}
 };
 
@@ -182,7 +220,11 @@ class LoadInst final
     , public utils::BuildTrait<LoadInst> {
 public:
     LoadInst(Value *address)
-        : Instruction(InstructionID::Load, this)
+        : Instruction(
+            InstructionID::Load,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(
               address->type()->tryGetElementType(), ValueTag::Instruction | 0) {
         operand() = address;
@@ -195,7 +237,11 @@ class StoreInst final
     , public utils::BuildTrait<StoreInst> {
 public:
     StoreInst(Value *address, Value *value)
-        : Instruction(InstructionID::Store, this)
+        : Instruction(
+            InstructionID::Store,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getVoidType(), ValueTag::Instruction | 0) {
         lhs() = address;
         rhs() = value;
@@ -208,7 +254,11 @@ class RetInst final
     , public utils::BuildTrait<RetInst> {
 public:
     RetInst(Value *value = nullptr)
-        : Instruction(InstructionID::Ret, this)
+        : Instruction(
+            InstructionID::Ret,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(Type::getVoidType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
@@ -220,13 +270,21 @@ class BrInst final
     , public utils::BuildTrait<BrInst> {
 public:
     BrInst(BasicBlock *block)
-        : Instruction(InstructionID::Br, this)
+        : Instruction(
+            InstructionID::Br,
+            this,
+            &Instruction::delegateTotalOperands<User<3>>,
+            &Instruction::delegateOperands<User<3>>)
         , User<3>(Type::getVoidType(), ValueTag::Instruction | 0) {
         op<0>() = block;
     }
 
     BrInst(Value *condition, BasicBlock *branchIf, BasicBlock *branchElse)
-        : Instruction(InstructionID::Br, this)
+        : Instruction(
+            InstructionID::Br,
+            this,
+            &Instruction::delegateTotalOperands<User<3>>,
+            &Instruction::delegateOperands<User<3>>)
         , User<3>(Type::getVoidType(), ValueTag::Instruction | 0) {
         op<0>() = condition;
         op<1>() = branchIf;
@@ -240,7 +298,11 @@ class GetElementPtrInst final
     , public utils::BuildTrait<GetElementPtrInst> {
 public:
     GetElementPtrInst(Value *address, Value *index)
-        : Instruction(InstructionID::GetElementPtr, this)
+        : Instruction(
+            InstructionID::GetElementPtr,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(
               Type::createPointerType(
                   address->type()->tryGetElementType()->tryGetElementType()),
@@ -256,7 +318,11 @@ class AddInst final
     , public utils::BuildTrait<AddInst> {
 public:
     AddInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::Add, this)
+        : Instruction(
+            InstructionID::Add,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -269,7 +335,11 @@ class SubInst final
     , public utils::BuildTrait<SubInst> {
 public:
     SubInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::Sub, this)
+        : Instruction(
+            InstructionID::Sub,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -282,7 +352,11 @@ class MulInst final
     , public utils::BuildTrait<MulInst> {
 public:
     MulInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::Mul, this)
+        : Instruction(
+            InstructionID::Mul,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -295,7 +369,11 @@ class UDivInst final
     , public utils::BuildTrait<UDivInst> {
 public:
     UDivInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::UDiv, this)
+        : Instruction(
+            InstructionID::UDiv,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -308,7 +386,11 @@ class SDivInst final
     , public utils::BuildTrait<SDivInst> {
 public:
     SDivInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::SDiv, this)
+        : Instruction(
+            InstructionID::SDiv,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -321,7 +403,11 @@ class URemInst final
     , public utils::BuildTrait<URemInst> {
 public:
     URemInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::URem, this)
+        : Instruction(
+            InstructionID::URem,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -334,7 +420,11 @@ class SRemInst final
     , public utils::BuildTrait<SRemInst> {
 public:
     SRemInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::SRem, this)
+        : Instruction(
+            InstructionID::SRem,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -347,7 +437,11 @@ class FNegInst final
     , public utils::BuildTrait<FNegInst> {
 public:
     FNegInst(Value *value)
-        : Instruction(InstructionID::FNeg, this)
+        : Instruction(
+            InstructionID::FNeg,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(Type::getFloatType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
@@ -359,7 +453,11 @@ class FAddInst final
     , public utils::BuildTrait<FAddInst> {
 public:
     FAddInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::FAdd, this)
+        : Instruction(
+            InstructionID::FAdd,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getFloatType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -372,7 +470,11 @@ class FSubInst final
     , public utils::BuildTrait<FSubInst> {
 public:
     FSubInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::FSub, this)
+        : Instruction(
+            InstructionID::FSub,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getFloatType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -385,7 +487,11 @@ class FMulInst final
     , public utils::BuildTrait<FMulInst> {
 public:
     FMulInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::FMul, this)
+        : Instruction(
+            InstructionID::FMul,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getFloatType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -398,7 +504,11 @@ class FDivInst final
     , public utils::BuildTrait<FDivInst> {
 public:
     FDivInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::FDiv, this)
+        : Instruction(
+            InstructionID::FDiv,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getFloatType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -411,7 +521,11 @@ class FRemInst final
     , public utils::BuildTrait<FRemInst> {
 public:
     FRemInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::FRem, this)
+        : Instruction(
+            InstructionID::FRem,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getFloatType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -424,7 +538,11 @@ class ShlInst final
     , public utils::BuildTrait<ShlInst> {
 public:
     ShlInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::Shl, this)
+        : Instruction(
+            InstructionID::Shl,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -437,7 +555,11 @@ class LShrInst final
     , public utils::BuildTrait<LShrInst> {
 public:
     LShrInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::LShr, this)
+        : Instruction(
+            InstructionID::LShr,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -450,7 +572,11 @@ class AShrInst final
     , public utils::BuildTrait<AShrInst> {
 public:
     AShrInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::AShr, this)
+        : Instruction(
+            InstructionID::AShr,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -463,7 +589,11 @@ class AndInst final
     , public utils::BuildTrait<AndInst> {
 public:
     AndInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::And, this)
+        : Instruction(
+            InstructionID::And,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -476,7 +606,11 @@ class OrInst final
     , public utils::BuildTrait<OrInst> {
 public:
     OrInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::Or, this)
+        : Instruction(
+            InstructionID::Or,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -489,7 +623,11 @@ class XorInst final
     , public utils::BuildTrait<XorInst> {
 public:
     XorInst(Value *lhs, Value *rhs)
-        : Instruction(InstructionID::Xor, this)
+        : Instruction(
+            InstructionID::Xor,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         this->lhs() = lhs;
         this->rhs() = rhs;
@@ -502,7 +640,11 @@ class FPToUIInst final
     , public utils::BuildTrait<FPToUIInst> {
 public:
     FPToUIInst(Value *value)
-        : Instruction(InstructionID::FPToUI, this)
+        : Instruction(
+            InstructionID::FPToUI,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
@@ -514,7 +656,11 @@ class FPToSIInst final
     , public utils::BuildTrait<FPToSIInst> {
 public:
     FPToSIInst(Value *value)
-        : Instruction(InstructionID::FPToSI, this)
+        : Instruction(
+            InstructionID::FPToSI,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(Type::getIntegerType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
@@ -526,7 +672,11 @@ class UIToFPInst final
     , public utils::BuildTrait<UIToFPInst> {
 public:
     UIToFPInst(Value *value)
-        : Instruction(InstructionID::UIToFP, this)
+        : Instruction(
+            InstructionID::UIToFP,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(Type::getFloatType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
@@ -538,7 +688,11 @@ class SIToFPInst final
     , public utils::BuildTrait<SIToFPInst> {
 public:
     SIToFPInst(Value *value)
-        : Instruction(InstructionID::SIToFP, this)
+        : Instruction(
+            InstructionID::SIToFP,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
         , User<1>(Type::getFloatType(), ValueTag::Instruction | 0) {
         operand() = value;
     }
@@ -550,7 +704,11 @@ class ICmpInst final
     , public utils::BuildTrait<ICmpInst> {
 public:
     ICmpInst(ComparePredicationType cmp, Value *lhs, Value *rhs)
-        : Instruction(InstructionID::ICmp, this)
+        : Instruction(
+            InstructionID::ICmp,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getBooleanType(), ValueTag::CompareInst | 0)
         , predicate_{cmp} {
         this->lhs() = lhs;
@@ -582,7 +740,11 @@ class FCmpInst final
     , public utils::BuildTrait<FCmpInst> {
 public:
     FCmpInst(ComparePredicationType cmp, Value *lhs, Value *rhs)
-        : Instruction(InstructionID::FCmp, this)
+        : Instruction(
+            InstructionID::FCmp,
+            this,
+            &Instruction::delegateTotalOperands<User<2>>,
+            &Instruction::delegateOperands<User<2>>)
         , User<2>(Type::getBooleanType(), ValueTag::CompareInst | 0)
         , predicate_{cmp} {
         this->lhs() = lhs;
@@ -620,7 +782,11 @@ class PhiInst final
     , public utils::BuildTrait<PhiInst> {
 public:
     PhiInst(Type *type)
-        : Instruction(InstructionID::Phi, this)
+        : Instruction(
+            InstructionID::Phi,
+            this,
+            &Instruction::delegateTotalOperands<User<-1>>,
+            &Instruction::delegateOperands<User<-1>>)
         , User<-1>(type, ValueTag::Instruction | 0) {}
 
     bool addIncomingValue(Value *value, BasicBlock *block);
@@ -642,7 +808,11 @@ class CallInst final
     , public utils::BuildTrait<CallInst> {
 public:
     CallInst(Function *callee)
-        : Instruction(InstructionID::Call, this)
+        : Instruction(
+            InstructionID::Call,
+            this,
+            &Instruction::delegateTotalOperands<User<-1>>,
+            &Instruction::delegateOperands<User<-1>>)
         , User<-1>(callee->proto()->returnType(), ValueTag::Instruction | 0) {
         resize(callee->proto()->totalParams() + 1);
         op()[0] = callee;
