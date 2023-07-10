@@ -4,3 +4,9 @@
 [submodule "deps/llvm-project"]
 	path = deps/llvm-project
 	url = git@github.com:llvm/llvm-project.git
+[submodule "deps/lua"]
+	path = deps/lua
+	url = git@github.com:lua/lua
+[submodule "deps/MimiC"]
+	path = deps/MimiC
+	url = git@github.com:MaxXSoft/MimiC.git

@@ -1,0 +1,100 @@
+#pragma once
+
+#include <slime/utils/list.h>
+#include <stdint.h>
+#include <string_view>
+#include <map>
+
+namespace slime::ir {
+
+class Type;
+class SequentialType;
+class ArrayType;
+class PointerType;
+class FunctionType;
+
+class Value;
+class Use;
+template <int N>
+class User;
+
+class BasicBlock;
+class Parameter;
+
+class Constant;
+class ConstantData;
+class ConstantInt;
+class ConstantFloat;
+class ConstantArray;
+class GlobalObject;
+class GlobalVariable;
+class Function;
+
+class Instruction;
+class AllocaInst;
+class LoadInst;
+class StoreInst;
+class RetInst;
+class BrInst;
+class GetElementPtrInst;
+class AddInst;
+class SubInst;
+class MulInst;
+class UDivInst;
+class SDivInst;
+class URemInst;
+class SRemInst;
+class FNegInst;
+class FAddInst;
+class FSubInst;
+class FMulInst;
+class FDivInst;
+class FRemInst;
+class ShlInst;
+class LShrInst;
+class AShrInst;
+class AndInst;
+class OrInst;
+class XorInst;
+class FPToUIInst;
+class FPToSIInst;
+class UIToFPInst;
+class SIToFPInst;
+class ICmpInst;
+class FCmpInst;
+class PhiInst;
+class CallInst;
+
+using GlobalObjectList = utils::ListTrait<GlobalObject*>;
+
+class Module : public GlobalObjectList {
+public:
+    Module(const char* name);
+    ~Module();
+
+    inline std::string_view name() const;
+
+    ConstantInt*   createI32(int32_t value);
+    ConstantFloat* createF32(float value);
+
+    bool acceptFunction(Function* fn);
+    bool acceptGlobalVariable(GlobalVariable* var);
+
+    Function*       lookupFunction(std::string_view name);
+    GlobalVariable* lookupGlobalVariable(std::string_view name);
+
+private:
+    const char* moduleName_;
+
+    std::map<int32_t, ConstantInt*> i32DataMap_;
+    std::map<float, ConstantFloat*> f32DataMap_;
+
+    std::map<std::string_view, Function*>       functions_;
+    std::map<std::string_view, GlobalVariable*> globalVariables_;
+};
+
+inline std::string_view Module::name() const {
+    return moduleName_;
+}
+
+} // namespace slime::ir

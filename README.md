@@ -1,21 +1,22 @@
 # Slime SysY Compiler
 
-SSYC is an ARM-v7a assembly compiler for SysY written in C++20 and YACC.
+SSYC is an ARM-v7a assembly compiler for SysY written in pure C++17.
 
 # Build
 
 ```sh
 cmake -B build -S . --install-prefix <install-prefix>
 cmake --build build --target install
-<install-prefix>/bin/SSYC [options]
+<install-prefix>/bin/slimec [options]
 ```
 
 # Usage
 
 ```sh
-SSYC [--input <source_file>]
+slimec [<source>] [options]
 ```
 
 Options:
-- `--help`: show usage
-- `--input`: specify the source file (stdin by default)
+
+- `--lex-only` perfom lex only
+- `--dump-ast` dump AST to stderr

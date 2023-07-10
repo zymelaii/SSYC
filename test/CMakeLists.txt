@@ -14,5 +14,5 @@ target_include_directories(
 target_link_libraries(
 	${PROJECT_NAME}
 	PRIVATE GTest::gtest GTest::gtest_main
-	PRIVATE SSYC::ssycapi
+	PRIVATE ssyc::slime
 )
