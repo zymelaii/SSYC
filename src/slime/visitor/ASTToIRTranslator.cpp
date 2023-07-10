@@ -844,6 +844,7 @@ Value *ASTToIRTranslator::translateBinaryExpr(
             assert(rhs->isInstruction());
             rhs->asInstruction()->insertToTail(nextBlock);
         }
+        Instruction::createBr(exitBlock)->insertToTail(nextBlock);
 
         auto phi = Instruction::createPhi(ir::Type::getIntegerType());
         phi->addIncomingValue(lhs, block);
