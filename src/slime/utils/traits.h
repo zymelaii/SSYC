@@ -62,6 +62,42 @@ struct BuildTrait<T, true> {
     }
 };
 
+template <typename Fn>
+union VoidPtrFnTrait;
+
+template <typename T, typename R, typename... Args>
+union VoidPtrFnTrait<R (T::*)(Args...)> {
+    using type = R (T::*)(Args...);
+
+    constexpr VoidPtrFnTrait(type fn)
+        : fn{fn} {}
+
+    const type  fn;
+    const void* ptr;
+};
+
+template <typename T, typename R, typename... Args>
+union VoidPtrFnTrait<R (T::*)(Args...) const> {
+    using type = R (T::*)(Args...) const;
+
+    constexpr VoidPtrFnTrait(type fn)
+        : fn{fn} {}
+
+    const type  fn;
+    const void* ptr;
+};
+
+template <typename R, typename... Args>
+union VoidPtrFnTrait<R (*)(Args...)> {
+    using type = R (*)(Args...);
+
+    constexpr VoidPtrFnTrait(type fn)
+        : fn{fn} {}
+
+    const type  fn;
+    const void* ptr;
+};
+
 } // namespace detail
 
 template <typename T, typename G>
@@ -81,5 +117,10 @@ using BuildTrait = detail::BuildTrait<T, false>;
 
 template <typename T>
 using UniqueBuildTrait = detail::BuildTrait<T, true>;
+
+template <typename Fn>
+constexpr inline void* castFnToVoidPtr(Fn fn) {
+    return const_cast<void*>(detail::VoidPtrFnTrait<Fn>(fn).ptr);
+}
 
 } // namespace slime::utils
