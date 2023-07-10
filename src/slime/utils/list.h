@@ -395,7 +395,7 @@ public:
 
         reference operator*() {
             assert(ptr_ != parent_->tailGuard());
-            return ptr_;
+            return *ptr_;
         }
 
         pointer operator->() {
