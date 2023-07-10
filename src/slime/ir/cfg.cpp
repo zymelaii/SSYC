@@ -1,58 +1,105 @@
 #include "cfg.h"
 #include "value.h"
+#include "instruction.h"
 
 #include <assert.h>
 
 namespace slime::ir {
 
-void CFGNode::resetBranch() {
-    //! NOTE: CFGNode derives the BasicBlock
+namespace detail {
+static const CFGNode TERMINAL;
+} // namespace detail
+
+void CFGNode::reset() {
     auto self = static_cast<BasicBlock*>(this);
-    if (control_ != nullptr) {
-        control_ = nullptr;
-        jmpIf_->unlinkFrom(self);
-        jmpElse_->unlinkFrom(self);
-    } else if (jmpIf_ != nullptr) {
-        jmpIf_->unlinkFrom(self);
+    if (!isIncomplete()) {
+        if (isBranched()) { branchElse_->unlinkFrom(self); }
+        branch_->unlinkFrom(self);
+        //! strip branch instruction
+        assert(self->instructions().size() > 0);
+        auto br = self->instructions().tail()->value();
+        assert(br->id() == InstructionID::Br || br->id() == InstructionID::Ret);
+        if (br->id() == InstructionID::Br) {
+            auto inst = br->asBr();
+            inst->op<0>().reset();
+            inst->op<1>().reset();
+            inst->op<2>().reset();
+        } else {
+            br->asRet()->operand().reset();
+        }
+        br->removeFromBlock();
     }
-    control_ = nullptr;
-    jmpIf_   = nullptr;
-    jmpElse_ = nullptr;
+    control_    = nullptr;
+    branch_     = nullptr;
+    branchElse_ = nullptr;
 }
 
-void CFGNode::resetBranch(BasicBlock* block) {
-    assert(block != nullptr);
-    //! NOTE: CFGNode derives the BasicBlock
+void CFGNode::reset(BasicBlock* branch) {
+    reset();
     auto self = static_cast<BasicBlock*>(this);
-    resetBranch();
-    jmpIf_ = block;
-    block->addIncoming(self);
+    if (branch != terminal()) {
+        Instruction::createBr(branch)->insertToTail(self);
+        branch_ = branch;
+        branch_->addIncoming(self);
+    } else {
+        auto type = self->parent()->type()->asFunctionType()->returnType();
+        assert(type->isVoid());
+        Instruction::createRet()->insertToTail(self);
+        branch_ = terminal();
+    }
 }
 
-void CFGNode::resetBranch(
-    Value* control, BasicBlock* branchIf, BasicBlock* branchElse) {
-    assert(control != nullptr);
-    assert(branchIf != nullptr);
-    assert(branchElse != nullptr);
-    //! NOTE: CFGNode derives the BasicBlock
+void CFGNode::reset(
+    Value* control, BasicBlock* branch, BasicBlock* branchElse) {
+    assert(control->type()->isBoolean());
+    reset();
     auto self = static_cast<BasicBlock*>(this);
-    resetBranch();
-    control_ = control;
-    jmpIf_   = branchIf;
-    jmpElse_ = branchElse;
-    branchIf->addIncoming(self);
-    branchElse->addIncoming(self);
+    Instruction::createBr(control, branch, branchElse)->insertToTail(self);
+    control_    = control;
+    branch_     = branch;
+    branchElse_ = branchElse;
+    branch_->addIncoming(self);
+    branchElse_->addIncoming(self);
+}
+
+bool CFGNode::tryMarkAsTerminal(Value* hint) {
+    auto self = static_cast<BasicBlock*>(this);
+    if (isIncomplete()) {
+        auto type = self->parent()->type()->asFunctionType()->returnType();
+        Instruction* ret = nullptr;
+        if (type->isVoid()) {
+            ret = Instruction::createRet();
+        } else if (hint != nullptr && hint->type()->equals(type)) {
+            ret = Instruction::createRet(hint);
+        }
+        if (!ret) { return false; }
+        reset();
+        ret->insertToTail(self);
+        auto ptr = const_cast<CFGNode*>(&detail::TERMINAL);
+        branch_  = static_cast<BasicBlock*>(ptr);
+        assert(isTerminal());
+    }
+    return false;
+}
+
+BasicBlock* CFGNode::terminal() {
+    auto ptr = const_cast<CFGNode*>(&detail::TERMINAL);
+    return static_cast<BasicBlock*>(ptr);
 }
 
 void CFGNode::addIncoming(BasicBlock* inBlock) {
-    if (maybeFrom(inBlock)) { return; }
-    inBlocks_.insert(inBlock);
+    if (this != terminal()) {
+        if (maybeFrom(inBlock)) { return; }
+        inBlocks_.insert(inBlock);
+    }
 }
 
 void CFGNode::unlinkFrom(BasicBlock* inBlock) {
     //! WANRING: never call it at 'this' context
-    assert(maybeFrom(inBlock));
-    inBlocks_.erase(inBlock);
+    if (this != terminal()) {
+        assert(maybeFrom(inBlock));
+        inBlocks_.erase(inBlock);
+    }
 }
 
 } // namespace slime::ir

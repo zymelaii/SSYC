@@ -77,7 +77,7 @@ bool BasicBlock::insertOrMoveAfter(BasicBlock *block) {
 
 bool BasicBlock::remove() {
     if (totalInBlocks() > 0) { return false; }
-    resetBranch();
+    reset();
     node_->removeFromList();
     return true;
 }

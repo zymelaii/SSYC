@@ -375,25 +375,19 @@ void ASTToIRTranslator::translateIfStmt(BasicBlock *block, IfStmt *stmt) {
     if (stmt->hasBranchElse()) {
         auto branchElse = BasicBlock::create(fn);
         branchElse->insertOrMoveAfter(branchIf);
-        Instruction::createBr(condition, branchIf, branchElse)
-            ->insertToTail(block);
-        block->resetBranch(condition, branchIf, branchElse);
+        block->reset(condition, branchIf, branchElse);
         state_.currentBlock = branchElse;
         translateStmt(branchElse, stmt->branchElse);
         branchElse = state_.currentBlock;
-        Instruction::createBr(branchExit)->insertToTail(branchElse);
-        branchElse->resetBranch(branchExit);
+        branchElse->reset(branchExit);
     } else {
-        Instruction::createBr(condition, branchIf, branchExit)
-            ->insertToTail(block);
-        block->resetBranch(condition, branchIf, branchExit);
+        block->reset(condition, branchIf, branchExit);
     }
 
     state_.currentBlock = branchIf;
     translateStmt(branchIf, stmt->branchIf);
     branchIf = state_.currentBlock;
-    Instruction::createBr(branchExit)->insertToTail(branchIf);
-    branchIf->resetBranch(branchExit);
+    branchIf->reset(branchExit);
 
     state_.currentBlock = branchExit;
 }
@@ -411,14 +405,12 @@ void ASTToIRTranslator::translateDoStmt(BasicBlock *block, DoStmt *stmt) {
     //! update loop table before body translation
     state_.loopTable[stmt] = desc;
 
-    Instruction::createBr(desc.branchLoop)->insertToTail(block);
-    block->resetBranch(desc.branchLoop);
+    block->reset(desc.branchLoop);
 
     state_.currentBlock = desc.branchLoop;
     translateStmt(desc.branchLoop, stmt->loopBody);
     auto loopEndBlock = state_.currentBlock;
-    Instruction::createBr(desc.branchCond)->insertToTail(loopEndBlock);
-    loopEndBlock->resetBranch(desc.branchCond);
+    loopEndBlock->reset(desc.branchCond);
 
     state_.currentBlock = desc.branchCond;
     assert(stmt->condition->tryIntoExprStmt());
@@ -434,9 +426,7 @@ void ASTToIRTranslator::translateDoStmt(BasicBlock *block, DoStmt *stmt) {
         condition->asInstruction()->insertToTail(condEndBlock);
     }
 
-    Instruction::createBr(condition, desc.branchLoop, desc.branchExit)
-        ->insertToTail(condEndBlock);
-    condEndBlock->resetBranch(condition, desc.branchLoop, desc.branchExit);
+    condEndBlock->reset(condition, desc.branchLoop, desc.branchExit);
 
     state_.currentBlock = desc.branchExit;
 }
@@ -454,8 +444,7 @@ void ASTToIRTranslator::translateWhileStmt(BasicBlock *block, WhileStmt *stmt) {
     //! update loop table before body translation
     state_.loopTable[stmt] = desc;
 
-    Instruction::createBr(desc.branchCond)->insertToTail(block);
-    block->resetBranch(desc.branchCond);
+    block->reset(desc.branchCond);
 
     state_.currentBlock = desc.branchCond;
     assert(stmt->condition->tryIntoExprStmt());
@@ -471,15 +460,12 @@ void ASTToIRTranslator::translateWhileStmt(BasicBlock *block, WhileStmt *stmt) {
         condition->asInstruction()->insertToTail(condEndBlock);
     }
 
-    Instruction::createBr(condition, desc.branchLoop, desc.branchExit)
-        ->insertToTail(condEndBlock);
-    condEndBlock->resetBranch(condition, desc.branchLoop, desc.branchExit);
+    condEndBlock->reset(condition, desc.branchLoop, desc.branchExit);
 
     state_.currentBlock = desc.branchLoop;
     translateStmt(desc.branchLoop, stmt->loopBody);
     auto loopEndBlock = state_.currentBlock;
-    Instruction::createBr(desc.branchCond)->insertToTail(loopEndBlock);
-    loopEndBlock->resetBranch(desc.branchCond);
+    loopEndBlock->reset(desc.branchCond);
 
     state_.currentBlock = desc.branchExit;
 }
@@ -502,8 +488,7 @@ void ASTToIRTranslator::translateForStmt(BasicBlock *block, ForStmt *stmt) {
     //! update loop table before body translation
     state_.loopTable[stmt] = desc;
 
-    Instruction::createBr(desc.branchCond)->insertToTail(block);
-    block->resetBranch(desc.branchCond);
+    block->reset(desc.branchCond);
 
     if (!isEndlessLoop) {
         state_.currentBlock = desc.branchCond;
@@ -520,12 +505,9 @@ void ASTToIRTranslator::translateForStmt(BasicBlock *block, ForStmt *stmt) {
             condition->asInstruction()->insertToTail(condEndBlock);
         }
 
-        Instruction::createBr(condition, desc.branchLoop, desc.branchExit)
-            ->insertToTail(condEndBlock);
-        condEndBlock->resetBranch(condition, desc.branchLoop, desc.branchExit);
+        condEndBlock->reset(condition, desc.branchLoop, desc.branchExit);
     } else {
-        Instruction::createBr(desc.branchLoop)->insertToTail(desc.branchCond);
-        desc.branchCond->resetBranch(desc.branchLoop);
+        desc.branchCond->reset(desc.branchLoop);
     }
 
     state_.currentBlock = desc.branchLoop;
@@ -533,8 +515,7 @@ void ASTToIRTranslator::translateForStmt(BasicBlock *block, ForStmt *stmt) {
     auto loopEndBlock = state_.currentBlock;
     translateStmt(loopEndBlock, stmt->increment);
     loopEndBlock = state_.currentBlock;
-    Instruction::createBr(desc.branchCond)->insertToTail(loopEndBlock);
-    loopEndBlock->resetBranch(desc.branchCond);
+    loopEndBlock->reset(desc.branchCond);
 
     state_.currentBlock = desc.branchExit;
 }
@@ -542,8 +523,7 @@ void ASTToIRTranslator::translateForStmt(BasicBlock *block, ForStmt *stmt) {
 void ASTToIRTranslator::translateBreakStmt(BasicBlock *block, BreakStmt *stmt) {
     assert(state_.loopTable.count(stmt->parent) == 1);
     auto &desc = state_.loopTable[stmt->parent];
-    Instruction::createBr(desc.branchExit)->insertToTail(block);
-    block->resetBranch(desc.branchExit);
+    block->reset(desc.branchExit);
     auto unreachable = BasicBlock::create(block->parent());
     unreachable->insertOrMoveAfter(block);
     state_.currentBlock = unreachable;
@@ -553,8 +533,7 @@ void ASTToIRTranslator::translateContinueStmt(
     BasicBlock *block, ContinueStmt *stmt) {
     assert(state_.loopTable.count(stmt->parent) == 1);
     auto &desc = state_.loopTable[stmt->parent];
-    Instruction::createBr(desc.branchCond)->insertToTail(block);
-    block->resetBranch(desc.branchCond);
+    block->reset(desc.branchCond);
     auto unreachable = BasicBlock::create(block->parent());
     unreachable->insertOrMoveAfter(block);
     state_.currentBlock = unreachable;
@@ -632,7 +611,16 @@ Value *ASTToIRTranslator::translateDeclRefExpr(
     //! variableAddressTable
     assert(state_.variableAddressTable.count(decl) == 1);
     state_.addressOfPrevExpr = state_.variableAddressTable.at(decl);
-    auto inst = Instruction::createLoad(state_.addressOfPrevExpr);
+    auto address             = state_.addressOfPrevExpr;
+    auto valueType           = address->type()->tryGetElementType();
+    assert(valueType != nullptr);
+    Instruction *inst = nullptr;
+    if (valueType->isArray()) {
+        inst = Instruction::createGetElementPtr(
+            address, module_->createI32(0), module_->createI32(0));
+    } else {
+        inst = Instruction::createLoad(address);
+    }
     inst->insertToTail(block);
     state_.valueOfPrevExpr = inst->unwrap();
     return state_.valueOfPrevExpr;
@@ -761,13 +749,9 @@ Value *ASTToIRTranslator::translateBinaryExpr(
         assert(exitBlock->isInserted());
 
         if (expr->op == BinaryOperator::LAnd) {
-            Instruction::createBr(lhs, nextBlock, exitBlock)
-                ->insertToTail(block);
-            block->resetBranch(lhs, nextBlock, exitBlock);
+            block->reset(lhs, nextBlock, exitBlock);
         } else if (expr->op == BinaryOperator::LOr) {
-            Instruction::createBr(lhs, exitBlock, nextBlock)
-                ->insertToTail(block);
-            block->resetBranch(lhs, exitBlock, nextBlock);
+            block->reset(lhs, exitBlock, nextBlock);
         } else {
             assert(false && "translateBinaryExpr: unreachable branch");
             state_.valueOfPrevExpr   = nullptr;
@@ -1013,9 +997,18 @@ Value *ASTToIRTranslator::translateSubscriptExpr(
     auto         address  = translateExpr(state_.currentBlock, expr->lhs);
     Instruction *valuePtr = nullptr;
     if (state_.addressOfPrevExpr != nullptr) {
-        address    = state_.addressOfPrevExpr;
+        address        = state_.addressOfPrevExpr;
+        bool indexOnce = false;
+        if (!address->type()->tryGetElementType()->isArray()) {
+            auto inst = Instruction::createLoad(address);
+            inst->insertToTail(state_.currentBlock);
+            address   = inst->unwrap();
+            indexOnce = true;
+        }
         auto index = translateExpr(state_.currentBlock, expr->rhs);
-        valuePtr   = GetElementPtrInst::create(address, index);
+        valuePtr   = indexOnce ? GetElementPtrInst::create(address, index)
+                               : GetElementPtrInst::create(
+                                 address, module_->createI32(0), index);
     } else {
         assert(false && "only accept lhs as symref");
     }
@@ -1038,7 +1031,7 @@ void ASTToIRTranslator::translateArrayInitAssign(
             assert(list != nullptr);
             if (list->size() > 0) {
                 auto inst = GetElementPtrInst::create(
-                    address, module_->createI32(index));
+                    address, module_->createI32(0), module_->createI32(index));
                 inst->insertToTail(state_.currentBlock);
                 translateArrayInitAssign(inst->unwrap(), list);
             }
@@ -1046,8 +1039,8 @@ void ASTToIRTranslator::translateArrayInitAssign(
         }
     } else {
         for (auto e : *data) {
-            auto inst =
-                GetElementPtrInst::create(address, module_->createI32(index));
+            auto inst = GetElementPtrInst::create(
+                address, module_->createI32(0), module_->createI32(index));
             inst->insertToTail(state_.currentBlock);
             auto value = translateExpr(state_.currentBlock, e);
             assert(value->type()->isBuiltinType() && type->isBuiltinType());
