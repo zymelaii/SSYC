@@ -176,8 +176,9 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::GetElementPtr: {
             auto inst = instruction->asGetElementPtr();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(type) << ", ptr " << dumpValueRef(inst->lhs())
-                 << ", i32 0, i32 " << dumpValueRef(inst->rhs());
+                 << dumpType(type->tryGetElementType()) << ", ptr "
+                 << dumpValueRef(inst->lhs()) << ", i32 0, i32 "
+                 << dumpValueRef(inst->rhs());
         } break;
         case InstructionID::Add:
         case InstructionID::Sub:
