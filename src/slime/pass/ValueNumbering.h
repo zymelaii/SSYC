@@ -6,7 +6,6 @@ namespace slime::pass {
 
 class ValueNumberingPass final : public UniversalIRPass {
 public:
-    void run(ir::Module *target) override;
     void runOnFunction(ir::Function *target) override;
 
 private:

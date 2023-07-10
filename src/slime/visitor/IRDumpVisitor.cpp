@@ -155,7 +155,7 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         } break;
         case InstructionID::Ret: {
             auto inst = instruction->asRet();
-            if (inst->type()->isVoid()) {
+            if (inst->operand() == nullptr) {
                 os() << name << " void";
             } else {
                 os() << name << " " << dumpType(inst->operand()->type(), true)
@@ -176,8 +176,8 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::GetElementPtr: {
             auto inst = instruction->asGetElementPtr();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(inst->lhs()->type()->tryGetElementType()) << ", ptr "
-                 << dumpValueRef(inst->lhs()) << ", i32 0, i32 "
+                 << dumpType(inst->lhs()->type()->tryGetElementType())
+                 << ", ptr " << dumpValueRef(inst->lhs()) << ", i32 0, i32 "
                  << dumpValueRef(inst->rhs());
         } break;
         case InstructionID::Add:
@@ -257,7 +257,7 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
                  << dumpValueRef(inst->callee()) << "(";
             for (int i = 0; i < inst->totalParams(); ++i) {
                 auto& param = inst->paramAt(i);
-                os() << dumpType(param->type()) << " noundef "
+                os() << dumpType(param->type(), true) << " noundef "
                      << dumpValueRef(param);
                 if (i + 1 < inst->totalParams()) { os() << ", "; }
             }
