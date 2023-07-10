@@ -128,10 +128,13 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declId) {
             while (it != end) {
                 if (auto result = (*it)->find(name); result != (*it)->end()) {
                     auto &[_, decl] = *result;
-                    //! reduce param var to normal var
+                    //! reduce param-var to normal var
                     auto type = decl->declId == DeclID::ParamVar ? DeclID::Var
                                                                  : decl->declId;
-                    if (type == declId) { return decl; }
+                    if (type == declId) {
+                        state_.symref_set.insert(decl);
+                        return decl;
+                    }
                 }
                 ++it;
             }
@@ -140,7 +143,10 @@ NamedDecl *Parser::findSymbol(std::string_view name, DeclID declId) {
             auto &symbols = symbolTableStack_.front();
             if (auto it = symbols->find(name); it != symbols->end()) {
                 auto &[_, decl] = *it;
-                if (decl->tryIntoFunctionDecl()) { return decl; }
+                if (decl->tryIntoFunctionDecl()) {
+                    state_.symref_set.insert(decl);
+                    return decl;
+                }
             }
         } break;
     }
@@ -152,6 +158,7 @@ TranslationUnit *Parser::parse() {
     addPresetSymbols();
     if (lexer_.isDiscard(token())) { lexer_.next(); }
     while (!token().isEOF()) { parseGlobalDecl(); }
+    dropUnusedExternalSymbols();
     return state_.tu;
 }
 
@@ -872,6 +879,16 @@ void Parser::addPresetSymbols() {
     addExternalFunction("putfloat", BuiltinType::getVoidType(), params);
 
     //! TODO: void putf(char[], ...)
+}
+
+void Parser::dropUnusedExternalSymbols() {
+    auto       it  = state_.tu->node_begin();
+    const auto end = state_.tu->node_end();
+    while (it != end) {
+        auto &node = *it++;
+        auto  decl = static_cast<NamedDecl *>(node.value());
+        if (state_.symref_set.count(decl) == 0) { node.removeFromList(); }
+    }
 }
 
 Expr *Parser::parseBinaryExprWithPriority(int priority) {

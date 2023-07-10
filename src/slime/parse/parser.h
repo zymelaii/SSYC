@@ -28,47 +28,47 @@ public:
         lexer_.reset(stream);
     }
 
-    inline const Token& token() const;
-    inline const Lexer& lexer() const;
-    inline Lexer*       unbindLexer();
+    inline const Token&         token() const;
+    inline const Lexer&         lexer() const;
+    [[nodiscard]] inline Lexer* unbindLexer();
 
     bool        expect(TOKEN token, const char* msg = nullptr);
     const char* lookup(std::string_view s);
 
-    void       addSymbol(NamedDecl* decl);
-    NamedDecl* findSymbol(std::string_view name, DeclID declID);
+    void                     addSymbol(NamedDecl* decl);
+    [[nodiscard]] NamedDecl* findSymbol(std::string_view name, DeclID declID);
 
-    TranslationUnit* parse();
+    [[nodiscard]] TranslationUnit* parse();
 
-    void             parseGlobalDecl();
-    DeclStmt*        parseDeclStmt();
-    VarDecl*         parseVarDef();
-    FunctionDecl*    parseFunction();
-    ParamVarDeclList parseFunctionParams();
-    Stmt*            parseStmt(bool standalone = false);
-    IfStmt*          parseIfStmt();
-    DoStmt*          parseDoStmt();
-    WhileStmt*       parseWhileStmt();
-    ForStmt*         parseForStmt();
-    BreakStmt*       parseBreakStmt();
-    ContinueStmt*    parseContinueStmt();
-    ReturnStmt*      parseReturnStmt();
-    CompoundStmt*    parseBlock();
-    Expr*            parsePrimaryExpr();
-    Expr*            parsePostfixExpr();
-    Expr*            parseUnaryExpr();
-    inline Expr*     parseBinaryExpr();
-    Expr*            parseCommaExpr();
-    InitListExpr*    parseInitListExpr();
-    ExprList*        parseExprList();
+    void                           parseGlobalDecl();
+    [[nodiscard]] DeclStmt*        parseDeclStmt();
+    [[nodiscard]] VarDecl*         parseVarDef();
+    [[nodiscard]] FunctionDecl*    parseFunction();
+    [[nodiscard]] ParamVarDeclList parseFunctionParams();
+    [[nodiscard]] Stmt*            parseStmt(bool standalone = false);
+    [[nodiscard]] IfStmt*          parseIfStmt();
+    [[nodiscard]] DoStmt*          parseDoStmt();
+    [[nodiscard]] WhileStmt*       parseWhileStmt();
+    [[nodiscard]] ForStmt*         parseForStmt();
+    [[nodiscard]] BreakStmt*       parseBreakStmt();
+    [[nodiscard]] ContinueStmt*    parseContinueStmt();
+    [[nodiscard]] ReturnStmt*      parseReturnStmt();
+    [[nodiscard]] CompoundStmt*    parseBlock();
+    [[nodiscard]] Expr*            parsePrimaryExpr();
+    [[nodiscard]] Expr*            parsePostfixExpr();
+    [[nodiscard]] Expr*            parseUnaryExpr();
+    [[nodiscard]] inline Expr*     parseBinaryExpr();
+    [[nodiscard]] Expr*            parseCommaExpr();
+    [[nodiscard]] InitListExpr*    parseInitListExpr();
+    [[nodiscard]] ExprList*        parseExprList();
 
 protected:
-    void          enterDecl();
-    void          leaveDecl();
-    FunctionDecl* enterFunction();
-    void          leaveFunction();
-    void          enterBlock();
-    void          leaveBlock();
+    void                        enterDecl();
+    void                        leaveDecl();
+    [[nodiscard]] FunctionDecl* enterFunction();
+    void                        leaveFunction();
+    void                        enterBlock();
+    void                        leaveBlock();
 
 private:
     void addExternalFunction(
@@ -76,21 +76,24 @@ private:
 
     void addPresetSymbols();
 
-    Expr* parseBinaryExprWithPriority(int priority);
+    void dropUnusedExternalSymbols();
+
+    [[nodiscard]] Expr* parseBinaryExprWithPriority(int priority);
 
 private:
     using SymbolTable = std::map<std::string_view, NamedDecl*>;
 
     struct ParseState {
-        FunctionDecl*     cur_func              = nullptr;
-        int               cur_depth             = 0;
-        DeclID            decl_type             = DeclID::ParamVar;
-        DeclSpecifier*    cur_specifs           = nullptr;
-        ParamVarDeclList* cur_params            = nullptr;
-        TranslationUnit*  tu                    = nullptr;
-        LoopStmt*         cur_loop              = nullptr;
-        bool              not_deepen_next_block = false;
-        bool              ignore_next_funcdecl  = false;
+        FunctionDecl*        cur_func              = nullptr;
+        int                  cur_depth             = 0;
+        DeclID               decl_type             = DeclID::ParamVar;
+        DeclSpecifier*       cur_specifs           = nullptr;
+        ParamVarDeclList*    cur_params            = nullptr;
+        TranslationUnit*     tu                    = nullptr;
+        LoopStmt*            cur_loop              = nullptr;
+        bool                 not_deepen_next_block = false;
+        bool                 ignore_next_funcdecl  = false;
+        std::set<NamedDecl*> symref_set;
     };
 
     Lexer                                  lexer_;
