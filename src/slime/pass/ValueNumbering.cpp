@@ -15,6 +15,9 @@ void ValueNumberingPass::run(Module *target) {
 }
 
 void ValueNumberingPass::runOnFunction(Function *target) {
+    nextId_ = 0;
+    doneSet_.clear();
+
     for (auto block : target->basicBlocks()) {
         if (block->name().empty()) {
             block->setIdUnsafe(nextId_++);
@@ -29,6 +32,7 @@ void ValueNumberingPass::runOnFunction(Function *target) {
             }
         }
     }
+
     if (target->size() > 1) {
         auto       it        = target->begin();
         const auto end       = target->end();
@@ -42,7 +46,6 @@ void ValueNumberingPass::runOnFunction(Function *target) {
             }
         }
     }
-    doneSet_.clear();
 }
 
 } // namespace slime::pass
