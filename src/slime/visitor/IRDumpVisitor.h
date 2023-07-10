@@ -19,8 +19,6 @@ public:
     void dump(ir::Module* module);
 
 protected:
-    int idOf(ir::Value* value);
-
     std::ostream& dumpType(ir::Type* type, bool decay = false);
     std::ostream& dumpValueRef(ir::Value* value);
 
@@ -38,9 +36,8 @@ protected:
     }
 
 private:
-    std::ostream*             os_;
-    ir::Module*               currentModule_;
-    std::map<ir::Value*, int> numberingTable_;
+    std::ostream* os_;
+    ir::Module*   currentModule_;
 };
 
 } // namespace slime::visitor
