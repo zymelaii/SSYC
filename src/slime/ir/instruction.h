@@ -126,6 +126,40 @@ public:
 
     static inline CallInst *createCall(Function *callee);
 
+    inline AllocaInst        *asAlloca();
+    inline LoadInst          *asLoad();
+    inline StoreInst         *asStore();
+    inline RetInst           *asRet();
+    inline BrInst            *asBr();
+    inline GetElementPtrInst *asGetElementPtr();
+    inline AddInst           *asAdd();
+    inline SubInst           *asSub();
+    inline MulInst           *asMul();
+    inline UDivInst          *asUDiv();
+    inline SDivInst          *asSDiv();
+    inline URemInst          *asURem();
+    inline SRemInst          *asSRem();
+    inline FNegInst          *asFNeg();
+    inline FAddInst          *asFAdd();
+    inline FSubInst          *asFSub();
+    inline FMulInst          *asFMul();
+    inline FDivInst          *asFDiv();
+    inline FRemInst          *asFRem();
+    inline ShlInst           *asShl();
+    inline LShrInst          *asLShr();
+    inline AShrInst          *asAShr();
+    inline AndInst           *asAnd();
+    inline OrInst            *asOr();
+    inline XorInst           *asXor();
+    inline FPToUIInst        *asFPToUI();
+    inline FPToSIInst        *asFPToSI();
+    inline UIToFPInst        *asUIToFP();
+    inline SIToFPInst        *asSIToFP();
+    inline ICmpInst          *asICmp();
+    inline FCmpInst          *asFCmp();
+    inline PhiInst           *asPhi();
+    inline CallInst          *asCall();
+
 private:
     const InstructionID    id_;
     Value *const           instruction_;
@@ -522,7 +556,8 @@ class ICmpInst final
 public:
     ICmpInst(ComparePredicationType cmp, Value *lhs, Value *rhs)
         : Instruction(InstructionID::ICmp, this)
-        , User<2>(Type::getIntegerType(), ValueTag::CompareInst | 0) {
+        , User<2>(Type::getIntegerType(), ValueTag::CompareInst | 0)
+        , predicate_{cmp} {
         this->lhs() = lhs;
         this->rhs() = rhs;
     }
@@ -553,7 +588,8 @@ class FCmpInst final
 public:
     FCmpInst(ComparePredicationType cmp, Value *lhs, Value *rhs)
         : Instruction(InstructionID::FCmp, this)
-        , User<2>(Type::getIntegerType(), ValueTag::CompareInst | 0) {
+        , User<2>(Type::getIntegerType(), ValueTag::CompareInst | 0)
+        , predicate_{cmp} {
         this->lhs() = lhs;
         this->rhs() = rhs;
     }
@@ -615,6 +651,19 @@ public:
         , User<-1>(callee->proto()->returnType(), ValueTag::Instruction | 0) {
         resize(callee->proto()->totalParams() + 1);
         op()[0] = callee;
+    }
+
+    Use &callee() {
+        return op()[0];
+    }
+
+    Use &paramAt(size_t index) {
+        return op()[index + 1];
+    }
+
+    size_t totalParams() const {
+        assert(totalUse() > 0);
+        return totalUse() - 1;
     }
 };
 
@@ -810,6 +859,171 @@ inline PhiInst *Instruction::createPhi(Type *type) {
 
 inline CallInst *Instruction::createCall(Function *callee) {
     return CallInst::create(callee);
+}
+
+inline AllocaInst *Instruction::asAlloca() {
+    assert(id() == InstructionID::Alloca);
+    return static_cast<AllocaInst *>(this);
+}
+
+inline LoadInst *Instruction::asLoad() {
+    assert(id() == InstructionID::Load);
+    return static_cast<LoadInst *>(this);
+}
+
+inline StoreInst *Instruction::asStore() {
+    assert(id() == InstructionID::Store);
+    return static_cast<StoreInst *>(this);
+}
+
+inline RetInst *Instruction::asRet() {
+    assert(id() == InstructionID::Ret);
+    return static_cast<RetInst *>(this);
+}
+
+inline BrInst *Instruction::asBr() {
+    assert(id() == InstructionID::Br);
+    return static_cast<BrInst *>(this);
+}
+
+inline GetElementPtrInst *Instruction::asGetElementPtr() {
+    assert(id() == InstructionID::GetElementPtr);
+    return static_cast<GetElementPtrInst *>(this);
+}
+
+inline AddInst *Instruction::asAdd() {
+    assert(id() == InstructionID::Add);
+    return static_cast<AddInst *>(this);
+}
+
+inline SubInst *Instruction::asSub() {
+    assert(id() == InstructionID::Sub);
+    return static_cast<SubInst *>(this);
+}
+
+inline MulInst *Instruction::asMul() {
+    assert(id() == InstructionID::Mul);
+    return static_cast<MulInst *>(this);
+}
+
+inline UDivInst *Instruction::asUDiv() {
+    assert(id() == InstructionID::UDiv);
+    return static_cast<UDivInst *>(this);
+}
+
+inline SDivInst *Instruction::asSDiv() {
+    assert(id() == InstructionID::SDiv);
+    return static_cast<SDivInst *>(this);
+}
+
+inline URemInst *Instruction::asURem() {
+    assert(id() == InstructionID::URem);
+    return static_cast<URemInst *>(this);
+}
+
+inline SRemInst *Instruction::asSRem() {
+    assert(id() == InstructionID::SRem);
+    return static_cast<SRemInst *>(this);
+}
+
+inline FNegInst *Instruction::asFNeg() {
+    assert(id() == InstructionID::FNeg);
+    return static_cast<FNegInst *>(this);
+}
+
+inline FAddInst *Instruction::asFAdd() {
+    assert(id() == InstructionID::FAdd);
+    return static_cast<FAddInst *>(this);
+}
+
+inline FSubInst *Instruction::asFSub() {
+    assert(id() == InstructionID::FSub);
+    return static_cast<FSubInst *>(this);
+}
+
+inline FMulInst *Instruction::asFMul() {
+    assert(id() == InstructionID::FMul);
+    return static_cast<FMulInst *>(this);
+}
+
+inline FDivInst *Instruction::asFDiv() {
+    assert(id() == InstructionID::FDiv);
+    return static_cast<FDivInst *>(this);
+}
+
+inline FRemInst *Instruction::asFRem() {
+    assert(id() == InstructionID::FRem);
+    return static_cast<FRemInst *>(this);
+}
+
+inline ShlInst *Instruction::asShl() {
+    assert(id() == InstructionID::Shl);
+    return static_cast<ShlInst *>(this);
+}
+
+inline LShrInst *Instruction::asLShr() {
+    assert(id() == InstructionID::LShr);
+    return static_cast<LShrInst *>(this);
+}
+
+inline AShrInst *Instruction::asAShr() {
+    assert(id() == InstructionID::AShr);
+    return static_cast<AShrInst *>(this);
+}
+
+inline AndInst *Instruction::asAnd() {
+    assert(id() == InstructionID::And);
+    return static_cast<AndInst *>(this);
+}
+
+inline OrInst *Instruction::asOr() {
+    assert(id() == InstructionID::Or);
+    return static_cast<OrInst *>(this);
+}
+
+inline XorInst *Instruction::asXor() {
+    assert(id() == InstructionID::Xor);
+    return static_cast<XorInst *>(this);
+}
+
+inline FPToUIInst *Instruction::asFPToUI() {
+    assert(id() == InstructionID::FPToUI);
+    return static_cast<FPToUIInst *>(this);
+}
+
+inline FPToSIInst *Instruction::asFPToSI() {
+    assert(id() == InstructionID::FPToSI);
+    return static_cast<FPToSIInst *>(this);
+}
+
+inline UIToFPInst *Instruction::asUIToFP() {
+    assert(id() == InstructionID::UIToFP);
+    return static_cast<UIToFPInst *>(this);
+}
+
+inline SIToFPInst *Instruction::asSIToFP() {
+    assert(id() == InstructionID::SIToFP);
+    return static_cast<SIToFPInst *>(this);
+}
+
+inline ICmpInst *Instruction::asICmp() {
+    assert(id() == InstructionID::ICmp);
+    return static_cast<ICmpInst *>(this);
+}
+
+inline FCmpInst *Instruction::asFCmp() {
+    assert(id() == InstructionID::FCmp);
+    return static_cast<FCmpInst *>(this);
+}
+
+inline PhiInst *Instruction::asPhi() {
+    assert(id() == InstructionID::Phi);
+    return static_cast<PhiInst *>(this);
+}
+
+inline CallInst *Instruction::asCall() {
+    assert(id() == InstructionID::Call);
+    return static_cast<CallInst *>(this);
 }
 
 inline ICmpInst *ICmpInst::createEQ(Value *lhs, Value *rhs) {

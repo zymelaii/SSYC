@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../utils/list.h"
+
 #include <stdint.h>
 #include <string_view>
 #include <map>
@@ -8,10 +10,13 @@ namespace slime::ir {
 
 class ConstantInt;
 class ConstantFloat;
+class GlobalObject;
 class Function;
 class GlobalVariable;
 
-class Module {
+using GlobalObjectList = utils::ListTrait<GlobalObject*>;
+
+class Module : public GlobalObjectList {
 public:
     Module(const char* name);
     ~Module();

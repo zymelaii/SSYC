@@ -38,12 +38,21 @@ bool Module::acceptFunction(Function* fn) {
         //! try to replace declaration with definition
         if (prev->type()->equals(fn->proto()) && prev->size() == 0
             && fn->size() != 0) {
+            auto it = node_begin();
+            while (it != node_end()) {
+                if (it->value() == prev) {
+                    it->value() = fn;
+                    break;
+                }
+                ++it;
+            }
             prev = fn;
             return true;
         }
         return false;
     }
     functions_[fn->name()] = fn;
+    insertToTail(fn);
     return true;
 }
 
@@ -52,6 +61,7 @@ bool Module::acceptGlobalVariable(GlobalVariable* var) {
     assert(!var->name().empty());
     if (globalVariables_.count(var->name()) != 0) { return false; }
     globalVariables_[var->name()] = var;
+    insertToTail(var);
     return true;
 }
 
