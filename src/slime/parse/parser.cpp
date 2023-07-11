@@ -542,7 +542,8 @@ Expr *Parser::parsePrimaryExpr() {
             lexer_.next();
         } break;
         case TOKEN::TK_INTVAL: {
-            expr = ConstantExpr::createI32(atoi(token()));
+            expr = ConstantExpr::createI32(
+                std::stoi(std::string{token()}, nullptr, 0));
             lexer_.next();
         } break;
         case TOKEN::TK_FLTVAL: {
