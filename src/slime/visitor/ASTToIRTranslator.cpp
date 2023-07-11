@@ -666,7 +666,7 @@ Value *ASTToIRTranslator::translateUnaryExpr(
     if (operand->type()->isInteger()) {
         Instruction *inst = nullptr;
         if (expr->op == UnaryOperator::Not) {
-            inst = ICmpInst::createNE(operand, module_->createI32(0));
+            inst = ICmpInst::createEQ(operand, module_->createI32(0));
         } else if (expr->op == UnaryOperator::Neg) {
             inst = Instruction::createSub(module_->createI32(0), operand);
         }
@@ -679,7 +679,7 @@ Value *ASTToIRTranslator::translateUnaryExpr(
     if (operand->type()->isFloat()) {
         Instruction *inst = nullptr;
         if (expr->op == UnaryOperator::Not) {
-            inst = FCmpInst::createUNE(operand, module_->createF32(0.f));
+            inst = FCmpInst::createOEQ(operand, module_->createF32(0.f));
         } else if (expr->op == UnaryOperator::Neg) {
             inst = Instruction::createFNeg(operand);
         }
