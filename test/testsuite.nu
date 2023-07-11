@@ -184,9 +184,9 @@ def "compile ir" [
                 } else  {
                     $ok = false
                     if not $silent {
-                        let msg = (($result.stderr + (char nl)) | str trim)
-                        let msg = $msg + ($"program exit with ($result.exit_code)" | decorate -r -B)
-                        print $"(char nl)($msg)"
+                        let msg = ($result.stderr | str trim)
+                        let msg = $msg + (char nl) + ($"program exit with ($result.exit_code)" | decorate -r -B)
+                        print $"(char nl)($msg | str trim)"
                     }
                 }
             }
@@ -199,6 +199,7 @@ def "compile ir" [
 def "build executable" [
     builddir: string = "build", # Path to build objects
     force: bool = false,        # Force re-compile
+    silent: bool = false,       # Not print messages
 ] {
     let testcases = (each {|e| $e})
     let total = ($testcases | length)
@@ -224,14 +225,18 @@ def "build executable" [
             let e = $e.item
             let bin = $"($env.PWD)/($builddir)/($e.id)_($e.name).exe"
             mut ok = $e.compiled
-            print -n ("\r" + (get hint $index $e | fill -w ($maxlen)) | decorate -B)
+            if not $silent {
+                print -n ("\r" + (get hint $index $e | fill -w ($maxlen)) | decorate -B)
+            }
             if $ok and (((not ($bin | path exists)) or $force)) {
                 let result = (do -i {
                     ^gcc -m32 $e.ir $"(git-ws)/test/lib/sylib.c" -o $bin
                 } | complete)
                 if $result.exit_code != 0 {
                     let msg = (($result.stderr + (char nl)) | str trim)
-                    print $"(char nl)($msg)"
+                    if not $silent {
+                        print $"(char nl)($msg)"
+                    }
                     $ok = false
                 }
             }
@@ -242,6 +247,7 @@ def "build executable" [
 # Run test on given testcase category.
 def "run test" [
     target: string@"testcase list", # Testcase category
+    silent: bool = false,           # Not print messages
 ] {
     let testcases = (each {|e| $e})
 
@@ -279,7 +285,13 @@ def "run test" [
                 $output = (fmt output $"($result.stdout)(char nl)($result.exit_code)")
                 $pass = ($output == $expected)
             }
-            print ($"complete testcase [($e.id)] ($e.name)" | decorate -B)
+            if not $silent {
+                print (($"complete testcase [($e.id)] ($e.name)" | decorate -B) + (if $pass {
+                    " PASS " | decorate -g -B
+                } else {
+                    " FAIL " | decorate -r -B
+                }))
+            }
             $e | insert message $message | insert pass $pass | insert info {
                 expected: $expected,
                 output: $output,
@@ -297,12 +309,16 @@ export def "testcase build" [
     --run (-r),                         # Run testcase
     --dump
 ] {
-    mut result = (
-        compile ir $category $"($builddir).src" $force $silent
-            | build executable $"($builddir).bin" $force
-            )
+    mut result = (compile ir $category $"($builddir).src" $force $silent)
+    if not $silent {
+        print ("\nir compile done" | decorate -g -B)
+    }
+    $result = ($result | build executable $"($builddir).bin" $force $silent)
+    if not $silent {
+        print ("\nexecutable build done" | decorate -g -B)
+    }
     if $run {
-        $result = ($result | run test $category)
+        $result = ($result | run test $category $silent)
     }
     if $dump {
         $result | to json | save -f $"testcase_($category).json"
