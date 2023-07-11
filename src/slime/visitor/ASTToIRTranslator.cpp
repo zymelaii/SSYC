@@ -679,6 +679,11 @@ Value *ASTToIRTranslator::translateUnaryExpr(
         if (expr->op == UnaryOperator::Not) {
             inst = ICmpInst::createEQ(operand, module_->createI32(0));
         } else if (expr->op == UnaryOperator::Neg) {
+            if (operand->type()->isBoolean()) {
+                auto inst = Instruction::createZExt(operand);
+                inst->insertToTail(block);
+                operand = inst->unwrap();
+            }
             inst = Instruction::createSub(module_->createI32(0), operand);
         }
         assert(inst != nullptr);
@@ -848,6 +853,30 @@ Value *ASTToIRTranslator::translateBinaryExpr(
                 lhs->type()->isBuiltinType()
                 && lhs->type()->equals(rhs->type()));
             if (lhs->type()->isInteger()) {
+                auto ltype = lhs->type()->asIntegerType();
+                auto rtype = rhs->type()->asIntegerType();
+                if (ltype->kind() != rtype->kind()) {
+                    if (ltype->isBoolean()) {
+                        if (lhs->isImmediate()) {
+                            lhs = module_->createI32(
+                                static_cast<ConstantInt *>(lhs)->value);
+                        } else {
+                            auto inst = Instruction::createZExt(lhs);
+                            inst->insertToTail(block);
+                            lhs = inst->unwrap();
+                        }
+                    }
+                    if (rtype->isBoolean()) {
+                        if (rhs->isImmediate()) {
+                            rhs = module_->createI32(
+                                static_cast<ConstantInt *>(rhs)->value);
+                        } else {
+                            auto inst = Instruction::createZExt(rhs);
+                            inst->insertToTail(block);
+                            rhs = inst->unwrap();
+                        }
+                    }
+                }
                 switch (expr->op) {
                     case BinaryOperator::Add: {
                         inst = Instruction::createAdd(lhs, rhs);
@@ -1009,9 +1038,10 @@ Value *ASTToIRTranslator::translateSubscriptExpr(
     auto         address  = translateExpr(state_.currentBlock, expr->lhs);
     Instruction *valuePtr = nullptr;
     if (state_.addressOfPrevExpr != nullptr) {
-        address        = state_.addressOfPrevExpr;
-        bool indexOnce = false;
-        if (!address->type()->tryGetElementType()->isArray()) {
+        address          = state_.addressOfPrevExpr;
+        bool indexOnce   = false;
+        auto elementType = address->type()->tryGetElementType();
+        if (!elementType->isArray()) {
             auto inst = Instruction::createLoad(address);
             inst->insertToTail(state_.currentBlock);
             address   = inst->unwrap();
@@ -1025,7 +1055,14 @@ Value *ASTToIRTranslator::translateSubscriptExpr(
         assert(false && "only accept lhs as symref");
     }
     valuePtr->insertToTail(state_.currentBlock);
-    auto value = Instruction::createLoad(valuePtr->unwrap());
+    Instruction *value       = nullptr;
+    auto         elementType = valuePtr->unwrap()->type()->tryGetElementType();
+    if (elementType->isArray()) {
+        value = GetElementPtrInst::create(
+            valuePtr->unwrap(), module_->createI32(0), module_->createI32(0));
+    } else {
+        value = Instruction::createLoad(valuePtr->unwrap());
+    }
     value->insertToTail(state_.currentBlock);
     state_.addressOfPrevExpr = valuePtr->unwrap();
     state_.valueOfPrevExpr   = value->unwrap();

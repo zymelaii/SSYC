@@ -40,6 +40,7 @@ class FPToUIInst;
 class FPToSIInst;
 class UIToFPInst;
 class SIToFPInst;
+class ZExtInst;
 class ICmpInst;
 class FCmpInst;
 class PhiInst;
@@ -149,6 +150,8 @@ public:
     static inline UIToFPInst *createUIToFP(Value *value);
     static inline SIToFPInst *createSIToFP(Value *value);
 
+    static inline ZExtInst *createZExt(Value *value);
+
     static inline ICmpInst *createICmp(
         ComparePredicationType op, Value *lhs, Value *rhs);
     static inline FCmpInst *createFCmp(
@@ -187,6 +190,7 @@ public:
     inline FPToSIInst        *asFPToSI();
     inline UIToFPInst        *asUIToFP();
     inline SIToFPInst        *asSIToFP();
+    inline ZExtInst          *asZExt();
     inline ICmpInst          *asICmp();
     inline FCmpInst          *asFCmp();
     inline PhiInst           *asPhi();
@@ -714,6 +718,22 @@ public:
     }
 };
 
+class ZExtInst final
+    : public Instruction
+    , public User<1>
+    , public utils::BuildTrait<ZExtInst> {
+public:
+    ZExtInst(Value *value)
+        : Instruction(
+            InstructionID::ZExt,
+            this,
+            &Instruction::delegateTotalOperands<User<1>>,
+            &Instruction::delegateOperands<User<1>>)
+        , User<1>(Type::getIntegerType(), ValueTag::Instruction | 0) {
+        operand() = value;
+    }
+};
+
 class ICmpInst final
     : public Instruction
     , public User<2>
@@ -1024,6 +1044,12 @@ inline SIToFPInst *Instruction::createSIToFP(Value *value) {
     return SIToFPInst::create(value);
 }
 
+inline ZExtInst *Instruction::createZExt(Value *value) {
+    assert(value->type()->equals(Type::getIntegerType()));
+    assert(value->type()->isBoolean());
+    return ZExtInst::create(value);
+}
+
 inline ICmpInst *Instruction::createICmp(
     ComparePredicationType op, Value *lhs, Value *rhs) {
     assert(lhs->type()->equals(Type::getIntegerType()));
@@ -1189,6 +1215,11 @@ inline UIToFPInst *Instruction::asUIToFP() {
 inline SIToFPInst *Instruction::asSIToFP() {
     assert(id() == InstructionID::SIToFP);
     return static_cast<SIToFPInst *>(this);
+}
+
+inline ZExtInst *Instruction::asZExt() {
+    assert(id() == InstructionID::ZExt);
+    return static_cast<ZExtInst *>(this);
 }
 
 inline ICmpInst *Instruction::asICmp() {

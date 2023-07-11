@@ -179,7 +179,7 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
         "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
         "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
-        "sitofp", "icmp", "fcmp",  "phi",  "call",
+        "sitofp", "zext", "icmp",  "fcmp", "phi",    "call",
     };
     auto name  = INST_LOOKUP[static_cast<int>(instruction->id())];
     auto value = instruction->unwrap();
@@ -276,6 +276,11 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
             auto inst = static_cast<User<1>*>(value);
             os() << dumpValueRef(value) << " = " << name << " i32 "
                  << dumpValueRef(inst->operand()) << " to float";
+        } break;
+        case InstructionID::ZExt: {
+            auto inst = static_cast<User<1>*>(value);
+            os() << dumpValueRef(value) << " = " << name << " i1 "
+                 << dumpValueRef(inst->operand()) << " to i32";
         } break;
         case InstructionID::ICmp: {
             auto inst = instruction->asICmp();
