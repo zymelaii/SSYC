@@ -41,7 +41,7 @@ void CFGNode::reset(BasicBlock* branch) {
         Instruction::createBr(branch)->insertToTail(self);
         branch_ = branch;
         branch_->addIncoming(self);
-    } else {
+    } else if (!isTerminal()) {
         auto type = self->parent()->type()->asFunctionType()->returnType();
         assert(type->isVoid());
         Instruction::createRet()->insertToTail(self);
