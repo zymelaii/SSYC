@@ -185,8 +185,8 @@ private:
 };
 
 inline ConstantInt* ConstantData::getBoolean(bool value) {
-    static ConstantInt trueSingleton(value, Type::getBooleanType());
-    static ConstantInt falseSingleton(value, Type::getBooleanType());
+    static ConstantInt trueSingleton(true, Type::getBooleanType());
+    static ConstantInt falseSingleton(false, Type::getBooleanType());
     return value ? &trueSingleton : &falseSingleton;
 }
 
