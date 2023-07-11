@@ -46,6 +46,7 @@ bool Instruction::insertBefore(Instruction* inst) {
 bool Instruction::insertAfter(Instruction* inst) {
     //! FIXME: instruction is not always movable
     assert(inst != nullptr);
+    if (parent_ != nullptr) { removeFromBlock(); }
     if (!inst->parent_) { return false; }
     parent_ = inst->parent_;
     self_   = parent_->insertToTail(this);

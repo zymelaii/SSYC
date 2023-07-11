@@ -12,12 +12,13 @@ void DeadCodeEliminationPass::runOnFunction(ir::Function *target) {
     bool  isFirst = true;
     while (itBlock != blocks.end()) {
         auto block = *itBlock++;
-        if (block->totalInBlocks() == 0 && !isFirst) {
-            block->remove();
-            isFirst = false;
-            continue;
+
+        if (block->totalInBlocks() == 0) {
+            if (block != target->front()) {
+                block->remove();
+                continue;
+            }
         }
-        isFirst = false;
 
         if (block->isBranched() && block->control()->isImmediate()) {
             auto v = static_cast<ConstantInt *>(block->control())->value;
@@ -28,9 +29,10 @@ void DeadCodeEliminationPass::runOnFunction(ir::Function *target) {
             }
         }
 
-        while (block->isLinear() && !block->isTerminal()) {
+        while (block->isLinear()) {
             auto branch = block->branch();
-            if (branch->isLinear() && branch->size() == 1) {
+            if (branch->isLinear() && branch->size() == 1
+                && !branch->isTerminal()) {
                 block->reset(branch->branch());
                 continue;
             }
@@ -49,9 +51,7 @@ void DeadCodeEliminationPass::runOnFunction(ir::Function *target) {
             }
         }
 
-        if (block->size() == 0 && block->totalInBlocks() > 0) {
-            block->tryMarkAsTerminal();
-        }
+        if (block->isIncomplete()) { block->tryMarkAsTerminal(); }
     }
 }
 

@@ -5,6 +5,7 @@
 #include <slime/pass/ValueNumbering.h>
 #include <slime/pass/DeadCodeElimination.h>
 #include <slime/pass/PhiElimination.h>
+#include <slime/pass/Resort.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -199,6 +200,7 @@ Module *ASTToIRTranslator::translate(
     }
     auto module = translator.module_.release();
     pass::PhiEliminationPass{}.run(module);
+    pass::ResortPass{}.run(module);
     pass::DeadCodeEliminationPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
     return module;
@@ -542,16 +544,25 @@ void ASTToIRTranslator::translateContinueStmt(
 
 void ASTToIRTranslator::translateReturnStmt(
     BasicBlock *block, ReturnStmt *stmt) {
-    Instruction *inst = nullptr;
+    Value *value = nullptr;
+    bool   ok    = true;
     if (auto expr = stmt->returnValue->tryIntoExprStmt()) {
-        auto value = translateExpr(block, expr->unwrap());
-        block      = state_.currentBlock;
-        inst       = Instruction::createRet(value);
-    } else if (stmt->returnValue->tryIntoNullStmt()) {
-        inst = Instruction::createRet();
+        value = translateExpr(block, expr->unwrap());
+        block = state_.currentBlock;
+    } else if (!stmt->returnValue->tryIntoNullStmt()) {
+        ok = false;
     }
-    assert(inst != nullptr);
-    inst->insertToTail(block);
+    assert(ok);
+    if (value != nullptr) {
+        auto retval =
+            bicastIntFP(value, block->parent()->proto()->returnType());
+        if (retval != value && retval->isInstruction()) {
+            retval->asInstruction()->insertToTail(block);
+        }
+        value = retval;
+    }
+    block->tryMarkAsTerminal(value);
+    assert(block->isTerminal());
     state_.currentBlock = BasicBlock::create(block->parent());
     state_.currentBlock->insertOrMoveAfter(block);
     state_.addressOfPrevExpr = nullptr;
@@ -774,7 +785,7 @@ Value *ASTToIRTranslator::translateBinaryExpr(
             assert(rhs->isInstruction());
             rhs->asInstruction()->insertToTail(nextBlock);
         }
-        Instruction::createBr(exitBlock)->insertToTail(nextBlock);
+        nextBlock->reset(exitBlock);
 
         auto phi = Instruction::createPhi(lhs->type());
         phi->addIncomingValue(lhs, block);
@@ -1062,6 +1073,31 @@ void ASTToIRTranslator::translateArrayInitAssign(
             ++index;
         }
     }
+}
+
+Value *ASTToIRTranslator::bicastIntFP(Value *value, ir::Type *expected) {
+    assert(value->type()->isInteger() || value->type()->isFloat());
+    assert(expected->isInteger() || expected->isFloat());
+    if (value->type()->equals(expected)) { return value; }
+    if (value->isImmediate()) {
+        if (expected->isFloat()) {
+            return module_->createF32(
+                static_cast<float>(static_cast<ConstantInt *>(value)->value));
+        } else {
+            auto e = static_cast<int32_t>(
+                static_cast<ConstantFloat *>(value)->value);
+            return expected->isBoolean() ? ConstantData::getBoolean(e)
+                                         : module_->createI32(e);
+        }
+    }
+    Instruction *inst = nullptr;
+    if (expected->isFloat()) {
+        inst = Instruction::createSIToFP(value);
+    } else {
+        inst = Instruction::createFPToSI(value);
+    }
+    assert(inst != nullptr);
+    return inst->unwrap();
 }
 
 } // namespace slime::visitor
