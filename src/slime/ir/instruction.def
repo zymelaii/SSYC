@@ -32,6 +32,7 @@ enum class InstructionID {
     FPToSI,        //<! floating point -> signed int
     UIToFP,        //<! unsigned int -> floating point
     SIToFP,        //<! signed int -> floating point
+    ZExt,          //<! zext (i1 -> i32)
     ICmp,          //<! cmp (int)
     FCmp,          //<! cmp (float)
     Phi,           //<! Phi node instruction
