@@ -196,8 +196,18 @@ public:
     }
 
     void resize(size_t n) {
-        for (int i = n - 1; i < operands_.size(); ++i) { operands_[i].reset(); }
+        //! NOTE: resize will lead to memmove, so as the address of Use, yet the
+        //! users and used values will sill hold the out-dated value, so rebind
+        //! to make it stay in active
+        std::vector<Value *> restore;
+        for (int i = 0; i < operands_.size(); ++i) {
+            restore.push_back(operands_[i].value());
+            operands_[i].reset();
+        }
         operands_.resize(n);
+        for (int i = 0; i < restore.size(); ++i) {
+            operands_[i].reset(restore[i]);
+        }
     }
 
 private:
@@ -391,6 +401,7 @@ inline void Value::removeUse(Use *use) const {
             return;
         }
     }
+    assert(false);
 }
 
 inline bool Value::usedBy(const Use *use) const {
