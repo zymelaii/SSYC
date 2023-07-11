@@ -4,6 +4,7 @@
 #include <slime/ir/instruction.h>
 #include <slime/pass/ValueNumbering.h>
 #include <slime/pass/DeadCodeElimination.h>
+#include <slime/pass/PhiElimination.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -197,7 +198,7 @@ Module *ASTToIRTranslator::translate(
         }
     }
     auto module = translator.module_.release();
-    pass::DeadCodeEliminationPass{}.run(module);
+    pass::PhiEliminationPass{}.run(module);
     pass::DeadCodeEliminationPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
     return module;

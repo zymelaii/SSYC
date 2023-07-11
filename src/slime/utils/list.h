@@ -299,7 +299,7 @@ public:
         }
 
         pointer operator->() {
-            return ptr_->value();
+            return &ptr_->value();
         }
 
         bool operator==(const const_iterator &other) const {
