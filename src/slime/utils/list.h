@@ -195,6 +195,22 @@ public:
         }
     }
 
+    template <typename... Args>
+    ListNode *emplaceAfter(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        insertAfter(node);
+        return node;
+    }
+
+    template <typename... Args>
+    ListNode *emplaceBefore(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        insertBefore(node);
+        return node;
+    }
+
 private:
     const bool isPtr_;
 
