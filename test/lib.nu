@@ -103,7 +103,7 @@ export def "run profile" [
     --output (-o): string = 'profile',  # Name for the output file
     --open (-p),                        # Open the generated report
 ] {
-    let pipe_data = (each {|e| $e | into string})
+    let pipe_data = ($in | each {|e| $e | into string})
     let current_dir = $env.PWD
     let ws_dir = (git-ws)
     let test_dir = ($ws_dir | path join test)
