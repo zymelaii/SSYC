@@ -196,11 +196,22 @@ void PeekholePass::foldBinaryConstant(User<2> *inst) {
             auto lhs = static_cast<ConstantFloat *>(inst->lhs().value())->value;
             auto rhs = static_cast<ConstantFloat *>(inst->rhs().value())->value;
             switch (self->id()) {
-                case ir::InstructionID::FAdd:
-                case ir::InstructionID::FSub:
-                case ir::InstructionID::FMul:
-                case ir::InstructionID::FDiv:
-                case ir::InstructionID::FRem:
+                case ir::InstructionID::FAdd: {
+                    value = ConstantFloat::create(lhs + rhs);
+                } break;
+                case ir::InstructionID::FSub: {
+                    value = ConstantFloat::create(lhs - rhs);
+                } break;
+                case ir::InstructionID::FMul: {
+                    value = ConstantFloat::create(lhs * rhs);
+                } break;
+                case ir::InstructionID::FDiv: {
+                    value = ConstantFloat::create(lhs / rhs);
+                } break;
+                case ir::InstructionID::FRem: {
+                    //! FIXME: fmod may have precision issues
+                    value = ConstantFloat::create(std::fmod(lhs, rhs));
+                } break;
                 case ir::InstructionID::FCmp: {
                     switch (self->asFCmp()->predicate()) {
                         case ir::ComparePredicationType::FALSE: {
