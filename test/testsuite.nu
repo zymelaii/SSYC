@@ -201,7 +201,7 @@ def "build executable" [
     force: bool = false,        # Force re-compile
     silent: bool = false,       # Not print messages
 ] {
-    let testcases = (each {|e| $e})
+    let testcases = $in
     let total = ($testcases | length)
 
     if not ($builddir | path exists) {
@@ -249,7 +249,7 @@ def "run test" [
     target: string@"testcase list", # Testcase category
     silent: bool = false,           # Not print messages
 ] {
-    let testcases = (each {|e| $e})
+    let testcases = $in
 
     def "fmt output" [e] {
         $e  | split row (char cr)
@@ -260,7 +260,7 @@ def "run test" [
     }
 
     $testcases
-        | par-each {|e|
+        | each {|e|
             let compiled = $e.compiled
             let bin = $e.executable
             let expected = if $e.sample_out {

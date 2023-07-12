@@ -31,7 +31,7 @@ export def decorate [
     --inverse (-R),     # Set inverse
     --no-reset (-1),    # No reset after decoration
 ] {
-    let text = (each {|$e| $e} | into string)
+    let text = ($in | into string)
     if ($text | describe) != 'string' {
         throw ArgumentError "decorate only accept string as input" (metadata $text)
     }
