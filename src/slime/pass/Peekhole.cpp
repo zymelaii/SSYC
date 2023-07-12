@@ -210,7 +210,7 @@ void PeekholePass::foldBinaryConstant(User<2> *inst) {
                 } break;
                 case ir::InstructionID::FRem: {
                     //! FIXME: fmod may have precision issues
-                    value = ConstantFloat::create(std::fmod(lhs, rhs));
+                    value = ConstantFloat::create(fmod(lhs, rhs));
                 } break;
                 case ir::InstructionID::FCmp: {
                     switch (self->asFCmp()->predicate()) {
