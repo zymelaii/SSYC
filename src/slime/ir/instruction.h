@@ -100,13 +100,29 @@ public:
         return operands()[index];
     }
 
+    template <int N>
+    bool isUser() const {
+        return operandsPtr_ == &Instruction::delegateOperands<User<N>>;
+    }
+
+    template <int N>
+    User<N> *asUser() const {
+        assert(isUser<N>());
+        return static_cast<User<N> *>(unwrap());
+    }
+
+    template <int N>
+    User<N> *tryIntoUser() const {
+        return isUser<N>() ? asUser<N>() : nullptr;
+    }
+
     bool insertToHead(BasicBlock *block);
     bool insertToTail(BasicBlock *block);
     bool insertBefore(Instruction *inst);
     bool insertAfter(Instruction *inst);
     bool moveToPrev();
     bool moveToNext();
-    bool removeFromBlock();
+    bool removeFromBlock(bool reset = true);
 
     static inline AllocaInst *createAlloca(Type *type);
 

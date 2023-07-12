@@ -17,7 +17,7 @@ std::string_view getPredicateName(ComparePredicationType predicate) {
 bool Instruction::insertToHead(BasicBlock* block) {
     //! FIXME: instruction is not always movable
     assert(block != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     parent_ = block;
     self_   = parent_->insertToHead(this);
     return true;
@@ -26,7 +26,7 @@ bool Instruction::insertToHead(BasicBlock* block) {
 bool Instruction::insertToTail(BasicBlock* block) {
     //! FIXME: instruction is not always movable
     assert(block != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     parent_ = block;
     self_   = parent_->insertToTail(this);
     return true;
@@ -35,7 +35,7 @@ bool Instruction::insertToTail(BasicBlock* block) {
 bool Instruction::insertBefore(Instruction* inst) {
     //! FIXME: instruction is not always movable
     assert(inst != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     if (!inst->parent_) { return false; }
     parent_ = inst->parent_;
     self_   = parent_->insertToTail(this);
@@ -46,7 +46,7 @@ bool Instruction::insertBefore(Instruction* inst) {
 bool Instruction::insertAfter(Instruction* inst) {
     //! FIXME: instruction is not always movable
     assert(inst != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     if (!inst->parent_) { return false; }
     parent_ = inst->parent_;
     self_   = parent_->insertToTail(this);
@@ -70,9 +70,12 @@ bool Instruction::moveToNext() {
     return true;
 }
 
-bool Instruction::removeFromBlock() {
-    //! FIXME: instruction is not always movable
+bool Instruction::removeFromBlock(bool reset) {
+    if (reset && unwrap()->uses().size() > 0) { return false; }
     if (!parent_ || !self_) { return false; }
+    if (reset) {
+        for (int i = 0; i < totalOperands(); ++i) { useAt(i).reset(); }
+    }
     self_->removeFromList();
     self_   = nullptr;
     parent_ = nullptr;

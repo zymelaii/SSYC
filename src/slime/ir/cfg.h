@@ -35,6 +35,10 @@ public:
         return inBlocks_.count(block) == 1;
     }
 
+    inline const std::set<BasicBlock*>& inBlocks() const {
+        return inBlocks_;
+    }
+
 protected:
     static BasicBlock* terminal();
 
