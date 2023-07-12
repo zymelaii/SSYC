@@ -6,13 +6,11 @@ namespace slime::pass {
 
 using namespace ir;
 
-void DeadCodeEliminationPass::runOnFunction(ir::Function *target) {
+void DeadCodeEliminationPass::runOnFunction(Function *target) {
     auto &blocks  = target->basicBlocks();
     auto  itBlock = blocks.begin();
-    bool  isFirst = true;
     while (itBlock != blocks.end()) {
         auto block = *itBlock++;
-
         if (block->totalInBlocks() == 0) {
             if (block != target->front()) {
                 block->remove();
@@ -46,7 +44,8 @@ void DeadCodeEliminationPass::runOnFunction(ir::Function *target) {
             auto value = inst->unwrap();
             if (!value->type()->isVoid() && inst->id() != InstructionID::Call
                 && value->uses().size() == 0) {
-                inst->removeFromBlock();
+                auto ok = inst->removeFromBlock();
+                assert(ok);
                 delete inst;
             }
         }
