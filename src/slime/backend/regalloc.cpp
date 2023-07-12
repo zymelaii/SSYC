@@ -1,4 +1,5 @@
 #include "regalloc.h"
+#include "slime/ir/instruction.def"
 
 #include <cstdint>
 #include <slime/ir/value.h>
@@ -62,6 +63,10 @@ void Allocator::computeInterval(Function *func) {
                 assert(
                     interval->start == UINT64_MAX && "SSA only assign ONCE!");
                 interval->start = cur_inst;
+                // assume the retval of function may not be used
+                if (inst->id() == InstructionID::Call && interval->end == 0) {
+                    interval->end = cur_inst;
+                }
             }
             --cur_inst;
             ++it;
@@ -69,11 +74,13 @@ void Allocator::computeInterval(Function *func) {
         ++bit;
     }
 
+    int cnt = 0;
     for (auto e : func->basicBlocks()) {
         auto e2 = blockVarTable->find(e)->second;
         for (auto e3 : *e2) {
             printf(
-                "begin:%lu end:%lu\n",
+                "%d: begin:%lu end:%lu\n",
+                cnt++,
                 e3.second->livIntvl->start,
                 e3.second->livIntvl->end);
         }
@@ -83,7 +90,10 @@ void Allocator::computeInterval(Function *func) {
 
 ARMGeneralRegs Allocator::allocateRegister() {
     for (int i = 0; i < 12; i++) {
-        if (regAllocatedMap[i]) { return static_cast<ARMGeneralRegs>(i); }
+        if (!regAllocatedMap[i]) {
+            regAllocatedMap[i] = true;
+            return static_cast<ARMGeneralRegs>(i);
+        }
     }
     return ARMGeneralRegs::None;
 }
@@ -102,6 +112,7 @@ void Allocator::updateAllocation(BasicBlock *block, uint64_t instnum) {
         uint64_t start = var->livIntvl->start;
         uint64_t end   = var->livIntvl->end;
         if (instnum == start) {
+            liveVars->insertToTail(var);
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
@@ -109,8 +120,17 @@ void Allocator::updateAllocation(BasicBlock *block, uint64_t instnum) {
                 //! TODO: spill
                 assert(0);
             }
-        } else if (instnum > end && !var->is_spilled) {
-            releaseRegister(var->reg);
+        } else if (instnum == end + 1) {
+            if (!var->is_spilled) releaseRegister(var->reg);
+            auto node = liveVars->head();
+            while (node != liveVars->tail()) {
+                auto v = node->value();
+                if (v == var) {
+                    node->removeFromList();
+                    break;
+                }
+                node = node->next();
+            }
         }
     }
 }

@@ -14,6 +14,7 @@ struct Variable;
 using namespace ir;
 
 enum class ARMGeneralRegs {
+    R0,
     R1,
     R2,
     R3,
@@ -25,13 +26,16 @@ enum class ARMGeneralRegs {
     R9,
     R10,
     R11,
-    R12,
+    IP,
+    SP,
+    LR,
+    PC,
     None
 };
 
 using ValVarTable   = std::map<Value *, Variable *>;
 using BlockVarTable = std::map<BasicBlock *, ValVarTable *>;
-using LiveVarible   = utils::ListTrait<LiveInterval *>;
+using LiveVarible   = utils::ListTrait<Variable *>;
 
 struct LiveInterval {
     LiveInterval()
@@ -50,18 +54,23 @@ struct Variable {
     Variable(Value *val)
         : val(val)
         , is_spilled(0)
+        , is_alloca(0)
         , is_global(val->isGlobal())
         , reg(ARMGeneralRegs::None)
-        , stackpos(0)
+        , address({0})
         , livIntvl(new LiveInterval()) {}
 
     Value         *val;
     ARMGeneralRegs reg;
     bool           is_spilled;
+    bool           is_alloca;
     bool           is_global;
     LiveInterval  *livIntvl;
-    int64_t stackpos; // variable's location on stack. Only valid when symbol is
-                      // spilled
+
+    union {
+        int64_t     stackpos;
+        const char *lable;
+    } address;
 
     static Variable *create(Value *val) {
         return new Variable(val);
@@ -84,10 +93,9 @@ public:
     LiveVarible   *liveVars;
     bool           regAllocatedMap[12];
 
-    const char *reg2str(ARMGeneralRegs reg);
-    void        computeInterval(Function *func);
-    void        initVarInterval(Function *func);
-    void        updateAllocation(BasicBlock *block, uint64_t instnum);
+    void computeInterval(Function *func);
+    void initVarInterval(Function *func);
+    void updateAllocation(BasicBlock *block, uint64_t instnum);
 
     ARMGeneralRegs allocateRegister();
     void           releaseRegister(ARMGeneralRegs reg);
@@ -96,7 +104,6 @@ public:
         return new Allocator();
     }
 
-protected:
-    bool isVariable(Value *val);
+    static bool isVariable(Value *val);
 };
 } // namespace slime::backend

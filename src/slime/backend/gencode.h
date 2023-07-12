@@ -1,5 +1,6 @@
 #include "regalloc.h"
 
+#include <cassert>
 #include <slime/ir/type.h>
 #include "slime/ir/value.h"
 #include <slime/ir/module.h>
@@ -9,10 +10,12 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <stdarg.h>
 
 namespace slime::backend {
 
 using namespace ir;
+using RegList = utils::ListTrait<ARMGeneralRegs>;
 
 class Generator {
     Generator(){};
@@ -22,7 +25,32 @@ public:
     void              genCode(FILE *fp, Module *module);
     void              genAssembly(Function *func);
 
+    Variable          *findVariable(Value *val);
+    static const char *reg2str(ARMGeneralRegs reg);
+
+    void println(const char *fmt, ...) {
+        assert(generator_.asmFile != nullptr);
+        FILE   *output_file = generator_.asmFile;
+        va_list ap;
+        va_start(ap, fmt);
+        vfprintf(output_file, fmt, ap);
+        va_end(ap);
+        fprintf(output_file, "\n");
+    }
+
 protected:
+    void cgMov(ARMGeneralRegs rd, ARMGeneralRegs rs);
+    void cgMov(ARMGeneralRegs rd, int32_t imm);
+    void cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
+    void cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset);
+    void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    void cgPush(RegList &reglist);
+    void cgBx(ARMGeneralRegs rd);
+
+    void freeCallerReg();
+
     void genInstList(InstructionList *instlist);
     void genInst(Instruction *inst);
     void genAllocaInst(AllocaInst *inst);
@@ -59,8 +87,6 @@ protected:
     void genPhiInst(PhiInst *inst);
     void genCallInst(CallInst *inst);
 
-    void Push();
-    void Pop();
 
 private:
     struct GeneratorState {

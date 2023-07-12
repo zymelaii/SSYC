@@ -3,6 +3,8 @@
 #include "slime/ir/value.h"
 #include "slime/ir/user.h"
 #include "slime/ir/instruction.h"
+#include <cstddef>
+#include <cstdio>
 
 namespace slime::backend {
 
@@ -11,18 +13,72 @@ Generator *Generator::generate() {
 }
 
 void Generator::genCode(FILE *fp, Module *module) {
-    generator_.asmFile = fp;
+    generator_.asmFile   = fp;
     generator_.allocator = Allocator::create();
     for (auto e : *module) {
-        if (e->type()->isFunction()) { genAssembly(static_cast<Function *>(e)); }
+        if (e->type()->isFunction()) {
+            if (!strcmp(e->name().data(), "memset")) continue;
+            genAssembly(static_cast<Function *>(e));
+        }
+    }
+}
+
+const char *Generator::reg2str(ARMGeneralRegs reg) {
+    switch (reg) {
+        case ARMGeneralRegs::R0:
+            return "r0";
+        case ARMGeneralRegs::R1:
+            return "r1";
+        case ARMGeneralRegs::R2:
+            return "r2";
+        case ARMGeneralRegs::R3:
+            return "r3";
+        case ARMGeneralRegs::R4:
+            return "r4";
+        case ARMGeneralRegs::R5:
+            return "r5";
+        case ARMGeneralRegs::R6:
+            return "r6";
+        case ARMGeneralRegs::R7:
+            return "r7";
+        case ARMGeneralRegs::R8:
+            return "r8";
+        case ARMGeneralRegs::R9:
+            return "r9";
+        case ARMGeneralRegs::R10:
+            return "r10";
+        case ARMGeneralRegs::R11:
+            return "r11";
+        case ARMGeneralRegs::IP:
+            return "ip";
+        case ARMGeneralRegs::SP:
+            return "sp";
+        case ARMGeneralRegs::LR:
+            return "lr";
+        case ARMGeneralRegs::None:
+        default:
+            fprintf(stderr, "Invalid Register!");
+            exit(-1);
     }
 }
 
 void Generator::genAssembly(Function *func) {
     generator_.allocator->computeInterval(func);
+    println("%s:", func->name().data());
+    int cnt = 0;
     for (auto block : func->basicBlocks()) {
+        println(".block%d:", cnt++); // label
+        generator_.cur_block = block;
         genInstList(&block->instructions());
     }
+}
+
+Variable *Generator::findVariable(Value *val) {
+    auto blockVarTable = generator_.allocator->blockVarTable;
+    auto valVarTable   = blockVarTable->find(generator_.cur_block)->second;
+    auto it            = valVarTable->find(val);
+    if (it == valVarTable->end()) { assert(0 && "unexpected error"); }
+    return it->second;
 }
 
 void Generator::genInstList(InstructionList *instlist) {
@@ -31,7 +87,9 @@ void Generator::genInstList(InstructionList *instlist) {
 
 void Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
-    // generator_.allocator->updateAllocation(inst);
+    generator_.allocator->cur_inst++;
+    generator_.allocator->updateAllocation(
+        generator_.cur_block, generator_.allocator->cur_inst);
     switch (inst->id()) {
         case InstructionID::Alloca:
             genAllocaInst(inst->asAlloca());
@@ -138,19 +196,89 @@ void Generator::genInst(Instruction *inst) {
 }
 
 void Generator::genAllocaInst(AllocaInst *inst) {
-    fprintf(generator_.asmFile, "sub sp, 4\n");
+    int size = 1;
+    auto e = inst->unwrap()->type()->tryGetElementType();
+    while(e != nullptr && e->isArray()){
+        size *= e->asArrayType()->size();
+        e = e->tryGetElementType();
+    }
+    cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, size * 4);
+    auto var = findVariable(inst->unwrap());
+    generator_.allocator->releaseRegister(var->reg);
+    var->address.stackpos = generator_.cur_pstack;
+    var->is_alloca        = true;
 }
 
 void Generator::genLoadInst(LoadInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    auto           targetVar = findVariable(inst->unwrap());
+    auto           source    = inst->useAt(0);
+    int            offset;
+    ARMGeneralRegs sourceReg;
+    if (source->isLabel()) {
+        //! TODO: label
+        assert(0);
+    } else {
+        assert(source->type()->isPointer());
+        auto sourceVar = findVariable(source);
+
+        if (sourceVar->is_alloca) {
+            sourceReg = ARMGeneralRegs::SP;
+            offset    = generator_.cur_pstack - sourceVar->address.stackpos;
+        };
+        cgLdr(targetVar->reg, sourceReg, offset);
+    }
 }
 
 void Generator::genStoreInst(StoreInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    auto           target = inst->useAt(0);
+    auto           source = inst->useAt(1);
+    ARMGeneralRegs sourceReg, targetReg;
+    int            offset;
+    if (source.value()->isConstant()) {
+        if (source.value()->type()->isInteger()) {
+            sourceReg   = generator_.allocator->allocateRegister();
+            int32_t imm = static_cast<ConstantInt *>(source.value())->value;
+            if (sourceReg == ARMGeneralRegs::None) {
+                //! TODO: spill something
+                assert(0 && "TODO!");
+            }
+            cgMov(sourceReg, imm);
+        } else if (source.value()->type()->isFloat()) {
+            //! TODO: float
+            assert(0);
+        }
+    } else {
+        auto srcVar = findVariable(source);
+        if (srcVar->is_spilled) {
+            //! TODO: handle spilled variable
+            assert(0);
+        }
+        sourceReg = srcVar->reg;
+    }
+    auto tarVar = findVariable(target);
+    if (tarVar->is_global) {
+        //! TODO: global variable
+    } else if (tarVar->is_alloca) {
+        targetReg = ARMGeneralRegs::SP;
+        offset    = generator_.cur_pstack - tarVar->address.stackpos;
+    }
+    cgStr(sourceReg, targetReg, offset);
 }
 
 void Generator::genRetInst(RetInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    if (inst->totalOperands() != 0) {
+        auto operand = inst->useAt(0).value();
+        if (operand->isImmediate()) {
+            assert(operand->type()->isInteger());
+            cgMov(
+                ARMGeneralRegs::R0, static_cast<ConstantInt *>(operand)->value);
+        } else {
+            assert(Allocator::isVariable(operand));
+            auto var = findVariable(operand);
+            cgMov(ARMGeneralRegs::R0, var->reg);
+        }
+    }
+    cgBx(ARMGeneralRegs::LR);
 }
 
 void Generator::genBrInst(BrInst *inst) {
@@ -267,7 +395,58 @@ void Generator::genPhiInst(PhiInst *inst) {
 }
 
 void Generator::genCallInst(CallInst *inst) {
+    
     assert(0 && "unfinished yet!\n");
 }
+
+void Generator::cgMov(ARMGeneralRegs rd, ARMGeneralRegs rs) {
+    println("    mov    %s, %s", reg2str(rd), reg2str(rs));
+}
+
+void Generator::cgMov(ARMGeneralRegs rd, int32_t imm) {
+    println("    mov    %s, #%d", reg2str(rd), imm);
+}
+
+void Generator::cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
+    static char tmpStr[10];
+    if (offset != 0)
+        sprintf(tmpStr, "[%s, #%d]", reg2str(src), offset);
+    else
+        sprintf(tmpStr, "[%s]", reg2str(src));
+    println("    ldr    %s, %s", reg2str(dst), tmpStr);
+}
+
+void Generator::cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset) {
+    static char tmpStr[10];
+    if (offset != 0)
+        sprintf(tmpStr, "[%s, #%d]", reg2str(dst), offset);
+    else
+        sprintf(tmpStr, "[%s]", reg2str(dst));
+    println("    str    %s, %s", reg2str(src), tmpStr);
+}
+
+void Generator::cgSub(
+    ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
+    println("    sub    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+}
+
+void Generator::cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
+    println("    sub    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+}
+
+void Generator::cgBx(ARMGeneralRegs rd) {
+    println("    bx     %s", reg2str(rd));
+}
+
+void Generator::cgPush(RegList &reglist){
+    printf("    push   [");
+    for(auto reg : reglist){
+        printf("%s", reg2str(reg));
+        if(reg != reglist.tail()->value())
+            printf(", ");
+    }
+    println("]");
+}
+
 
 } // namespace slime::backend
