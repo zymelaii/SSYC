@@ -1,4 +1,6 @@
 #include "gencode.h"
+#include "regalloc.h"
+
 #include "slime/ir/instruction.def"
 #include "slime/ir/value.h"
 #include "slime/ir/user.h"
@@ -15,6 +17,7 @@ Generator *Generator::generate() {
 void Generator::genCode(FILE *fp, Module *module) {
     generator_.asmFile   = fp;
     generator_.allocator = Allocator::create();
+    generator_.stack     = generator_.allocator->stack;
     for (auto e : *module) {
         if (e->type()->isFunction()) {
             if (!strcmp(e->name().data(), "memset")) continue;
@@ -89,7 +92,7 @@ void Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
     generator_.allocator->cur_inst++;
     generator_.allocator->updateAllocation(
-        generator_.cur_block, generator_.allocator->cur_inst);
+        this, generator_.cur_block, generator_.allocator->cur_inst);
     switch (inst->id()) {
         case InstructionID::Alloca:
             genAllocaInst(inst->asAlloca());
@@ -196,17 +199,17 @@ void Generator::genInst(Instruction *inst) {
 }
 
 void Generator::genAllocaInst(AllocaInst *inst) {
-    int size = 1;
-    auto e = inst->unwrap()->type()->tryGetElementType();
-    while(e != nullptr && e->isArray()){
+    auto e    = inst->unwrap()->type()->tryGetElementType();
+    int  size = 1;
+    while (e != nullptr && e->isArray()) {
+        e     = e->tryGetElementType();
         size *= e->asArrayType()->size();
-        e = e->tryGetElementType();
     }
     cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, size * 4);
     auto var = findVariable(inst->unwrap());
     generator_.allocator->releaseRegister(var->reg);
-    var->address.stackpos = generator_.cur_pstack;
-    var->is_alloca        = true;
+    var->is_alloca = true;
+    generator_.stack->spillVar(var, size);
 }
 
 void Generator::genLoadInst(LoadInst *inst) {
@@ -223,7 +226,8 @@ void Generator::genLoadInst(LoadInst *inst) {
 
         if (sourceVar->is_alloca) {
             sourceReg = ARMGeneralRegs::SP;
-            offset    = generator_.cur_pstack - sourceVar->address.stackpos;
+            offset    = generator_.stack->stackSize
+                   - generator_.stack->lookupOnStackVar(sourceVar);
         };
         cgLdr(targetVar->reg, sourceReg, offset);
     }
@@ -260,7 +264,8 @@ void Generator::genStoreInst(StoreInst *inst) {
         //! TODO: global variable
     } else if (tarVar->is_alloca) {
         targetReg = ARMGeneralRegs::SP;
-        offset    = generator_.cur_pstack - tarVar->address.stackpos;
+        offset    = generator_.stack->stackSize
+               - generator_.stack->lookupOnStackVar(tarVar);
     }
     cgStr(sourceReg, targetReg, offset);
 }
@@ -395,7 +400,6 @@ void Generator::genPhiInst(PhiInst *inst) {
 }
 
 void Generator::genCallInst(CallInst *inst) {
-    
     assert(0 && "unfinished yet!\n");
 }
 
@@ -438,15 +442,13 @@ void Generator::cgBx(ARMGeneralRegs rd) {
     println("    bx     %s", reg2str(rd));
 }
 
-void Generator::cgPush(RegList &reglist){
+void Generator::cgPush(RegList &reglist) {
     printf("    push   [");
-    for(auto reg : reglist){
+    for (auto reg : reglist) {
         printf("%s", reg2str(reg));
-        if(reg != reglist.tail()->value())
-            printf(", ");
+        if (reg != reglist.tail()->value()) printf(", ");
     }
     println("]");
 }
-
 
 } // namespace slime::backend

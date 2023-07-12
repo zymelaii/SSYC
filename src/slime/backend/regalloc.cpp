@@ -1,4 +1,5 @@
 #include "regalloc.h"
+#include "gencode.h"
 #include "slime/ir/instruction.def"
 
 #include <cstdint>
@@ -38,7 +39,6 @@ void Allocator::computeInterval(Function *func) {
     auto bend = func->basicBlocks().rend();
     cur_inst  = total_inst;
     while (bit != bend) {
-        //! TODO: 获取LIVE IN、LIVE OUT
         auto it          = (*bit)->instructions().rbegin();
         auto end         = (*bit)->instructions().rend();
         auto valVarTable = blockVarTable->find(*(bit))->second;
@@ -88,6 +88,18 @@ void Allocator::computeInterval(Function *func) {
     assert(cur_inst == 0);
 }
 
+Variable *Allocator::getMinIntervalRegVar() {
+    uint32_t  min = UINT32_MAX;
+    Variable *retVar;
+    for (auto e : *liveVars) {
+        if (e->livIntvl->end < min && e->reg != ARMGeneralRegs::None) {
+            min    = e->livIntvl->end;
+            retVar = e;
+        }
+    }
+    return retVar;
+}
+
 ARMGeneralRegs Allocator::allocateRegister() {
     for (int i = 0; i < 12; i++) {
         if (!regAllocatedMap[i]) {
@@ -105,31 +117,53 @@ void Allocator::releaseRegister(ARMGeneralRegs reg) {
 }
 
 //! TODO: 添加spill逻辑
-void Allocator::updateAllocation(BasicBlock *block, uint64_t instnum) {
+void Allocator::updateAllocation(
+    Generator *gen, BasicBlock *block, size_t instnum) {
     auto valVarTable = blockVarTable->find(block)->second;
     for (auto e : *valVarTable) {
-        auto     var   = e.second;
-        uint64_t start = var->livIntvl->start;
-        uint64_t end   = var->livIntvl->end;
+        auto   var   = e.second;
+        size_t start = var->livIntvl->start;
+        size_t end   = var->livIntvl->end;
         if (instnum == start) {
             liveVars->insertToTail(var);
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
             else {
-                //! TODO: spill
-                assert(0);
+                Variable *minlntvar = getMinIntervalRegVar();
+                assert(!minlntvar->is_spilled);
+                if (minlntvar->livIntvl->end < end) {
+                    var->is_spilled = true;
+                    if (stack->spillVar(var, 4))
+                        gen->cgStr(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+                } else {
+                    minlntvar->is_spilled = true;
+                    if (stack->spillVar(minlntvar, 4))
+                        gen->cgStr(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+                    gen->cgStr(
+                        minlntvar->reg,
+                        ARMGeneralRegs::SP,
+                        stack->stackSize - stack->lookupOnStackVar(minlntvar));
+                    var->reg       = minlntvar->reg;
+                    minlntvar->reg = ARMGeneralRegs::None;
+                }
             }
         } else if (instnum == end + 1) {
-            if (!var->is_spilled) releaseRegister(var->reg);
-            auto node = liveVars->head();
-            while (node != liveVars->tail()) {
-                auto v = node->value();
+            if (!var->is_spilled)
+                releaseRegister(var->reg);
+            else {
+                var->is_spilled = false;
+                stack->releaseOnStackVar(var);
+            }
+            auto it  = liveVars->node_begin();
+            auto end = liveVars->node_end();
+            while (it != end) {
+                auto v = it->value();
                 if (v == var) {
-                    node->removeFromList();
+                    it->removeFromList();
                     break;
                 }
-                node = node->next();
+                ++it;
             }
         }
     }

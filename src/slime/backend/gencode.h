@@ -1,7 +1,6 @@
-#include "regalloc.h"
-
 #include <cassert>
 #include <slime/ir/type.h>
+#include "slime/ast/decl.h"
 #include "slime/ir/value.h"
 #include <slime/ir/module.h>
 #include <slime/utils/list.h>
@@ -13,6 +12,11 @@
 #include <stdarg.h>
 
 namespace slime::backend {
+
+struct Variable;
+struct Stack;
+class Allocator;
+enum class ARMGeneralRegs;
 
 using namespace ir;
 using RegList = utils::ListTrait<ARMGeneralRegs>;
@@ -38,7 +42,6 @@ public:
         fprintf(output_file, "\n");
     }
 
-protected:
     void cgMov(ARMGeneralRegs rd, ARMGeneralRegs rs);
     void cgMov(ARMGeneralRegs rd, int32_t imm);
     void cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
@@ -49,6 +52,7 @@ protected:
     void cgPush(RegList &reglist);
     void cgBx(ARMGeneralRegs rd);
 
+protected:
     void freeCallerReg();
 
     void genInstList(InstructionList *instlist);
@@ -87,13 +91,12 @@ protected:
     void genPhiInst(PhiInst *inst);
     void genCallInst(CallInst *inst);
 
-
 private:
     struct GeneratorState {
-        BasicBlock *cur_block  = nullptr;
-        int64_t     cur_pstack = 0; // 栈的深度
-        Allocator  *allocator  = nullptr;
-        FILE       *asmFile    = nullptr;
+        BasicBlock *cur_block = nullptr;
+        Allocator  *allocator = nullptr;
+        Stack      *stack     = nullptr;
+        FILE       *asmFile   = nullptr;
     };
 
     GeneratorState generator_;
