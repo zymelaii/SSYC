@@ -4,8 +4,10 @@
 #include <slime/ir/instruction.h>
 #include <slime/pass/ValueNumbering.h>
 #include <slime/pass/DeadCodeElimination.h>
-#include <slime/pass/PhiElimination.h>
+#include <slime/pass/Mem2Reg.h>
 #include <slime/pass/Resort.h>
+#include <slime/pass/CopyPropagation.h>
+#include <slime/pass/Peekhole.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -199,8 +201,8 @@ Module *ASTToIRTranslator::translate(
         }
     }
     auto module = translator.module_.release();
-    pass::PhiEliminationPass{}.run(module);
     pass::ResortPass{}.run(module);
+    pass::PeekholePass{}.run(module);
     pass::DeadCodeEliminationPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
     return module;
@@ -232,7 +234,6 @@ void ASTToIRTranslator::translateVarDecl(VarDecl *decl) {
                 module_->createMemset(address, 0, nbytes)
                     ->insertToTail(state_.currentBlock);
                 translateArrayInitAssign(address, list);
-                //! TODO: handle init-list value-by-value copy assign
             } else {
                 assert(type->isBuiltinType());
                 auto value =
@@ -810,6 +811,11 @@ Value *ASTToIRTranslator::translateBinaryExpr(
 
     assert(lhs->type()->isBuiltinType() && rhs->type()->isBuiltinType());
     if (lhs->type()->isFloat() && rhs->type()->isInteger()) {
+        if (rhs->type()->isBoolean()) {
+            auto inst = Instruction::createZExt(rhs);
+            inst->insertToTail(block);
+            rhs = inst->unwrap();
+        }
         auto inst = Instruction::createSIToFP(rhs);
         inst->insertToTail(block);
         rhs = inst->unwrap();
@@ -820,6 +826,11 @@ Value *ASTToIRTranslator::translateBinaryExpr(
             inst->insertToTail(block);
             rhs = inst->unwrap();
         } else {
+            if (lhs->type()->isBoolean()) {
+                auto inst = Instruction::createZExt(lhs);
+                inst->insertToTail(block);
+                lhs = inst->unwrap();
+            }
             auto inst = Instruction::createSIToFP(lhs);
             inst->insertToTail(block);
             lhs = inst->unwrap();

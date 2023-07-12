@@ -13,3 +13,7 @@ release/
 *.exe
 
 *.log
+testcase_*.json
+*.prof*
+
+test/testcase/*performance*/
