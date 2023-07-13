@@ -107,7 +107,7 @@ bool PhiInst::removeValueFrom(BasicBlock* block) {
         op()[i - 1] = op()[n - 2];
         op()[i]     = op()[n - 1];
     }
-    return false;
+    return true;
 }
 
 } // namespace slime::ir
