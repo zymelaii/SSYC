@@ -56,15 +56,18 @@ public:
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgPush(RegList &reglist);
+    void cgPop(RegList &reglist);
+    void cgBl(Function *callee);
     void cgBx(ARMGeneralRegs rd);
 
 protected:
-    void freeCallerReg();
+    void saveCallerReg();
+    void restoreCallerReg();
     void addUsedGlobalVar(Variable *var);
 
     void genInstList(InstructionList *instlist);
     void genInst(Instruction *inst);
-    void genAllocaInst(AllocaInst *inst);
+    int  genAllocaInst(AllocaInst *inst);
     void genLoadInst(LoadInst *inst);
     void genStoreInst(StoreInst *inst);
     void genRetInst(RetInst *inst);
@@ -101,6 +104,7 @@ protected:
 private:
     struct GeneratorState {
         BasicBlock     *cur_block      = nullptr;
+        Function       *cur_func       = nullptr;
         Allocator      *allocator      = nullptr;
         Stack          *stack          = nullptr;
         FILE           *asmFile        = nullptr;

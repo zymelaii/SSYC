@@ -3,6 +3,7 @@
 #include "slime/utils/list.h"
 #include <algorithm>
 #include <cstdint>
+#include <set>
 #include <slime/ir/module.h>
 #include <slime/ir/type.h>
 
@@ -61,6 +62,7 @@ struct Variable {
         , is_spilled(0)
         , is_alloca(0)
         , is_global(val->isGlobal())
+        , is_used_funcparam(0)
         , reg(ARMGeneralRegs::None)
         , livIntvl(new LiveInterval()) {}
 
@@ -69,6 +71,7 @@ struct Variable {
     bool           is_spilled;
     bool           is_alloca;
     bool           is_global;
+    bool           is_used_funcparam;
     LiveInterval  *livIntvl;
 
     static Variable *create(Value *val) {
@@ -96,6 +99,7 @@ struct Stack {
 
     void pushVar(Variable *var, uint32_t size) {
         onStackVars->insertToTail(new OnStackVar(var, size));
+        stackSize += size;
     }
 
     // return true if the space is newly allocated
@@ -152,18 +156,17 @@ struct Stack {
     uint32_t lookupOnStackVar(Variable *var) {
         int offset = 0;
         for (auto e : *onStackVars) {
-            if (e->var == var) return offset;
             offset += e->size;
+            if (e->var == var) return offset;
         }
         assert(0 && "it must be an error");
     }
 
     void clear() {
-        auto it  = onStackVars->node_begin();
-        auto end = onStackVars->node_end();
-        while (it != end) {
+        auto it = onStackVars->node_begin();
+        while (it != onStackVars->node_end()) {
             auto tmp = *it++;
-            it->removeFromList();
+            tmp.removeFromList();
         }
         stackSize = 0;
     }
@@ -174,6 +177,8 @@ class Allocator {
         : cur_inst(0)
         , total_inst(0)
         , liveVars(new LiveVarible())
+        , has_funccall(false)
+        , strImmFlag(false)
         , blockVarTable(new BlockVarTable)
         , stack(new Stack) {
         memset(regAllocatedMap, false, 12);
@@ -185,16 +190,24 @@ public:
     BlockVarTable *blockVarTable;
     LiveVarible   *liveVars;
     Stack         *stack;
-    bool           regAllocatedMap[12];
+    // 当前函数将会调用的函数中参数个数的最大值
+    size_t max_funcargs;
+    //! TODO: 针对有函数调用时的寄存器分配进行优化
+    bool                     has_funccall;
+    bool                     regAllocatedMap[12];
+    bool                     strImmFlag;
+    std::set<ARMGeneralRegs> usedRegs;
 
     void computeInterval(Function *func);
     void initVarInterval(Function *func);
     void updateAllocation(Generator *gen, BasicBlock *block, uint64_t instnum);
     Variable *getMinIntervalRegVar();
+    void      getUsedRegs(BasicBlockList &blocklist);
 
     ARMGeneralRegs allocateRegister();
     void           releaseRegister(Variable *var);
     void           releaseRegister(ARMGeneralRegs reg);
+    void           freeAllRegister();
 
     void initAllocator();
 
