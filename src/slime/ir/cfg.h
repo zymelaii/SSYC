@@ -26,6 +26,7 @@ public:
     void reset(Value* control, BasicBlock* branch, BasicBlock* branchElse);
 
     bool tryMarkAsTerminal(Value* hint = nullptr);
+    void syncFlowWithInstUnsafe();
 
     inline size_t totalInBlocks() const {
         return inBlocks_.size();
@@ -41,6 +42,8 @@ public:
 
 protected:
     static BasicBlock* terminal();
+
+    void checkAndSolveOutdated();
 
     void addIncoming(BasicBlock* inBlock);
     void unlinkFrom(BasicBlock* inBlock);
