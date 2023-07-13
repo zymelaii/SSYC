@@ -31,7 +31,7 @@ static constexpr auto PRIORITIES =
         OperatorPriority(1, false), //<! Pos
         OperatorPriority(1, false), //<! Neg
         OperatorPriority(1, false), //<! Not
-        OperatorPriority(1, false), //<! Int
+        OperatorPriority(1, false), //<! Inv
         //! BinaryOperator
         OperatorPriority(12, false), //<! Assign
         OperatorPriority(3, true),   //<! Add
