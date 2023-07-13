@@ -39,7 +39,13 @@ std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
         case TypeKind::Float: {
             os() << "float";
         } break;
-        case TypeKind::Pointer:
+        case TypeKind::Pointer: {
+            if (testFlag(DumpOption::explicitPointerType) && !decay) {
+                os() << dumpType(type->tryGetElementType()) << "*";
+            } else {
+                os() << "ptr";
+            }
+        } break;
         case TypeKind::Function: {
             os() << "ptr";
         } break;
@@ -192,13 +198,14 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::Load: {
             auto inst = instruction->asLoad();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(type) << ", ptr " << dumpValueRef(inst->operand())
-                 << ", align 4";
+                 << dumpType(type) << ", " << dumpType(inst->operand()->type())
+                 << " " << dumpValueRef(inst->operand()) << ", align 4";
         } break;
         case InstructionID::Store: {
             auto inst = instruction->asStore();
             os() << name << " " << dumpType(inst->rhs()->type()) << " "
-                 << dumpValueRef(inst->rhs()) << ", ptr "
+                 << dumpValueRef(inst->rhs()) << ", "
+                 << dumpType(inst->lhs()->type()) << " "
                  << dumpValueRef(inst->lhs()) << ", align 4";
         } break;
         case InstructionID::Ret: {
@@ -223,8 +230,9 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::GetElementPtr: {
             auto inst = instruction->asGetElementPtr();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(inst->op<0>()->type()->tryGetElementType())
-                 << ", ptr " << dumpValueRef(inst->op<0>()) << ", ";
+                 << dumpType(inst->op<0>()->type()->tryGetElementType()) << ", "
+                 << dumpType(inst->op<0>()->type()) << " "
+                 << dumpValueRef(inst->op<0>()) << ", ";
             if (inst->op<2>() != nullptr) {
                 os() << "i32 " << dumpValueRef(inst->op<1>()) << ", i32 "
                      << dumpValueRef(inst->op<2>());
