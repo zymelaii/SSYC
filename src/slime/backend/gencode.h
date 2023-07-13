@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <stdarg.h>
+#include <string_view>
 
 namespace slime::backend {
 
@@ -19,13 +20,16 @@ class Allocator;
 enum class ARMGeneralRegs;
 
 using namespace ir;
-using RegList = utils::ListTrait<ARMGeneralRegs>;
+using RegList        = utils::ListTrait<ARMGeneralRegs>;
+using UsedGlobalVars = std::map<Variable *, std::string_view>;
 
 class Generator {
     Generator(){};
 
 public:
     static Generator *generate();
+    void              genGlobalDef(GlobalObject *obj);
+    void              genUsedGlobVars();
     void              genCode(FILE *fp, Module *module);
     void              genAssembly(Function *func);
 
@@ -45,8 +49,10 @@ public:
     void cgMov(ARMGeneralRegs rd, ARMGeneralRegs rs);
     void cgMov(ARMGeneralRegs rd, int32_t imm);
     void cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
+    void cgLdr(ARMGeneralRegs dst, Variable *var); // only for globalvar
     void cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset);
     void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgPush(RegList &reglist);
@@ -54,6 +60,7 @@ public:
 
 protected:
     void freeCallerReg();
+    void addUsedGlobalVar(Variable *var);
 
     void genInstList(InstructionList *instlist);
     void genInst(Instruction *inst);
@@ -93,10 +100,11 @@ protected:
 
 private:
     struct GeneratorState {
-        BasicBlock *cur_block = nullptr;
-        Allocator  *allocator = nullptr;
-        Stack      *stack     = nullptr;
-        FILE       *asmFile   = nullptr;
+        BasicBlock     *cur_block      = nullptr;
+        Allocator      *allocator      = nullptr;
+        Stack          *stack          = nullptr;
+        FILE           *asmFile        = nullptr;
+        UsedGlobalVars *usedGlobalVars = nullptr;
     };
 
     GeneratorState generator_;

@@ -12,6 +12,22 @@ bool Allocator::isVariable(Value *val) {
     return !(val->isConstant() || val->isImmediate() || val->isLabel());
 }
 
+void Allocator::initAllocator() {
+    cur_inst   = 0;
+    total_inst = 0;
+    blockVarTable->clear();
+    stack->clear();
+    memset(regAllocatedMap, false, 12);
+
+    // init liveVars
+    auto it  = liveVars->node_begin();
+    auto end = liveVars->node_end();
+    while (it != end) {
+        auto tmp = *it++;
+        tmp.removeFromList();
+    }
+}
+
 void Allocator::initVarInterval(Function *func) {
     for (auto block : func->basicBlocks()) {
         auto valVarTable = new ValVarTable;
@@ -74,17 +90,17 @@ void Allocator::computeInterval(Function *func) {
         ++bit;
     }
 
-    int cnt = 0;
-    for (auto e : func->basicBlocks()) {
-        auto e2 = blockVarTable->find(e)->second;
-        for (auto e3 : *e2) {
-            printf(
-                "%d: begin:%lu end:%lu\n",
-                cnt++,
-                e3.second->livIntvl->start,
-                e3.second->livIntvl->end);
-        }
-    }
+    // int cnt = 0;
+    // for (auto e : func->basicBlocks()) {
+    //     auto e2 = blockVarTable->find(e)->second;
+    //     for (auto e3 : *e2) {
+    //         printf(
+    //             "%d: begin:%lu end:%lu\n",
+    //             cnt++,
+    //             e3.second->livIntvl->start,
+    //             e3.second->livIntvl->end);
+    //     }
+    // }
     assert(cur_inst == 0);
 }
 
@@ -110,6 +126,15 @@ ARMGeneralRegs Allocator::allocateRegister() {
     return ARMGeneralRegs::None;
 }
 
+void Allocator::releaseRegister(Variable *var) {
+    assert(
+        regAllocatedMap[static_cast<int>(var->reg)]
+        && "It must be a bug here!");
+    assert(static_cast<int>(var->reg) < 12);
+    regAllocatedMap[static_cast<int>(var->reg)] = false;
+    var->reg                                    = ARMGeneralRegs::None;
+}
+
 void Allocator::releaseRegister(ARMGeneralRegs reg) {
     assert(regAllocatedMap[static_cast<int>(reg)] && "It must be a bug here!");
     assert(static_cast<int>(reg) < 12);
@@ -126,6 +151,7 @@ void Allocator::updateAllocation(
         size_t end   = var->livIntvl->end;
         if (instnum == start) {
             liveVars->insertToTail(var);
+            if (var->is_global) continue;
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
@@ -135,11 +161,11 @@ void Allocator::updateAllocation(
                 if (minlntvar->livIntvl->end < end) {
                     var->is_spilled = true;
                     if (stack->spillVar(var, 4))
-                        gen->cgStr(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
                 } else {
                     minlntvar->is_spilled = true;
                     if (stack->spillVar(minlntvar, 4))
-                        gen->cgStr(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
                     gen->cgStr(
                         minlntvar->reg,
                         ARMGeneralRegs::SP,
@@ -149,11 +175,13 @@ void Allocator::updateAllocation(
                 }
             }
         } else if (instnum == end + 1) {
-            if (!var->is_spilled)
-                releaseRegister(var->reg);
-            else {
-                var->is_spilled = false;
-                stack->releaseOnStackVar(var);
+            if (!var->is_global) {
+                if (!var->is_spilled && !var->is_alloca)
+                    releaseRegister(var);
+                else if (!var->is_global) {
+                    var->is_spilled = false;
+                    stack->releaseOnStackVar(var);
+                }
             }
             auto it  = liveVars->node_begin();
             auto end = liveVars->node_end();

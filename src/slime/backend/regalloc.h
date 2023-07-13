@@ -98,7 +98,7 @@ struct Stack {
         onStackVars->insertToTail(new OnStackVar(var, size));
     }
 
-    //return true if the space is newly allocated
+    // return true if the space is newly allocated
     bool spillVar(Variable *var, uint32_t size) {
         assert(var->reg == ARMGeneralRegs::None);
         auto it  = onStackVars->node_begin();
@@ -153,9 +153,19 @@ struct Stack {
         int offset = 0;
         for (auto e : *onStackVars) {
             if (e->var == var) return offset;
-            offset += offset;
+            offset += e->size;
         }
         assert(0 && "it must be an error");
+    }
+
+    void clear() {
+        auto it  = onStackVars->node_begin();
+        auto end = onStackVars->node_end();
+        while (it != end) {
+            auto tmp = *it++;
+            it->removeFromList();
+        }
+        stackSize = 0;
     }
 };
 
@@ -183,7 +193,10 @@ public:
     Variable *getMinIntervalRegVar();
 
     ARMGeneralRegs allocateRegister();
+    void           releaseRegister(Variable *var);
     void           releaseRegister(ARMGeneralRegs reg);
+
+    void initAllocator();
 
     static Allocator *create() {
         return new Allocator();

@@ -2,9 +2,11 @@
 #include "regalloc.h"
 
 #include "slime/ir/instruction.def"
+#include "slime/ir/module.h"
 #include "slime/ir/value.h"
 #include "slime/ir/user.h"
 #include "slime/ir/instruction.h"
+#include "slime/utils/list.h"
 #include <cstddef>
 #include <cstdio>
 
@@ -15,15 +17,27 @@ Generator *Generator::generate() {
 }
 
 void Generator::genCode(FILE *fp, Module *module) {
-    generator_.asmFile   = fp;
-    generator_.allocator = Allocator::create();
-    generator_.stack     = generator_.allocator->stack;
+    generator_.asmFile           = fp;
+    generator_.allocator         = Allocator::create();
+    generator_.stack             = generator_.allocator->stack;
+    generator_.usedGlobalVars    = new UsedGlobalVars;
+    GlobalObjectList *global_var = new GlobalObjectList;
+    println("   .arch armv7a");
+    println("   .text");
     for (auto e : *module) {
         if (e->type()->isFunction()) {
+            generator_.allocator->initAllocator();
             if (!strcmp(e->name().data(), "memset")) continue;
             genAssembly(static_cast<Function *>(e));
+        } else {
+            if (e->tryIntoGlobalVariable() != nullptr)
+                global_var->insertToTail(e);
         }
     }
+    // generator constant pool
+    println("   .pool");
+    genUsedGlobVars();
+    for (auto e : *global_var) { genGlobalDef(e); }
 }
 
 const char *Generator::reg2str(ARMGeneralRegs reg) {
@@ -65,12 +79,56 @@ const char *Generator::reg2str(ARMGeneralRegs reg) {
     }
 }
 
+void Generator::genGlobalDef(GlobalObject *obj) {
+    if (obj->tryIntoFunction() != nullptr) {
+        auto func = obj->asFunction();
+        println("   .globl %s", func->name().data());
+        println("   .p2align 2");
+        println("   .type %s, %%function", func->name().data());
+        println("%s:", func->name().data());
+    } else if (obj->tryIntoGlobalVariable()) {
+        auto globvar  = obj->asGlobalVariable();
+        auto initData = globvar->type()->tryGetElementType();
+        println("   .type %s, %%object", globvar->name().data());
+        if (initData->isArray()) {
+            uint32_t size = 1;
+            auto     e    = initData;
+            while (e != nullptr && e->isArray()) {
+                size *= e->asArrayType()->size();
+                e     = e->tryGetElementType();
+            }
+            println("   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
+        } else {
+            println("   .data");
+            println("   .globl %s", globvar->name().data());
+            println("   .p2align 2");
+            println("%s:", globvar->name().data());
+            //! TODO: float global var
+            assert(!initData->isFloat());
+            if (initData->isInteger()) {
+                println(
+                    "   .long   %d",
+                    static_cast<const ConstantInt *>(globvar->data())->value);
+                println("   .size %s, 4\n", globvar->name().data());
+            }
+        }
+    }
+}
+
+void Generator::genUsedGlobVars() {
+    for (auto e : *generator_.usedGlobalVars) {
+        println("%s:", e.second.data());
+        println("   .long %s", e.first->val->name().data());
+    }
+    println("");
+}
+
 void Generator::genAssembly(Function *func) {
     generator_.allocator->computeInterval(func);
-    println("%s:", func->name().data());
+    genGlobalDef(func);
     int cnt = 0;
     for (auto block : func->basicBlocks()) {
-        println(".block%d:", cnt++); // label
+        println("@ %%bb.%d:", cnt++); // label
         generator_.cur_block = block;
         genInstList(&block->instructions());
     }
@@ -82,6 +140,17 @@ Variable *Generator::findVariable(Value *val) {
     auto it            = valVarTable->find(val);
     if (it == valVarTable->end()) { assert(0 && "unexpected error"); }
     return it->second;
+}
+
+void Generator::addUsedGlobalVar(Variable *var) {
+    assert(var->is_global);
+    static uint32_t nrGlobVar = 0;
+    static char     str[10];
+    if (generator_.usedGlobalVars->find(var)
+        != generator_.usedGlobalVars->end())
+        return;
+    sprintf(str, "GlobAddr%d", nrGlobVar);
+    generator_.usedGlobalVars->insert({var, str});
 }
 
 void Generator::genInstList(InstructionList *instlist) {
@@ -199,17 +268,20 @@ void Generator::genInst(Instruction *inst) {
 }
 
 void Generator::genAllocaInst(AllocaInst *inst) {
-    auto e    = inst->unwrap()->type()->tryGetElementType();
-    int  size = 1;
+    int          totalSize;
+    Instruction *pinst = inst;
+    auto         e     = inst->unwrap()->type()->tryGetElementType();
+    int          size  = 1;
     while (e != nullptr && e->isArray()) {
-        e     = e->tryGetElementType();
         size *= e->asArrayType()->size();
+        e     = e->tryGetElementType();
     }
-    cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, size * 4);
     auto var = findVariable(inst->unwrap());
-    generator_.allocator->releaseRegister(var->reg);
+    generator_.allocator->releaseRegister(var);
     var->is_alloca = true;
-    generator_.stack->spillVar(var, size);
+    generator_.stack->spillVar(var, size * 4);
+
+    cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, size * 4);
 }
 
 void Generator::genLoadInst(LoadInst *inst) {
@@ -228,7 +300,13 @@ void Generator::genLoadInst(LoadInst *inst) {
             sourceReg = ARMGeneralRegs::SP;
             offset    = generator_.stack->stackSize
                    - generator_.stack->lookupOnStackVar(sourceVar);
-        };
+        } else if (sourceVar->is_global) {
+            assert(sourceVar->reg == ARMGeneralRegs::None);
+            addUsedGlobalVar(sourceVar);
+            cgLdr(targetVar->reg, sourceVar);
+            sourceReg = targetVar->reg;
+            offset    = 0;
+        }
         cgLdr(targetVar->reg, sourceReg, offset);
     }
 }
@@ -268,6 +346,8 @@ void Generator::genStoreInst(StoreInst *inst) {
                - generator_.stack->lookupOnStackVar(tarVar);
     }
     cgStr(sourceReg, targetReg, offset);
+    if (source.value()->isConstant())
+        generator_.allocator->releaseRegister(sourceReg);
 }
 
 void Generator::genRetInst(RetInst *inst) {
@@ -280,9 +360,15 @@ void Generator::genRetInst(RetInst *inst) {
         } else {
             assert(Allocator::isVariable(operand));
             auto var = findVariable(operand);
-            cgMov(ARMGeneralRegs::R0, var->reg);
+            if (var->reg != ARMGeneralRegs::R0)
+                cgMov(ARMGeneralRegs::R0, var->reg);
         }
     }
+    if (generator_.stack->stackSize > 0)
+        cgAdd(
+            ARMGeneralRegs::SP,
+            ARMGeneralRegs::SP,
+            generator_.stack->stackSize);
     cgBx(ARMGeneralRegs::LR);
 }
 
@@ -295,7 +381,16 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
 }
 
 void Generator::genAddInst(AddInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    ARMGeneralRegs rd  = findVariable(inst->unwrap())->reg;
+    ARMGeneralRegs rs  = findVariable(inst->useAt(0))->reg;
+    auto           op2 = inst->useAt(1);
+    if (Allocator::isVariable(op2)) {
+        ARMGeneralRegs op2reg = findVariable(op2)->reg;
+        cgAdd(rd, rs, op2reg);
+    } else {
+        uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
+        cgAdd(rd, rs, imm);
+    }
 }
 
 void Generator::genSubInst(SubInst *inst) {
@@ -420,6 +515,14 @@ void Generator::cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
     println("    ldr    %s, %s", reg2str(dst), tmpStr);
 }
 
+void Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
+    assert(var->is_global);
+    auto it = generator_.usedGlobalVars->find(var);
+    if (it == generator_.usedGlobalVars->end())
+        assert(0 && "it must be an error here.");
+    println("    ldr    %s, %s", reg2str(dst), it->second.data());
+}
+
 void Generator::cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset) {
     static char tmpStr[10];
     if (offset != 0)
@@ -427,6 +530,15 @@ void Generator::cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset) {
     else
         sprintf(tmpStr, "[%s]", reg2str(dst));
     println("    str    %s, %s", reg2str(src), tmpStr);
+}
+
+void Generator::cgAdd(
+    ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
+    println("    add    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+}
+
+void Generator::cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
+    println("    add    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 void Generator::cgSub(
