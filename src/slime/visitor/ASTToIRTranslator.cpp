@@ -8,6 +8,7 @@
 #include <slime/pass/Resort.h>
 #include <slime/pass/CopyPropagation.h>
 #include <slime/pass/Peekhole.h>
+#include <slime/pass/minimum.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -201,9 +202,7 @@ Module *ASTToIRTranslator::translate(
         }
     }
     auto module = translator.module_.release();
-    pass::ResortPass{}.run(module);
-    pass::PeekholePass{}.run(module);
-    pass::DeadCodeEliminationPass{}.run(module);
+    pass::OneShotPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
     return module;
 }
@@ -562,7 +561,8 @@ void ASTToIRTranslator::translateReturnStmt(
         }
         value = retval;
     }
-    block->tryMarkAsTerminal(value);
+    ok = block->tryMarkAsTerminal(value);
+    assert(ok);
     assert(block->isTerminal());
     state_.currentBlock = BasicBlock::create(block->parent());
     state_.currentBlock->insertOrMoveAfter(block);
@@ -751,6 +751,10 @@ Value *ASTToIRTranslator::translateBinaryExpr(
     const bool isShortCircutLogic =
         expr->op == BinaryOperator::LAnd || expr->op == BinaryOperator::LOr;
     if (isShortCircutLogic) {
+        auto resultAddress =
+            Instruction::createAlloca(IntegerType::getBooleanType());
+        resultAddress->insertToTail(block);
+
         BooleanSimplifyResult inLhs(lhs);
         auto lhs = getMinimumBooleanExpression(inLhs, module_.get());
         assert(lhs != nullptr);
@@ -758,6 +762,7 @@ Value *ASTToIRTranslator::translateBinaryExpr(
             assert(lhs->isInstruction());
             lhs->asInstruction()->insertToTail(block);
         }
+        Instruction::createStore(resultAddress, lhs)->insertToTail(block);
 
         auto nextBlock = BasicBlock::create(fn);
         auto exitBlock = BasicBlock::create(fn);
@@ -791,16 +796,14 @@ Value *ASTToIRTranslator::translateBinaryExpr(
             assert(rhs->isInstruction());
             rhs->asInstruction()->insertToTail(nextBlock);
         }
+        Instruction::createStore(resultAddress, rhs)->insertToTail(nextBlock);
         nextBlock->reset(exitBlock);
 
-        auto phi = Instruction::createPhi(lhs->type());
-        phi->addIncomingValue(lhs, block);
-        phi->addIncomingValue(rhs, nextBlock);
-        phi->insertToTail(exitBlock);
+        auto result = Instruction::createLoad(resultAddress);
+        result->insertToHead(exitBlock);
 
-        //! value of phi-inst is definately not a lval
         state_.addressOfPrevExpr = nullptr;
-        state_.valueOfPrevExpr   = phi->unwrap();
+        state_.valueOfPrevExpr   = result->unwrap();
         state_.currentBlock      = exitBlock;
         return state_.valueOfPrevExpr;
     }

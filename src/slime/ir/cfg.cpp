@@ -11,6 +11,7 @@ static const CFGNode TERMINAL;
 } // namespace detail
 
 void CFGNode::reset() {
+    checkAndSolveOutdated();
     auto self = static_cast<BasicBlock*>(this);
     if (!isIncomplete()) {
         if (isBranched()) { branchElse_->unlinkFrom(self); }
@@ -78,13 +79,73 @@ bool CFGNode::tryMarkAsTerminal(Value* hint) {
         auto ptr = const_cast<CFGNode*>(&detail::TERMINAL);
         branch_  = static_cast<BasicBlock*>(ptr);
         assert(isTerminal());
+        return true;
     }
     return false;
+}
+
+void CFGNode::syncFlowWithInstUnsafe() {
+    auto self = static_cast<BasicBlock*>(this);
+    if (self->size() == 0) { return; }
+    auto inst = self->instructions().tail()->value();
+    if (inst->id() == InstructionID::Br) {
+        auto br = inst->asBr();
+        if (branch_ != nullptr) { branch_->unlinkFrom(self); }
+        if (branchElse_ != nullptr) { branchElse_->unlinkFrom(self); }
+        if (br->op<0>()->isLabel()) {
+            control_    = nullptr;
+            branch_     = static_cast<BasicBlock*>(br->op<0>().value());
+            branchElse_ = nullptr;
+            branch_->addIncoming(self);
+        } else {
+            control_    = br->op<0>();
+            branch_     = static_cast<BasicBlock*>(br->op<1>().value());
+            branchElse_ = static_cast<BasicBlock*>(br->op<2>().value());
+            branch_->addIncoming(self);
+            branchElse_->addIncoming(self);
+        }
+    } else if (inst->id() == InstructionID::Ret) {
+        auto ret = inst->asRet();
+        if (branch_ != nullptr) { branch_->unlinkFrom(self); }
+        if (branchElse_ != nullptr) { branchElse_->unlinkFrom(self); }
+        control_    = nullptr;
+        branch_     = terminal();
+        branchElse_ = nullptr;
+    }
 }
 
 BasicBlock* CFGNode::terminal() {
     auto ptr = const_cast<CFGNode*>(&detail::TERMINAL);
     return static_cast<BasicBlock*>(ptr);
+}
+
+void CFGNode::checkAndSolveOutdated() {
+    if (isIncomplete()) { return; }
+    auto self        = static_cast<BasicBlock*>(this);
+    bool shouldReset = self->size() == 0;
+    if (!shouldReset) {
+        auto brInst = self->instructions().tail()->value();
+        if (brInst->id() == InstructionID::Br) {
+            auto br     = brInst->asBr();
+            shouldReset = !(br->op<0>()->isLabel() ? isLinear() : isBranched());
+        } else if (brInst->id() == InstructionID::Ret) {
+            shouldReset = !isTerminal();
+        } else {
+            shouldReset = true;
+        }
+    }
+    if (shouldReset) {
+        control_ = nullptr;
+        if (branchElse_ != nullptr) { branchElse_->unlinkFrom(self); }
+        if (isTerminal()) {
+            branch_ = nullptr;
+        } else {
+            branch_->unlinkFrom(self);
+        }
+        control_    = nullptr;
+        branch_     = nullptr;
+        branchElse_ = nullptr;
+    }
 }
 
 void CFGNode::addIncoming(BasicBlock* inBlock) {
