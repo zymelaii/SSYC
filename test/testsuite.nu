@@ -169,7 +169,7 @@ def "compile ir" [
         )
 
     $testcases
-        | each {|e|
+        | par-each {|e|
             let name = $"($e.id)_($e.name)"
             let src = $"(git-ws)/test/testcase/($target)/($name).sy"
             let out = $"($env.PWD)/($builddir)/($name).ll"
@@ -220,7 +220,7 @@ def "build executable" [
 
     $testcases
         | enumerate
-        | each {|e|
+        | par-each {|e|
             let index = $e.index
             let e = $e.item
             let bin = $"($env.PWD)/($builddir)/($e.id)_($e.name).exe"
@@ -260,7 +260,7 @@ def "run test" [
     }
 
     $testcases
-        | each {|e|
+        | par-each {|e|
             let compiled = $e.compiled
             let bin = $e.executable
             let expected = if $e.sample_out {
