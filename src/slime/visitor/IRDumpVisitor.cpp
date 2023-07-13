@@ -3,6 +3,7 @@
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <array>
+#include <iomanip>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -11,6 +12,19 @@ using namespace ir;
 
 static inline std::ostream& operator<<(std::ostream&, std::ostream& other) {
     return other;
+}
+
+std::string_view IRDumpVisitor::lookupInstName(ir::InstructionID id) {
+    static constexpr auto INST_LOOKUP = std::array<
+        std::string_view,
+        static_cast<size_t>(InstructionID::LAST_INST) + 1>{
+        "alloca", "load", "store", "ret",  "br",     "getelementptr", "add",
+        "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
+        "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
+        "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
+        "sitofp", "zext", "icmp",  "fcmp", "phi",    "call",
+    };
+    return INST_LOOKUP[static_cast<int>(id)];
 }
 
 void IRDumpVisitor::dump(Module* module) {
@@ -78,7 +92,13 @@ std::ostream& IRDumpVisitor::dumpValueRef(Value* value) {
         if (imm->type()->isInteger()) {
             os() << static_cast<ConstantInt*>(imm)->value;
         } else {
-            os() << static_cast<ConstantFloat*>(imm)->value;
+            union {
+                float    fp;
+                uint32_t u32;
+            } v;
+
+            v.fp = static_cast<ConstantFloat*>(imm)->value;
+            os() << std::showpoint << std::scientific << v.fp;
         }
     } else if (value->isGlobal()) {
         os() << "@" << value->asGlobalObject()->name();
@@ -94,7 +114,14 @@ std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
     if (data->type()->isInteger()) {
         os() << "i32 " << static_cast<ConstantInt*>(data)->value;
     } else if (data->type()->isFloat()) {
-        os() << "float " << static_cast<ConstantFloat*>(data)->value;
+        union {
+            double   fp;
+            uint64_t u64;
+        } v;
+
+        v.fp = static_cast<ConstantFloat*>(data)->value;
+        os() << "float 0x" << std::setfill('0') << std::setw(16)
+             << std::ios::hex << v.u64;
     } else {
         assert(data->type()->isArray());
         os() << dumpArrayData(static_cast<ConstantArray*>(data));
@@ -178,16 +205,7 @@ void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {
 }
 
 void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
-    static constexpr auto INST_LOOKUP = std::array<
-        std::string_view,
-        static_cast<size_t>(InstructionID::LAST_INST) + 1>{
-        "alloca", "load", "store", "ret",  "br",     "getelementptr", "add",
-        "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
-        "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
-        "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
-        "sitofp", "zext", "icmp",  "fcmp", "phi",    "call",
-    };
-    auto name  = INST_LOOKUP[static_cast<int>(instruction->id())];
+    auto name  = lookupInstName(instruction);
     auto value = instruction->unwrap();
     auto type  = value->type();
     switch (instruction->id()) {
@@ -319,7 +337,7 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::Call: {
             auto inst = instruction->asCall();
             if (!type->isVoid()) { os() << dumpValueRef(value) << " = "; }
-            os() << name << " " << dumpType(type) << " "
+            os() << name << " " << dumpType(type, true) << " "
                  << dumpValueRef(inst->callee()) << "(";
             for (int i = 0; i < inst->totalParams(); ++i) {
                 auto& param = inst->paramAt(i);

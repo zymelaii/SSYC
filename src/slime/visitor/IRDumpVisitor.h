@@ -1,6 +1,7 @@
 #pragma once
 
 #include <slime/ir/module.h>
+#include <slime/ir/instruction.h>
 #include <map>
 #include <memory>
 #include <stdint.h>
@@ -20,6 +21,12 @@ public:
     static IRDumpVisitor* createWithOstream(std::ostream* os) {
         return new IRDumpVisitor(os);
     }
+
+    static inline std::string_view lookupInstName(ir::Instruction* inst) {
+        return !inst ? "" : lookupInstName(inst->id());
+    }
+
+    static std::string_view lookupInstName(ir::InstructionID id);
 
     inline IRDumpVisitor& withOption(DumpOption opt) {
         flags_ |= static_cast<uint32_t>(opt);
