@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <slime/ir/value.h>
 #include <slime/ir/instruction.h>
@@ -30,6 +31,17 @@ void Allocator::initAllocator() {
     while (it != end) {
         auto tmp = *it++;
         tmp.removeFromList();
+    }
+}
+
+Variable *Allocator::createVariable(Value *val) {
+    auto it = funcValVarTable->find(val);
+    if (it != funcValVarTable->end())
+        return it->second;
+    else {
+        auto var = Variable::create(val);
+        funcValVarTable->insert({val, var});
+        return var;
     }
 }
 
@@ -61,21 +73,23 @@ void Allocator::initVarInterval(Function *func) {
                 if (inst->asStore()->useAt(0)->isImmediate()) strImmFlag = true;
             }
             for (int i = 0; i < inst->totalOperands(); i++) {
-                if (isVariable(inst->useAt(i))) {
+                if (inst->useAt(i) && isVariable(inst->useAt(i))) {
                     Value *val = inst->useAt(i).value();
                     auto   it  = funcparams.find(val);
                     if (it != funcparams.end()) {
-                        it->second->is_used_funcparam = true;
-                        valVarTable->insert({val, it->second});
-                    } else
-                        valVarTable->insert({val, Variable::create(val)});
+                        it->second->livIntvl->start = 1;
+                        funcValVarTable->insert({val, it->second});
+                        funcparams.erase(it);
+                    }
+                    valVarTable->insert({val, createVariable(val)});
                 }
             }
+
             if (!inst->unwrap()->type()->isVoid())
                 //! NOTE:
                 //! map.insert在插入键值对时如果已经存在将插入的键值时应该是会插入失败的
                 valVarTable->insert(
-                    {inst->unwrap(), Variable::create(inst->unwrap())});
+                    {inst->unwrap(), createVariable(inst->unwrap())});
         }
     }
 
@@ -100,17 +114,13 @@ void Allocator::computeInterval(Function *func) {
             Instruction *inst = *it;
             //! update live-in
             for (int i = 0; i < inst->totalOperands(); i++) {
-                if (isVariable(inst->useAt(i))) {
+                Value *val = inst->useAt(i);
+                if (inst->useAt(i) && isVariable(inst->useAt(i))) {
                     auto var      = valVarTable->find(inst->useAt(i))->second;
                     auto interval = var->livIntvl;
                     interval->end = std::max(interval->end, cur_inst);
-                    if (inst->useAt(i)->isGlobal()
-                        && interval->start == UINT64_MAX) {
-                        interval->start = interval->end;
-                    } else if (
-                        var->is_used_funcparam
-                        && interval->start == UINT64_MAX) {
-                        interval->start = interval->end;
+                    if (inst->useAt(i)->isGlobal()) {
+                        interval->start = std::min(interval->start, cur_inst);
                     }
                 }
             }
@@ -122,9 +132,7 @@ void Allocator::computeInterval(Function *func) {
                     interval->start == UINT64_MAX && "SSA only assign ONCE!");
                 interval->start = cur_inst;
                 // assume the retval of function may not be used
-                if (inst->id() == InstructionID::Call && interval->end == 0) {
-                    interval->end = cur_inst;
-                }
+                if (interval->end == 0) { interval->end = cur_inst; }
             }
             --cur_inst;
             ++it;
@@ -137,8 +145,8 @@ void Allocator::computeInterval(Function *func) {
     //     auto e2 = blockVarTable->find(e)->second;
     //     for (auto e3 : *e2) {
     //         printf(
-    //             "%d: begin:%lu end:%lu\n",
-    //             cnt++,
+    //             "%%%d: begin:%lu end:%lu\n",
+    //             e3.first->id(),
     //             e3.second->livIntvl->start,
     //             e3.second->livIntvl->end);
     //     }
@@ -239,15 +247,15 @@ void Allocator::freeAllRegister() {
 
 //! TODO: 添加spill逻辑
 void Allocator::updateAllocation(
-    Generator *gen, BasicBlock *block, size_t instnum) {
+    Generator *gen, BasicBlock *block, Instruction *inst, size_t instnum) {
     auto valVarTable = blockVarTable->find(block)->second;
     for (auto e : *valVarTable) {
         auto   var   = e.second;
         size_t start = var->livIntvl->start;
         size_t end   = var->livIntvl->end;
+        if (var->is_global) { int a = 1; }
         if (instnum == start) {
             liveVars->insertToTail(var);
-            if (var->is_global) continue;
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
@@ -271,14 +279,13 @@ void Allocator::updateAllocation(
                 }
             }
         } else if (instnum == end + 1) {
-            if (!var->is_global) {
-                if (!var->is_spilled && !var->is_alloca)
-                    releaseRegister(var);
-                else {
-                    var->is_spilled = false;
-                    stack->releaseOnStackVar(var);
-                }
+            if (!var->is_spilled && !var->is_alloca)
+                releaseRegister(var);
+            else {
+                var->is_spilled = false;
+                stack->releaseOnStackVar(var);
             }
+
             auto it  = liveVars->node_begin();
             auto end = liveVars->node_end();
             while (it != end) {

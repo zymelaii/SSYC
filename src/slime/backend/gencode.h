@@ -55,8 +55,11 @@ public:
     void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    void cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2);
+    void cgCmp(ARMGeneralRegs op1, int32_t op2);
     void cgPush(RegList &reglist);
     void cgPop(RegList &reglist);
+    void cgB(Value *brTarget);
     void cgBl(Function *callee);
     void cgBx(ARMGeneralRegs rd);
 

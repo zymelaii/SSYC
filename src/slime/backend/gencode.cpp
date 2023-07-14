@@ -128,9 +128,8 @@ void Generator::genUsedGlobVars() {
 void Generator::genAssembly(Function *func) {
     generator_.allocator->computeInterval(func);
     genGlobalDef(func);
-    int cnt = 0;
     for (auto block : func->basicBlocks()) {
-        println("@ %%bb.%d:", cnt++); // label
+        println("@ %%bb.%d:", block->id()); // label
         generator_.cur_block = block;
         genInstList(&block->instructions());
     }
@@ -197,7 +196,8 @@ void Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
     assert(instID != InstructionID::Alloca);
     generator_.allocator->updateAllocation(
-        this, generator_.cur_block, generator_.allocator->cur_inst);
+        this, generator_.cur_block, inst, generator_.allocator->cur_inst);
+
     switch (inst->id()) {
         case InstructionID::Alloca:
             genAllocaInst(inst->asAlloca());
@@ -213,6 +213,7 @@ void Generator::genInst(Instruction *inst) {
             break;
         case InstructionID::Br:
             genBrInst(inst->asBr());
+            break;
         case InstructionID::GetElementPtr:
             genGetElemPtrInst(inst->asGetElementPtr());
             break;
@@ -291,7 +292,6 @@ void Generator::genInst(Instruction *inst) {
         case InstructionID::FCmp:
             genFCmpInst(inst->asFCmp());
             break;
-        case InstructionID::Phi:
             genPhiInst(inst->asPhi());
             break;
         case InstructionID::Call:
@@ -335,11 +335,13 @@ void Generator::genLoadInst(LoadInst *inst) {
             offset    = generator_.stack->stackSize
                    - generator_.stack->lookupOnStackVar(sourceVar);
         } else if (sourceVar->is_global) {
-            assert(sourceVar->reg == ARMGeneralRegs::None);
             addUsedGlobalVar(sourceVar);
-            cgLdr(targetVar->reg, sourceVar);
-            sourceReg = targetVar->reg;
-            offset    = 0;
+            offset = 0;
+            if (sourceVar->reg == ARMGeneralRegs::None) {
+                cgLdr(targetVar->reg, sourceVar);
+                sourceReg = targetVar->reg;
+            } else
+                sourceReg = sourceVar->reg;
         }
         cgLdr(targetVar->reg, sourceReg, offset);
     }
@@ -373,13 +375,9 @@ void Generator::genStoreInst(StoreInst *inst) {
     }
     auto tarVar = findVariable(target);
     if (tarVar->is_global) {
-        //! TODO: global variable
-        targetReg = generator_.allocator->allocateRegister();
+        assert(tarVar->reg != ARMGeneralRegs::None);
+        targetReg = tarVar->reg;
         addUsedGlobalVar(tarVar);
-        if (targetReg == ARMGeneralRegs::None) {
-            //! TODO: spill something
-            assert(0 && "TODO!");
-        }
         cgLdr(targetReg, tarVar);
         cgStr(sourceReg, targetReg, 0);
     } else {
@@ -418,7 +416,9 @@ void Generator::genRetInst(RetInst *inst) {
 }
 
 void Generator::genBrInst(BrInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    if (generator_.cur_block->isLinear())
+        cgB(inst->useAt(0));
+    else { assert(0 && "unfinished yet!\n"); }
 }
 
 void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
@@ -537,7 +537,25 @@ void Generator::genSIToFPInst(SIToFPInst *inst) {
 }
 
 void Generator::genICmpInst(ICmpInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    auto op1 = inst->useAt(0), op2 = inst->useAt(1);
+    if (Allocator::isVariable(op2)) {
+        Variable *lhs = findVariable(op1), *rhs = findVariable(op2);
+        cgCmp(lhs->reg, rhs->reg);
+    } else {
+        //! TODO: float
+        assert(!op2->asConstantData()->type()->isFloat());
+        Variable *lhs = findVariable(op1);
+        int32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
+        cgCmp(lhs->reg, imm);
+    }
+
+    switch(inst->predicate()){
+        case ComparePredicationType::EQ:
+            
+            break;
+        default:
+           assert(0 && "unfinished yet!\n");
+    }
 }
 
 void Generator::genFCmpInst(FCmpInst *inst) {
@@ -640,6 +658,19 @@ void Generator::cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
     println("    sub    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
+void Generator::cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2) {
+    println("    cmp    %s, %s", reg2str(op1), reg2str(op2));
+}
+
+void Generator::cgCmp(ARMGeneralRegs op1, int32_t op2) {
+    println("    cmp    %s, #%d", reg2str(op1), op2);
+}
+
+void Generator::cgB(Value *brTarget) {
+    assert(brTarget->isLabel());
+    println("    b      %%bb.%d", brTarget->id());
+}
+
 void Generator::cgBx(ARMGeneralRegs rd) {
     println("    bx     %s", reg2str(rd));
 }
@@ -649,9 +680,9 @@ void Generator::cgBl(Function *callee) {
 }
 
 void Generator::cgPush(RegList &reglist) {
-    printf("    push   {");
+    fprintf(generator_.asmFile, "    push   {");
     for (auto reg : reglist) {
-        printf("%s", reg2str(reg));
+        fprintf(generator_.asmFile, "%s", reg2str(reg));
         if (reg != reglist.tail()->value()) printf(", ");
     }
     println("}");

@@ -1,3 +1,4 @@
+#include "slime/ir/instruction.h"
 #include "slime/ir/user.h"
 #include "slime/ir/value.h"
 #include "slime/utils/list.h"
@@ -8,6 +9,7 @@
 #include <slime/ir/type.h>
 
 #include <map>
+#include <type_traits>
 
 namespace slime::backend {
 
@@ -62,7 +64,6 @@ struct Variable {
         , is_spilled(0)
         , is_alloca(0)
         , is_global(val->isGlobal())
-        , is_used_funcparam(0)
         , reg(ARMGeneralRegs::None)
         , livIntvl(new LiveInterval()) {}
 
@@ -71,7 +72,6 @@ struct Variable {
     bool           is_spilled;
     bool           is_alloca;
     bool           is_global;
-    bool           is_used_funcparam;
     LiveInterval  *livIntvl;
 
     static Variable *create(Value *val) {
@@ -179,6 +179,7 @@ class Allocator {
         , liveVars(new LiveVarible())
         , has_funccall(false)
         , strImmFlag(false)
+        , funcValVarTable(new ValVarTable)
         , blockVarTable(new BlockVarTable)
         , stack(new Stack) {
         memset(regAllocatedMap, false, 12);
@@ -187,6 +188,7 @@ class Allocator {
 public:
     uint64_t       cur_inst;
     uint64_t       total_inst;
+    ValVarTable   *funcValVarTable;
     BlockVarTable *blockVarTable;
     LiveVarible   *liveVars;
     Stack         *stack;
@@ -200,8 +202,10 @@ public:
 
     void computeInterval(Function *func);
     void initVarInterval(Function *func);
-    void updateAllocation(Generator *gen, BasicBlock *block, uint64_t instnum);
+    void updateAllocation(
+        Generator *gen, BasicBlock *block, Instruction *inst, uint64_t instnum);
     Variable *getMinIntervalRegVar();
+    Variable *createVariable(Value *val);
     void      getUsedRegs(BasicBlockList &blocklist);
 
     ARMGeneralRegs allocateRegister();
