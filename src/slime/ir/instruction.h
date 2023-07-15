@@ -84,6 +84,10 @@ public:
         return instruction_;
     }
 
+    BasicBlock::iterator intoIter() const {
+        return {self_};
+    }
+
     BasicBlock *parent() const {
         return parent_;
     }

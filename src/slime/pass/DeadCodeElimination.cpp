@@ -6,51 +6,133 @@ namespace slime::pass {
 
 using namespace ir;
 
+void DeadCodeEliminationPass::run(Module *module) {
+    for (auto fn : module->globalObjects()) {
+        if (fn->isFunction()) {
+            useList.clear();
+            defList.clear();
+            runOnFunction(fn->asFunction());
+        }
+    }
+}
+
 void DeadCodeEliminationPass::runOnFunction(Function *target) {
-    auto &blocks  = target->basicBlocks();
-    auto  itBlock = blocks.begin();
-    while (itBlock != blocks.end()) {
-        auto block = *itBlock++;
-        if (block->totalInBlocks() == 0) {
-            if (block != target->front()) {
-                block->remove();
+    auto blockIter = target->basicBlocks().begin();
+    if (blockIter == target->basicBlocks().end()) { return; }
+    auto entry = *blockIter;
+    while (blockIter != target->basicBlocks().end()) {
+        auto block = *blockIter++;
+        if (block->uses().size() == 0 && block != entry) {
+            block->remove();
+            continue;
+        } else if (block->isIncomplete()) {
+            auto ok = block->tryMarkAsTerminal();
+            assert(ok);
+        }
+        std::list<ir::AllocaInst *> allocas;
+        auto                        instIter = block->instructions().begin();
+        while (instIter != block->instructions().end()) {
+            auto inst = *instIter++;
+            if (inst->id() == ir::InstructionID::Store) {
+                auto store = inst->asStore();
+                if (auto &lastStore = defList[store->lhs()]) {
+                    if (lastStore != nullptr) {
+                        auto lastLoad = useList[lastStore];
+                        if (!lastLoad
+                            && lastLoad->parent() == lastStore->parent()
+                            && lastStore->parent() == store->parent()
+                            && lastLoad->uses().size() == 0) {
+                            lastStore->removeFromBlock();
+                        }
+                    }
+                    lastStore = store;
+                }
+            }
+            if (inst->id() == ir::InstructionID::Load) {
+                auto load = inst->asLoad();
+                if (load->uses().size() == 0) {
+                    load->removeFromBlock();
+                    continue;
+                }
+                auto address = load->operand();
+                if (defList.count(address) != 0) {
+                    auto  store    = defList[address];
+                    auto &lastLoad = useList[store];
+                    if (lastLoad) { lastLoad->removeFromBlock(); }
+                    lastLoad = load;
+                }
+            }
+            if (inst->id() == ir::InstructionID::Br) {
+                auto br = inst->asBr();
+                if (block->isBranched() && br->op<0>()->isImmediate()) {
+                    auto imm =
+                        static_cast<ir::ConstantInt *>(br->op<0>().value());
+                    auto branchToSecond = !imm->value;
+                    if (branchToSecond) {
+                        block->reset(block->branchElse());
+                    } else {
+                        block->reset(block->branch());
+                    }
+                }
+                continue;
+            }
+            if (inst->id() == ir::InstructionID::Alloca) {
+                allocas.push_front(inst->asAlloca());
                 continue;
             }
         }
-
-        if (block->isBranched() && block->control()->isImmediate()) {
-            auto v = static_cast<ConstantInt *>(block->control())->value;
-            if (v) {
-                block->reset(block->branch());
+        for (auto alloca : allocas) {
+            if (alloca->uses().size() == 0) {
+                alloca->removeFromBlock();
             } else {
-                block->reset(block->branchElse());
+                alloca->insertToHead(entry);
             }
         }
+    }
 
-        while (block->isLinear()) {
-            auto branch = block->branch();
-            if (branch->isLinear() && branch->size() == 1
-                && !branch->isTerminal()) {
-                block->reset(branch->branch());
-                continue;
+    //! FIXME: this block combination cannot solve empty loop issues
+    //! completely
+    blockIter = target->basicBlocks().begin();
+    while (blockIter != target->basicBlocks().end()) {
+        const auto MAX_COMBO = 5;
+        int        combo     = 0;
+        auto       block     = *blockIter++;
+        while (block->isLinear() && !block->isTerminal()) {
+            if (combo++ < MAX_COMBO) { break; }
+            auto follow = block->branch();
+            if (follow->inBlocks().size() == 1) {
+                if (blockIter != target->basicBlocks().end()
+                    && *blockIter == follow) {
+                    ++blockIter;
+                }
+                block->reset();
+                auto instIter = follow->instructions().begin();
+                while (instIter != follow->instructions().end()) {
+                    (*instIter++)->insertToTail(block);
+                }
+                block->syncFlowWithInstUnsafe();
+                follow->remove();
+                break;
             }
-            break;
-        }
-
-        auto instructions = block->instructions();
-        auto it           = instructions.begin();
-        while (it != instructions.end()) {
-            auto inst  = *it++;
-            auto value = inst->unwrap();
-            if (!value->type()->isVoid() && inst->id() != InstructionID::Call
-                && value->uses().size() == 0) {
-                auto ok = inst->removeFromBlock();
+            if (!follow->isLinear() || follow->size() != 1) { break; }
+            if (follow->isTerminal()) {
+                auto ret = follow->instructions().tail()->value()->asRet();
+                block->reset();
+                bool ok = block->tryMarkAsTerminal(ret->operand());
                 assert(ok);
-                delete inst;
+            } else {
+                block->reset(follow->branch());
             }
         }
+    }
 
-        if (block->isIncomplete()) { block->tryMarkAsTerminal(); }
+    blockIter = target->basicBlocks().begin();
+    assert(blockIter != target->basicBlocks().end());
+    ++blockIter;
+    while (blockIter != target->basicBlocks().end()) {
+        if (auto block = *blockIter++; block->uses().size() == 0) {
+            block->remove();
+        }
     }
 }
 
