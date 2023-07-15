@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <slime/ir/value.h>
 #include <slime/ir/instruction.h>
 #include <vector>
@@ -49,11 +50,11 @@ void Allocator::initVarInterval(Function *func) {
     ValVarTable funcparams;
     for (int i = 0; i < func->totalParams(); i++) {
         Variable *var =
-            Variable::create(const_cast<Parameter *>(func->paramAt(0)));
+            Variable::create(const_cast<Parameter *>(func->paramAt(i)));
         if (i < 4) {
             var->reg           = static_cast<ARMGeneralRegs>(i);
             regAllocatedMap[i] = true;
-            funcparams.insert({const_cast<Parameter *>(func->paramAt(0)), var});
+            funcparams.insert({const_cast<Parameter *>(func->paramAt(i)), var});
         } else {
             var->is_spilled = true;
             stack->pushVar(var, 4);
@@ -79,6 +80,7 @@ void Allocator::initVarInterval(Function *func) {
                     if (it != funcparams.end()) {
                         it->second->livIntvl->start = 1;
                         funcValVarTable->insert({val, it->second});
+                        liveVars->insertToTail(it->second);
                         funcparams.erase(it);
                     }
                     valVarTable->insert({val, createVariable(val)});
@@ -174,10 +176,11 @@ void Allocator::computeInterval(Function *func) {
     assert(cur_inst == 0);
 }
 
-Variable *Allocator::getMinIntervalRegVar() {
+Variable *Allocator::getMinIntervalRegVar(std::set<Variable *> operands) {
     uint32_t  min = UINT32_MAX;
     Variable *retVar;
     for (auto e : *liveVars) {
+        if (operands.find(e) != operands.end()) continue;
         if (e->livIntvl->end < min && e->reg != ARMGeneralRegs::None) {
             min    = e->livIntvl->end;
             retVar = e;
@@ -268,7 +271,15 @@ void Allocator::freeAllRegister() {
 //! TODO: 添加spill逻辑
 void Allocator::updateAllocation(
     Generator *gen, BasicBlock *block, Instruction *inst) {
-    auto valVarTable = blockVarTable->find(block)->second;
+    std::set<Variable *> operands;
+    auto                 valVarTable = blockVarTable->find(block)->second;
+    for (int i = 0; i < inst->totalOperands(); i++) {
+        if (inst->useAt(i) && isVariable(inst->useAt(i))) {
+            Variable *var = valVarTable->find(inst->useAt(i))->second;
+            operands.insert(var);
+        }
+    }
+
     for (auto e : *valVarTable) {
         auto   var   = e.second;
         size_t start = var->livIntvl->start;
@@ -276,11 +287,18 @@ void Allocator::updateAllocation(
         if (var->is_global) { int a = 1; }
         if (cur_inst == start) {
             liveVars->insertToTail(var);
+            if (inst->id() == InstructionID::ICmp
+                && inst->unwrap() == var->val) {
+                Instruction *nextinst = gen->getNextInst(inst);
+                if (nextinst->id() == InstructionID::Br && end == cur_inst + 1)
+                    continue;
+            }
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
             else {
-                Variable *minlntvar = getMinIntervalRegVar();
+                //! NOTE: spill
+                Variable *minlntvar = getMinIntervalRegVar(operands);
                 assert(!minlntvar->is_spilled);
                 if (minlntvar->livIntvl->end < end) {
                     var->is_spilled = true;
@@ -298,7 +316,7 @@ void Allocator::updateAllocation(
                     minlntvar->reg = ARMGeneralRegs::None;
                 }
             }
-        } 
+        }
         // else if (cur_inst == end + 1) {
         //     if (!var->is_spilled && !var->is_alloca)
         //         releaseRegister(var);

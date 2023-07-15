@@ -1,3 +1,4 @@
+#include "slime/ir/instruction.def"
 #include "slime/ir/instruction.h"
 #include "slime/ir/user.h"
 #include "slime/ir/value.h"
@@ -65,14 +66,16 @@ struct Variable {
         , is_alloca(0)
         , is_global(val->isGlobal())
         , reg(ARMGeneralRegs::None)
+        , predict(ComparePredicationType::FALSE)
         , livIntvl(new LiveInterval()) {}
 
-    Value         *val;
-    ARMGeneralRegs reg;
-    bool           is_spilled;
-    bool           is_alloca;
-    bool           is_global;
-    LiveInterval  *livIntvl;
+    Value                 *val;
+    ARMGeneralRegs         reg;
+    bool                   is_spilled;
+    bool                   is_alloca;
+    bool                   is_global;
+    LiveInterval          *livIntvl;
+    ComparePredicationType predict;
 
     static Variable *create(Value *val) {
         return new Variable(val);
@@ -203,9 +206,8 @@ public:
     void initVarInterval(Function *func);
     void computeInterval(Function *func);
     void checkLiveInterval();
-    void updateAllocation(
-        Generator *gen, BasicBlock *block, Instruction *inst);
-    Variable *getMinIntervalRegVar();
+    void updateAllocation(Generator *gen, BasicBlock *block, Instruction *inst);
+    Variable *getMinIntervalRegVar(std::set<Variable *>);
     Variable *createVariable(Value *val);
     void      getUsedRegs(BasicBlockList &blocklist);
 

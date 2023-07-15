@@ -31,6 +31,7 @@ void Generator::genCode(FILE *fp, Module *module) {
             generator_.cur_func = static_cast<Function *>(e);
             if (!strcmp(e->name().data(), "memset")) continue;
             genAssembly(static_cast<Function *>(e));
+            generator_.cur_funcnum++;
             println("   .pool\n");
         } else {
             if (e->tryIntoGlobalVariable() != nullptr)
@@ -129,7 +130,10 @@ void Generator::genAssembly(Function *func) {
     generator_.allocator->computeInterval(func);
     genGlobalDef(func);
     for (auto block : func->basicBlocks()) {
-        println("@ %%bb.%d:", block->id()); // label
+        println(
+            ".F%dBB.%d:",
+            generator_.cur_funcnum,
+            getBlockNum(block->id())); // label
         generator_.cur_block = block;
         genInstList(&block->instructions());
     }
@@ -150,7 +154,7 @@ void Generator::addUsedGlobalVar(Variable *var) {
     if (generator_.usedGlobalVars->find(var)
         != generator_.usedGlobalVars->end())
         return;
-    sprintf(str, "GlobAddr%d", nrGlobVar);
+    sprintf(str, "GlobAddr%d", nrGlobVar++);
     generator_.usedGlobalVars->insert({var, str});
 }
 
@@ -170,6 +174,53 @@ void Generator::restoreCallerReg() {
     for (auto reg : usedRegs) { regList.insertToTail(reg); }
     regList.insertToTail(ARMGeneralRegs::LR);
     cgPop(regList);
+}
+
+// 将IR中基本块的id转成从0开始的顺序编号
+int Generator::getBlockNum(int blockid) {
+    BasicBlockList blocklist = generator_.cur_func->basicBlocks();
+    int            num       = 0;
+    for (auto block : blocklist) {
+        if (block->id() == blockid) { return num; }
+        num++;
+    }
+    assert(0 && "Can't reach here");
+}
+
+// 获得下一个基本块，如果没有则返回空指针
+BasicBlock *Generator::getNextBlock() {
+    BasicBlockList blocklist = generator_.cur_func->basicBlocks();
+    auto           it        = blocklist.node_begin();
+    auto           end       = blocklist.node_end();
+    while (it != end) {
+        auto block = it->value();
+        if (block == generator_.cur_block) {
+            ++it;
+            if (it != end)
+                return it->value();
+            else
+                return nullptr;
+        }
+        ++it;
+    }
+    assert(0 && "Can't reach here");
+}
+
+Instruction *Generator::getNextInst(Instruction *inst) {
+    auto instlist = generator_.cur_block->instructions();
+    auto it       = instlist.node_begin();
+    auto end      = instlist.node_end();
+    while (it != end) {
+        if (it->value() == inst) {
+            it++;
+            if (it != end)
+                return it->value();
+            else
+                return nullptr;
+        }
+        ++it;
+    }
+    assert(0 && "Can't reach here");
 }
 
 void Generator::genInstList(InstructionList *instlist) {
@@ -337,11 +388,14 @@ void Generator::genLoadInst(LoadInst *inst) {
         } else if (sourceVar->is_global) {
             addUsedGlobalVar(sourceVar);
             offset = 0;
-            if (sourceVar->reg == ARMGeneralRegs::None) {
-                cgLdr(targetVar->reg, sourceVar);
-                sourceReg = targetVar->reg;
-            } else
-                sourceReg = sourceVar->reg;
+            assert(sourceVar->reg != ARMGeneralRegs::None);
+            cgLdr(sourceVar->reg, sourceVar);
+            sourceReg= sourceVar->reg;
+            // if (sourceVar->reg == ARMGeneralRegs::None) {
+            //     cgLdr(targetVar->reg, sourceVar);
+            //     sourceReg = targetVar->reg;
+            // } else
+            //     sourceReg = sourceVar->reg;
         }
         cgLdr(targetVar->reg, sourceReg, offset);
     }
@@ -416,14 +470,36 @@ void Generator::genRetInst(RetInst *inst) {
 }
 
 void Generator::genBrInst(BrInst *inst) {
-    if (generator_.cur_block->isLinear())
-        cgB(inst->useAt(0));
-    else {
+    BasicBlock *nextblock = getNextBlock();
+    if (generator_.cur_block->isLinear()) {
+        Value *target = inst->useAt(0);
+        if (target->id() != nextblock->id()) cgB(inst->useAt(0));
+    } else {
+        auto control = inst->parent()->control()->asInstruction();
+        ComparePredicationType predict;
+        if (control->id() == InstructionID::ICmp) {
+            predict = control->asICmp()->predicate();
+        } else if (control->id() == InstructionID::Load) {
+            predict = ComparePredicationType::EQ;
+        } else {
+            assert(0 && "FCMP");
+        }
+
         Variable *cond    = findVariable(inst->useAt(0));
         Value    *target1 = inst->useAt(1), *target2 = inst->useAt(2);
-        cgTst(cond->reg, 1);
-        cgB(target1, ComparePredicationType::NE);
+        if (cond->reg != ARMGeneralRegs::None) {
+            cgTst(cond->reg, 1);
+            cgB(target2, predict);
+            cgB(target1);
+        }
+        // if (nextblock->id() == target1->id()) {
+        //     cgB(target2, ComparePredicationType::EQ);
+        // } else if (nextblock->id() == target2->id()) {
+        //     cgB(target1, ComparePredicationType::NE);
+        // } else {
+        cgB(target1, predict);
         cgB(target2);
+        // }
     }
 }
 
@@ -452,7 +528,8 @@ void Generator::genSubInst(SubInst *inst) {
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
         cgMov(rd, imm);
         rs = rd;
-    }
+    } else
+        rs = findVariable(inst->useAt(0))->reg;
 
     auto op2 = inst->useAt(1);
     if (Allocator::isVariable(op2)) {
@@ -510,7 +587,25 @@ void Generator::genFRemInst(FRemInst *inst) {
 }
 
 void Generator::genShlInst(ShlInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
+    ARMGeneralRegs rs;
+    if (!Allocator::isVariable(inst->useAt(0))) {
+        uint32_t imm =
+            static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
+        cgMov(rd, imm);
+        rs = rd;
+    } else
+        rs = findVariable(inst->useAt(0))->reg;
+
+    auto op2 = inst->useAt(1);
+    if (Allocator::isVariable(op2)) {
+        ARMGeneralRegs op2reg = findVariable(op2)->reg;
+        assert(0);
+        // cgLsl(rd, rs, op2reg);
+    } else {
+        uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
+        cgLsl(rd, rs, imm);
+    }
 }
 
 void Generator::genLShrInst(LShrInst *inst) {
@@ -563,9 +658,11 @@ void Generator::genICmpInst(ICmpInst *inst) {
     }
 
     auto result = findVariable(inst->unwrap());
-    cgMov(result->reg, 0);
-    cgMov(result->reg, 1, inst->predicate());
-    cgAnd(result->reg, result->reg, 1);
+    if (result->reg != ARMGeneralRegs::None) {
+        cgMov(result->reg, 0);
+        cgMov(result->reg, 1, inst->predicate());
+        cgAnd(result->reg, result->reg, 1);
+    }
 }
 
 void Generator::genFCmpInst(FCmpInst *inst) {
@@ -639,6 +736,7 @@ void Generator::cgMov(
         case ComparePredicationType::EQ:
             println("    moveq  %s, #%d", reg2str(rd), imm);
             break;
+        case ComparePredicationType::SLT:
         default:
             assert(0 && "unfinished comparative type");
     }
@@ -697,6 +795,10 @@ void Generator::cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
     println("    and    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
+void Generator::cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
+    println("    lsl    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+}
+
 void Generator::cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2) {
     println("    cmp    %s, %s", reg2str(op1), reg2str(op2));
 }
@@ -711,15 +813,38 @@ void Generator::cgTst(ARMGeneralRegs op1, int32_t op2) {
 
 void Generator::cgB(Value *brTarget, ComparePredicationType cond) {
     assert(brTarget->isLabel());
+    size_t blockid = brTarget->id();
     switch (cond) {
         case ComparePredicationType::TRUE:
-            println("    b      %%bb.%d", brTarget->id());
+            println(
+                "    b       .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
             break;
         case ComparePredicationType::EQ:
-            println("    be     %%bb.%d", brTarget->id());
+            println(
+                "    beq     .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
             break;
         case ComparePredicationType::NE:
-            println("    bne    %%bb.%d", brTarget->id());
+            println(
+                "    bne     .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
+            break;
+        case ComparePredicationType::SLT:
+        case ComparePredicationType::ULT:
+            println(
+                "    blt     .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
+            break;
+        case ComparePredicationType::SGT:
+            println(
+                "    bgt     .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
             break;
         default:
             assert(0);

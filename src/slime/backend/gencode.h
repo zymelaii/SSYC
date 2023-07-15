@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <stdarg.h>
 #include <string_view>
+#include <vector>
 
 namespace slime::backend {
 
@@ -22,7 +23,7 @@ enum class ARMGeneralRegs;
 
 using namespace ir;
 using RegList        = utils::ListTrait<ARMGeneralRegs>;
-using UsedGlobalVars = std::map<Variable *, std::string_view>;
+using UsedGlobalVars = std::map<Variable *, std::string>;
 
 class Generator {
     Generator(){};
@@ -36,6 +37,7 @@ public:
 
     Variable          *findVariable(Value *val);
     static const char *reg2str(ARMGeneralRegs reg);
+    Instruction       *getNextInst(Instruction *inst);
 
     void println(const char *fmt, ...) {
         assert(generator_.asmFile != nullptr);
@@ -64,6 +66,8 @@ public:
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    // void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2);
     void cgCmp(ARMGeneralRegs op1, int32_t op2);
     // void cgTst(ARMGeneralRegs op1, ARMGeneralRegs op2);
@@ -77,9 +81,12 @@ public:
     void cgBx(ARMGeneralRegs rd);
 
 protected:
-    void saveCallerReg();
-    void restoreCallerReg();
-    void addUsedGlobalVar(Variable *var);
+    void                   saveCallerReg();
+    void                   restoreCallerReg();
+    void                   addUsedGlobalVar(Variable *var);
+    BasicBlock            *getNextBlock();
+    int                    getBlockNum(int blockid);
+    ComparePredicationType reversePredict(ComparePredicationType predict);
 
     void genInstList(InstructionList *instlist);
     void genInst(Instruction *inst);
@@ -121,6 +128,7 @@ private:
     struct GeneratorState {
         BasicBlock     *cur_block      = nullptr;
         Function       *cur_func       = nullptr;
+        size_t          cur_funcnum    = 0;
         Allocator      *allocator      = nullptr;
         Stack          *stack          = nullptr;
         FILE           *asmFile        = nullptr;
