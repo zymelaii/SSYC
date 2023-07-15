@@ -101,6 +101,26 @@ void Allocator::initVarInterval(Function *func) {
     }
 }
 
+void Allocator::checkLiveInterval() {
+    auto it  = liveVars->node_begin();
+    auto end = liveVars->node_end();
+    while (it != end) {
+        auto var      = it->value();
+        auto interval = var->livIntvl;
+        if (interval->end <= cur_inst) {
+            auto tmp = it++;
+            if (var->reg != ARMGeneralRegs::None)
+                releaseRegister(var);
+            else if (var->is_spilled || var->is_alloca) {
+                var->is_spilled = false;
+                stack->releaseOnStackVar(var);
+            }
+            tmp->removeFromList();
+        } else
+            it++;
+    }
+}
+
 void Allocator::computeInterval(Function *func) {
     initVarInterval(func);
     auto bit  = func->basicBlocks().rbegin();
@@ -247,14 +267,14 @@ void Allocator::freeAllRegister() {
 
 //! TODO: 添加spill逻辑
 void Allocator::updateAllocation(
-    Generator *gen, BasicBlock *block, Instruction *inst, size_t instnum) {
+    Generator *gen, BasicBlock *block, Instruction *inst) {
     auto valVarTable = blockVarTable->find(block)->second;
     for (auto e : *valVarTable) {
         auto   var   = e.second;
         size_t start = var->livIntvl->start;
         size_t end   = var->livIntvl->end;
         if (var->is_global) { int a = 1; }
-        if (instnum == start) {
+        if (cur_inst == start) {
             liveVars->insertToTail(var);
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
@@ -278,25 +298,26 @@ void Allocator::updateAllocation(
                     minlntvar->reg = ARMGeneralRegs::None;
                 }
             }
-        } else if (instnum == end + 1) {
-            if (!var->is_spilled && !var->is_alloca)
-                releaseRegister(var);
-            else {
-                var->is_spilled = false;
-                stack->releaseOnStackVar(var);
-            }
+        } 
+        // else if (cur_inst == end + 1) {
+        //     if (!var->is_spilled && !var->is_alloca)
+        //         releaseRegister(var);
+        //     else {
+        //         var->is_spilled = false;
+        //         stack->releaseOnStackVar(var);
+        //     }
 
-            auto it  = liveVars->node_begin();
-            auto end = liveVars->node_end();
-            while (it != end) {
-                auto v = it->value();
-                if (v == var) {
-                    it->removeFromList();
-                    break;
-                }
-                ++it;
-            }
-        }
+        //     auto it  = liveVars->node_begin();
+        //     auto end = liveVars->node_end();
+        //     while (it != end) {
+        //         auto v = it->value();
+        //         if (v == var) {
+        //             it->removeFromList();
+        //             break;
+        //         }
+        //         ++it;
+        //     }
+        // }
     }
 }
 

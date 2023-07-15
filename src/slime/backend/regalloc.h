@@ -200,10 +200,11 @@ public:
     bool                     strImmFlag;
     std::set<ARMGeneralRegs> usedRegs;
 
-    void computeInterval(Function *func);
     void initVarInterval(Function *func);
+    void computeInterval(Function *func);
+    void checkLiveInterval();
     void updateAllocation(
-        Generator *gen, BasicBlock *block, Instruction *inst, uint64_t instnum);
+        Generator *gen, BasicBlock *block, Instruction *inst);
     Variable *getMinIntervalRegVar();
     Variable *createVariable(Value *val);
     void      getUsedRegs(BasicBlockList &blocklist);

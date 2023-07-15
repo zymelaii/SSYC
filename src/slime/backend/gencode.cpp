@@ -195,8 +195,7 @@ void Generator::genInstList(InstructionList *instlist) {
 void Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
     assert(instID != InstructionID::Alloca);
-    generator_.allocator->updateAllocation(
-        this, generator_.cur_block, inst, generator_.allocator->cur_inst);
+    generator_.allocator->updateAllocation(this, generator_.cur_block, inst);
 
     switch (inst->id()) {
         case InstructionID::Alloca:
@@ -301,6 +300,7 @@ void Generator::genInst(Instruction *inst) {
             fprintf(stderr, "Unkown ir inst type:%d!\n", instID);
             exit(-1);
     }
+    generator_.allocator->checkLiveInterval();
 }
 
 int Generator::genAllocaInst(AllocaInst *inst) {
@@ -418,7 +418,13 @@ void Generator::genRetInst(RetInst *inst) {
 void Generator::genBrInst(BrInst *inst) {
     if (generator_.cur_block->isLinear())
         cgB(inst->useAt(0));
-    else { assert(0 && "unfinished yet!\n"); }
+    else {
+        Variable *cond    = findVariable(inst->useAt(0));
+        Value    *target1 = inst->useAt(1), *target2 = inst->useAt(2);
+        cgTst(cond->reg, 1);
+        cgB(target1, ComparePredicationType::NE);
+        cgB(target2);
+    }
 }
 
 void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
@@ -439,9 +445,16 @@ void Generator::genAddInst(AddInst *inst) {
 }
 
 void Generator::genSubInst(SubInst *inst) {
-    ARMGeneralRegs rd  = findVariable(inst->unwrap())->reg;
-    ARMGeneralRegs rs  = findVariable(inst->useAt(0))->reg;
-    auto           op2 = inst->useAt(1);
+    ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
+    ARMGeneralRegs rs;
+    if (!Allocator::isVariable(inst->useAt(0))) {
+        uint32_t imm =
+            static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
+        cgMov(rd, imm);
+        rs = rd;
+    }
+
+    auto op2 = inst->useAt(1);
     if (Allocator::isVariable(op2)) {
         ARMGeneralRegs op2reg = findVariable(op2)->reg;
         cgSub(rd, rs, op2reg);
@@ -549,13 +562,10 @@ void Generator::genICmpInst(ICmpInst *inst) {
         cgCmp(lhs->reg, imm);
     }
 
-    switch(inst->predicate()){
-        case ComparePredicationType::EQ:
-            
-            break;
-        default:
-           assert(0 && "unfinished yet!\n");
-    }
+    auto result = findVariable(inst->unwrap());
+    cgMov(result->reg, 0);
+    cgMov(result->reg, 1, inst->predicate());
+    cgAnd(result->reg, result->reg, 1);
 }
 
 void Generator::genFCmpInst(FCmpInst *inst) {
@@ -606,12 +616,32 @@ void Generator::genCallInst(CallInst *inst) {
     cgBl(inst->callee()->asFunction());
 }
 
-void Generator::cgMov(ARMGeneralRegs rd, ARMGeneralRegs rs) {
-    println("    mov    %s, %s", reg2str(rd), reg2str(rs));
+void Generator::cgMov(
+    ARMGeneralRegs rd, ARMGeneralRegs rs, ComparePredicationType cond) {
+    switch (cond) {
+        case ComparePredicationType::TRUE:
+            println("    mov    %s, %s", reg2str(rd), reg2str(rs));
+            break;
+        case ComparePredicationType::EQ:
+            println("    moveq  %s, %s", reg2str(rd), reg2str(rs));
+            break;
+        default:
+            assert(0 && "unfinished comparative type");
+    }
 }
 
-void Generator::cgMov(ARMGeneralRegs rd, int32_t imm) {
-    println("    mov    %s, #%d", reg2str(rd), imm);
+void Generator::cgMov(
+    ARMGeneralRegs rd, int32_t imm, ComparePredicationType cond) {
+    switch (cond) {
+        case ComparePredicationType::TRUE:
+            println("    mov    %s, #%d", reg2str(rd), imm);
+            break;
+        case ComparePredicationType::EQ:
+            println("    moveq  %s, #%d", reg2str(rd), imm);
+            break;
+        default:
+            assert(0 && "unfinished comparative type");
+    }
 }
 
 void Generator::cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
@@ -658,6 +688,15 @@ void Generator::cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
     println("    sub    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
+void Generator::cgAnd(
+    ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
+    println("    and    %s, %s, #%d", reg2str(rd), reg2str(rn), reg2str(op2));
+}
+
+void Generator::cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
+    println("    and    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+}
+
 void Generator::cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2) {
     println("    cmp    %s, %s", reg2str(op1), reg2str(op2));
 }
@@ -666,9 +705,25 @@ void Generator::cgCmp(ARMGeneralRegs op1, int32_t op2) {
     println("    cmp    %s, #%d", reg2str(op1), op2);
 }
 
-void Generator::cgB(Value *brTarget) {
+void Generator::cgTst(ARMGeneralRegs op1, int32_t op2) {
+    println("    tst    %s, #%d", reg2str(op1), op2);
+}
+
+void Generator::cgB(Value *brTarget, ComparePredicationType cond) {
     assert(brTarget->isLabel());
-    println("    b      %%bb.%d", brTarget->id());
+    switch (cond) {
+        case ComparePredicationType::TRUE:
+            println("    b      %%bb.%d", brTarget->id());
+            break;
+        case ComparePredicationType::EQ:
+            println("    be     %%bb.%d", brTarget->id());
+            break;
+        case ComparePredicationType::NE:
+            println("    bne    %%bb.%d", brTarget->id());
+            break;
+        default:
+            assert(0);
+    }
 }
 
 void Generator::cgBx(ARMGeneralRegs rd) {

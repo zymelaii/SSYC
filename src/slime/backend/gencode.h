@@ -1,6 +1,7 @@
 #include <cassert>
 #include <slime/ir/type.h>
 #include "slime/ast/decl.h"
+#include "slime/ir/instruction.def"
 #include "slime/ir/value.h"
 #include <slime/ir/module.h>
 #include <slime/utils/list.h>
@@ -46,8 +47,14 @@ public:
         fprintf(output_file, "\n");
     }
 
-    void cgMov(ARMGeneralRegs rd, ARMGeneralRegs rs);
-    void cgMov(ARMGeneralRegs rd, int32_t imm);
+    void cgMov(
+        ARMGeneralRegs         rd,
+        ARMGeneralRegs         rs,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
+    void cgMov(
+        ARMGeneralRegs         rd,
+        int32_t                imm,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
     void cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
     void cgLdr(ARMGeneralRegs dst, Variable *var); // only for globalvar
     void cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset);
@@ -55,11 +62,17 @@ public:
     void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2);
     void cgCmp(ARMGeneralRegs op1, int32_t op2);
+    // void cgTst(ARMGeneralRegs op1, ARMGeneralRegs op2);
+    void cgTst(ARMGeneralRegs op1, int32_t op2);
     void cgPush(RegList &reglist);
     void cgPop(RegList &reglist);
-    void cgB(Value *brTarget);
+    void cgB(
+        Value                 *brTarget,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
     void cgBl(Function *callee);
     void cgBx(ARMGeneralRegs rd);
 
