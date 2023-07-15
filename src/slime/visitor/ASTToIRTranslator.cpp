@@ -2,13 +2,10 @@
 
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
-#include <slime/pass/ValueNumbering.h>
-#include <slime/pass/DeadCodeElimination.h>
-#include <slime/pass/Mem2Reg.h>
-#include <slime/pass/Resort.h>
-#include <slime/pass/CopyPropagation.h>
 #include <slime/pass/Peekhole.h>
-#include <slime/pass/minimum.h>
+#include <slime/pass/DeadCodeElimination.h>
+#include <slime/pass/FunctionInlining.h>
+#include <slime/pass/ValueNumbering.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -202,7 +199,9 @@ Module *ASTToIRTranslator::translate(
         }
     }
     auto module = translator.module_.release();
-    pass::OneShotPass{}.run(module);
+    pass::PeekholePass{}.run(module);
+    pass::DeadCodeEliminationPass{}.run(module);
+    pass::FunctionInliningPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
     return module;
 }
