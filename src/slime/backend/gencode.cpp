@@ -98,7 +98,7 @@ void Generator::genGlobalDef(GlobalObject *obj) {
             auto     e    = initData;
             while (e != nullptr && e->isArray()) {
                 size *= e->asArrayType()->size();
-                e    = e->tryGetElementType();
+                e     = e->tryGetElementType();
             }
             println("   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
         } else {
@@ -230,7 +230,7 @@ void Generator::genInstList(InstructionList *instlist) {
         generator_.allocator->cur_inst++;
         if (inst->id() == InstructionID::Alloca) {
             allocaSize += genAllocaInst(inst->asAlloca());
-            flag       = true;
+            flag        = true;
             continue;
         } else if (
             (flag || generator_.allocator->cur_inst == 1)
@@ -360,7 +360,7 @@ int Generator::genAllocaInst(AllocaInst *inst) {
     int          size  = 1;
     while (e != nullptr && e->isArray()) {
         size *= e->asArrayType()->size();
-        e    = e->tryGetElementType();
+        e     = e->tryGetElementType();
     }
     auto var       = findVariable(inst->unwrap());
     var->is_alloca = true;
@@ -530,7 +530,7 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
 
     //! addr = base + i[0] * sizeof(type) + i[1] * sizeof(*type) + ...
     auto baseType = inst->op<0>()->type()->tryGetElementType();
-
+    println("; %%%d:", inst->unwrap()->id());
     //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
     if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
@@ -1085,9 +1085,9 @@ void Generator::cgPush(RegList &reglist) {
 }
 
 void Generator::cgPop(RegList &reglist) {
-    printf("    pop    {");
+    fprintf(generator_.asmFile, "    pop    {");
     for (auto reg : reglist) {
-        printf("%s", reg2str(reg));
+        fprintf(generator_.asmFile, "%s", reg2str(reg));
         if (reg != reglist.tail()->value()) printf(", ");
     }
     println("}");
