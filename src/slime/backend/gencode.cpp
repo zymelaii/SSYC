@@ -528,6 +528,7 @@ int Generator::sizeOfType(ir::Type *type) {
 void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     //! NOTE: 2 more extra registers requried
 
+    //! addr = base + i[0] * sizeof(type) + i[1] * sizeof(*type) + ...
     auto baseType = inst->op<0>()->type()->tryGetElementType();
 
     //! dest is initially assign to base addr
@@ -614,8 +615,6 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
             break;
         }
 
-        //! dest <- *dest
-        cgLdr(dest, dest, 0);
         baseType = baseType->tryGetElementType();
     }
 
