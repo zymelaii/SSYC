@@ -1,15 +1,15 @@
 #include "gencode.h"
 #include "regalloc.h"
 
-#include "slime/ir/instruction.def"
-#include "slime/ir/module.h"
-#include "slime/ir/value.h"
-#include "slime/ir/user.h"
-#include "slime/ir/instruction.h"
-#include "slime/utils/list.h"
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
+#include <slime/ir/instruction.def>
+#include <slime/ir/module.h>
+#include <slime/ir/value.h>
+#include <slime/ir/user.h>
+#include <slime/ir/instruction.h>
+#include <slime/utils/list.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
 
 namespace slime::backend {
 

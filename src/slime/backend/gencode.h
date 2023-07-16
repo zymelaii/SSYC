@@ -1,15 +1,14 @@
-#include <cassert>
 #include <slime/ir/type.h>
-#include "slime/ast/decl.h"
+#include <slime/ast/decl.h>
 #include "slime/ir/instruction.def"
 #include "slime/ir/value.h"
 #include <slime/ir/module.h>
 #include <slime/utils/list.h>
 #include <slime/ir/instruction.h>
-#include <bits/types/FILE.h>
 
-#include <cstdint>
-#include <cstddef>
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
 #include <stdarg.h>
 #include <string_view>
 #include <vector>
