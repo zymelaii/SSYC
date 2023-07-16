@@ -98,7 +98,7 @@ void Generator::genGlobalDef(GlobalObject *obj) {
             auto     e    = initData;
             while (e != nullptr && e->isArray()) {
                 size *= e->asArrayType()->size();
-                e     = e->tryGetElementType();
+                e    = e->tryGetElementType();
             }
             println("   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
         } else {
@@ -230,7 +230,7 @@ void Generator::genInstList(InstructionList *instlist) {
         generator_.allocator->cur_inst++;
         if (inst->id() == InstructionID::Alloca) {
             allocaSize += genAllocaInst(inst->asAlloca());
-            flag        = true;
+            flag       = true;
             continue;
         } else if (
             (flag || generator_.allocator->cur_inst == 1)
@@ -360,7 +360,7 @@ int Generator::genAllocaInst(AllocaInst *inst) {
     int          size  = 1;
     while (e != nullptr && e->isArray()) {
         size *= e->asArrayType()->size();
-        e     = e->tryGetElementType();
+        e    = e->tryGetElementType();
     }
     auto var       = findVariable(inst->unwrap());
     var->is_alloca = true;
@@ -518,24 +518,107 @@ int Generator::sizeOfType(ir::Type *type) {
             return sizeOfType(type->tryGetElementType())
                  * type->asArrayType()->size();
         }
-        default:
-            assert(0);
+        default: {
+            assert(false);
+            return -1;
+        }
     }
 }
 
 void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
+    //! NOTE: 2 more extra registers requried
+
     auto baseType = inst->op<0>()->type()->tryGetElementType();
 
-    decltype(generator_.allocator->allocateRegister()) reg{};
-    println("%%%d", inst->unwrap()->id());
+    //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
-    auto e    = findVariable(inst->op<0>());
-    if (e->is_alloca) {
+    if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
         cgMov(dest, ARMGeneralRegs::SP);
-        cgAdd(dest, dest, generator_.stack->stackSize - e->stackpos);
+        cgAdd(dest, dest, generator_.stack->stackSize - var->stackpos);
+    } else if (var->is_global) {
+        cgLdr(dest, var);
     } else {
-        cgMov(dest, e->reg);
+        assert(!var->is_spilled);
+        assert(!inst->op<0>()->isImmediate());
+        cgMov(dest, var->reg);
     }
+
+    decltype(dest) *tmp = nullptr;
+    decltype(dest)  regPlaceholder{};
+    bool            tmpIsAllocated = false;
+    for (int i = 1; i < inst->totalOperands(); ++i) {
+        auto op = inst->op()[i];
+        if (op == nullptr) {
+            assert(i > 1);
+            break;
+        }
+        //! tmp <- index
+        int multiplier = -1;
+        if (op->isImmediate()) {
+            auto imm   = static_cast<ConstantInt *>(op.value())->value;
+            multiplier = imm;
+            if (multiplier >= 1) {
+                regPlaceholder = generator_.allocator->allocateRegister();
+                tmp            = &regPlaceholder;
+                tmpIsAllocated = true;
+                if (multiplier > 1) { cgMov(*tmp, imm); }
+            }
+        } else if (op->isGlobal()) {
+            //! FIXME: assume that reg of global variable is free to use
+            auto var = findVariable(op);
+            tmp      = &var->reg;
+            cgLdr(*tmp, var);
+            cgLdr(*tmp, *tmp, 0);
+        } else {
+            auto var = findVariable(op);
+            assert(var != nullptr);
+            tmp = &var->reg;
+        }
+
+        //! offset <- stride * index
+        const auto stride = sizeOfType(baseType);
+
+        if (multiplier == -1) {
+            auto reg = generator_.allocator->allocateRegister();
+            cgMov(reg, stride);
+            cgMul(reg, *tmp, reg);
+            //! swap register: *tmp <- reg
+            if (tmpIsAllocated) { generator_.allocator->releaseRegister(*tmp); }
+            regPlaceholder = reg;
+        } else if (multiplier > 0) {
+            if (multiplier == 1) {
+                cgMov(*tmp, stride);
+            } else if (multiplier == 2) {
+                cgMov(*tmp, stride);
+                cgAdd(*tmp, *tmp, *tmp);
+            } else {
+                auto reg = generator_.allocator->allocateRegister();
+                cgMov(reg, stride);
+                cgMul(reg, *tmp, reg);
+                generator_.allocator->releaseRegister(reg);
+            }
+        }
+
+        if (multiplier != 0) {
+            //! dest <- base + offset
+            cgAdd(dest, dest, *tmp);
+        }
+
+        if (tmpIsAllocated) {
+            generator_.allocator->releaseRegister(*tmp);
+            tmp            = nullptr;
+            tmpIsAllocated = false;
+        }
+
+        if (i + 1 == inst->totalOperands() || inst->op()[i + 1] == nullptr) {
+            break;
+        }
+
+        //! dest <- *dest
+        cgLdr(dest, dest, 0);
+        baseType = baseType->tryGetElementType();
+    }
+
     // for (int i = 1; i < inst->totalOperands(); ++i) {
     //     if (inst->useAt(i).value() == nullptr) { break; }
     //     if (inst->useAt(i)->isImmediate()) {

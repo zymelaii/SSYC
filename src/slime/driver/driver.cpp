@@ -3,6 +3,7 @@
 #include <slime/visitor/ASTDumpVisitor.h>
 #include <slime/visitor/ASTToIRTranslator.h>
 #include <slime/visitor/IRDumpVisitor.h>
+#include <slime/backend/gencode.h>
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -69,10 +70,16 @@ void Driver::execute() {
         visitor->visit(unit);
     }
 
+    auto module = visitor::ASTToIRTranslator::translate("default", unit);
+
     if (!done && flags_.EmitIR) {
         auto visitor = visitor::IRDumpVisitor::createWithOstream(&std::cout);
-        auto module  = visitor::ASTToIRTranslator::translate("default", unit);
         visitor->dump(module);
+    }
+
+    if (!done) {
+        auto armv7aGen = backend::Generator::generate();
+        armv7aGen->genCode(stdout, module);
     }
 
     ready_ = false;
