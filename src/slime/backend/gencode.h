@@ -1,3 +1,4 @@
+#include <set>
 #include <slime/ir/type.h>
 #include <slime/ast/decl.h>
 #include "slime/ir/instruction.def"
@@ -70,6 +71,7 @@ public:
     void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     // void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    void cgAsr(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2);
     void cgCmp(ARMGeneralRegs op1, int32_t op2);
     // void cgTst(ARMGeneralRegs op1, ARMGeneralRegs op2);
@@ -80,6 +82,7 @@ public:
         Value                 *brTarget,
         ComparePredicationType cond = ComparePredicationType::TRUE);
     void cgBl(Function *callee);
+    void cgBl(const char *libfuncname);
     void cgBx(ARMGeneralRegs rd);
 
 protected:
@@ -123,10 +126,21 @@ protected:
     void genSIToFPInst(SIToFPInst *inst);
     void genICmpInst(ICmpInst *inst);
     void genFCmpInst(FCmpInst *inst);
-    void genPhiInst(PhiInst *inst);
+    void genZExtInst(ZExtInst *inst);
     void genCallInst(CallInst *inst);
 
 private:
+    std::set<std::string> libfunc = {
+        "memset",
+        "putint",
+        "getint",
+        "putarray",
+        "getarray",
+        "putch",
+        "getch",
+        "__aeabi_idiv",
+        "__aeabi_uidiv"};
+
     struct GeneratorState {
         BasicBlock     *cur_block      = nullptr;
         Function       *cur_func       = nullptr;

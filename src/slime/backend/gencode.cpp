@@ -1,6 +1,7 @@
 #include "gencode.h"
 #include "regalloc.h"
 
+#include <set>
 #include <slime/ir/instruction.def>
 #include <slime/ir/module.h>
 #include <slime/ir/value.h>
@@ -10,6 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <type_traits>
 
 namespace slime::backend {
 
@@ -29,7 +31,7 @@ void Generator::genCode(FILE *fp, Module *module) {
         if (e->type()->isFunction()) {
             generator_.allocator->initAllocator();
             generator_.cur_func = static_cast<Function *>(e);
-            if (!strcmp(e->name().data(), "memset")) continue;
+            if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             genAssembly(static_cast<Function *>(e));
             generator_.cur_funcnum++;
             println("   .pool\n");
@@ -185,6 +187,7 @@ int Generator::getBlockNum(int blockid) {
         num++;
     }
     assert(0 && "Can't reach here");
+    return -1;
 }
 
 // 获得下一个基本块，如果没有则返回空指针
@@ -204,6 +207,7 @@ BasicBlock *Generator::getNextBlock() {
         ++it;
     }
     assert(0 && "Can't reach here");
+    return nullptr;
 }
 
 Instruction *Generator::getNextInst(Instruction *inst) {
@@ -221,6 +225,7 @@ Instruction *Generator::getNextInst(Instruction *inst) {
         ++it;
     }
     assert(0 && "Can't reach here");
+    return nullptr;
 }
 
 void Generator::genInstList(InstructionList *instlist) {
@@ -236,7 +241,9 @@ void Generator::genInstList(InstructionList *instlist) {
             (flag || generator_.allocator->cur_inst == 1)
             && inst->id() != InstructionID::Alloca) {
             flag = false;
-            saveCallerReg();
+            if (inst->parent()
+                == generator_.cur_func->basicBlocks().head()->value())
+                saveCallerReg();
             cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, allocaSize);
         }
         genInst(inst);
@@ -342,7 +349,8 @@ void Generator::genInst(Instruction *inst) {
         case InstructionID::FCmp:
             genFCmpInst(inst->asFCmp());
             break;
-            genPhiInst(inst->asPhi());
+        case InstructionID::ZExt:
+            genZExtInst(inst->asZExt());
             break;
         case InstructionID::Call:
             genCallInst(inst->asCall());
@@ -373,6 +381,7 @@ void Generator::genLoadInst(LoadInst *inst) {
     auto           source    = inst->useAt(0);
     int            offset;
     ARMGeneralRegs sourceReg;
+    println("@ %%%d:", inst->unwrap()->id());
     if (source->isLabel()) {
         //! TODO: label
         assert(0);
@@ -386,9 +395,9 @@ void Generator::genLoadInst(LoadInst *inst) {
         } else if (sourceVar->is_global) {
             addUsedGlobalVar(sourceVar);
             offset = 0;
-            assert(sourceVar->reg != ARMGeneralRegs::None);
-            cgLdr(sourceVar->reg, sourceVar);
-            sourceReg = sourceVar->reg;
+            // assert(sourceVar->reg != ARMGeneralRegs::None);
+            cgLdr(targetVar->reg, sourceVar);
+            sourceReg = targetVar->reg;
             // if (sourceVar->reg == ARMGeneralRegs::None) {
             //     cgLdr(targetVar->reg, sourceVar);
             //     sourceReg = targetVar->reg;
@@ -407,9 +416,12 @@ void Generator::genStoreInst(StoreInst *inst) {
     auto           source = inst->useAt(1);
     ARMGeneralRegs sourceReg, targetReg;
     int            offset;
+
+    ARMGeneralRegs tmpreg = ARMGeneralRegs::None;
     if (source.value()->isConstant()) {
         if (source.value()->type()->isInteger()) {
             sourceReg   = generator_.allocator->allocateRegister();
+            tmpreg      = sourceReg;
             int32_t imm = static_cast<ConstantInt *>(source.value())->value;
             if (sourceReg == ARMGeneralRegs::None) {
                 //! TODO: spill something
@@ -431,10 +443,12 @@ void Generator::genStoreInst(StoreInst *inst) {
     auto targetVar = findVariable(target);
     if (targetVar->is_global) {
         assert(targetVar->reg != ARMGeneralRegs::None);
-        targetReg = targetVar->reg;
-        addUsedGlobalVar(targetVar);
-        cgLdr(targetReg, targetVar);
-        cgStr(sourceReg, targetReg, 0);
+        if (targetVar->reg != ARMGeneralRegs::None) {
+            targetReg = targetVar->reg;
+            addUsedGlobalVar(targetVar);
+            cgLdr(targetReg, targetVar);
+            cgStr(sourceReg, targetReg, 0);
+        }
     } else {
         if (targetVar->is_alloca) {
             targetReg = ARMGeneralRegs::SP;
@@ -530,13 +544,14 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
 
     //! addr = base + i[0] * sizeof(type) + i[1] * sizeof(*type) + ...
     auto baseType = inst->op<0>()->type()->tryGetElementType();
-    println("; %%%d:", inst->unwrap()->id());
+    println("@ %%%d:", inst->unwrap()->id());
     //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
     if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
         cgMov(dest, ARMGeneralRegs::SP);
         cgAdd(dest, dest, generator_.stack->stackSize - var->stackpos);
     } else if (var->is_global) {
+        addUsedGlobalVar(var);
         cgLdr(dest, var);
     } else {
         assert(!var->is_spilled);
@@ -559,13 +574,16 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
             auto imm   = static_cast<ConstantInt *>(op.value())->value;
             multiplier = imm;
             if (multiplier >= 1) {
-                regPlaceholder = generator_.allocator->allocateRegister();
+                auto whitelist = generator_.allocator->getInstOperands(inst);
+                regPlaceholder = generator_.allocator->allocateRegister(
+                    true, whitelist, this);
                 tmp            = &regPlaceholder;
                 tmpIsAllocated = true;
                 if (multiplier > 1) { cgMov(*tmp, imm); }
             }
         } else if (op->isGlobal()) {
             //! FIXME: assume that reg of global variable is free to use
+            addUsedGlobalVar(findVariable(op));
             auto var = findVariable(op);
             tmp      = &var->reg;
             cgLdr(*tmp, var);
@@ -580,7 +598,9 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
         const auto stride = sizeOfType(baseType);
 
         if (multiplier == -1) {
-            auto reg = generator_.allocator->allocateRegister();
+            auto whitelist = generator_.allocator->getInstOperands(inst);
+            auto reg =
+                generator_.allocator->allocateRegister(true, whitelist, this);
             cgMov(reg, stride);
             cgMul(reg, *tmp, reg);
             //! swap register: *tmp <- reg
@@ -593,9 +613,11 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
                 cgMov(*tmp, stride);
                 cgAdd(*tmp, *tmp, *tmp);
             } else {
-                auto reg = generator_.allocator->allocateRegister();
+                auto whitelist = generator_.allocator->getInstOperands(inst);
+                auto reg       = generator_.allocator->allocateRegister(
+                    true, whitelist, this);
                 cgMov(reg, stride);
-                cgMul(reg, *tmp, reg);
+                cgMul(*tmp, *tmp, reg);
                 generator_.allocator->releaseRegister(reg);
             }
         }
@@ -617,96 +639,35 @@ void Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
 
         baseType = baseType->tryGetElementType();
     }
-
-    // for (int i = 1; i < inst->totalOperands(); ++i) {
-    //     if (inst->useAt(i).value() == nullptr) { break; }
-    //     if (inst->useAt(i)->isImmediate()) {
-    //         reg = generator_.allocator->allocateRegister();
-    //         cgMov(
-    //             reg,
-    //             static_cast<ConstantInt *>(inst->useAt(i)->asConstantData())
-    //                 ->value);
-    //     } else {
-    //         reg = findVariable(inst->useAt(i))->reg;
-    //     }
-    //     auto reg_imm = generator_.allocator->allocateRegister();
-    //     cgMov(reg_imm, sizeOfType(baseType));
-    //     cgMul(reg_imm, reg, reg_imm);
-    //     generator_.allocator->releaseRegister(reg);
-    //     generator_.allocator->releaseRegister(reg_imm);
-    //     cgAdd(dest, dest, reg_imm);
-    //     //! FIXME: combine with ldr dest, addr, offset_reg
-    //     if (i + 1 == inst->totalOperands()) { break; }
-    //     cgLdr(dest, dest, 0);
-    //     baseType = baseType->tryGetElementType();
-    // }
-
-    // auto targetVar         = findVariable(inst->unwrap()),
-    //      sourceVar         = findVariable(inst->useAt(0));
-    // auto           tmp     = inst->useAt(0)->type()->tryGetElementType();
-    // ARMGeneralRegs tmpreg  = generator_.allocator->allocateRegister();
-    // ARMGeneralRegs tmpreg2 = generator_.allocator->allocateRegister();
-    // assert(tmpreg != ARMGeneralRegs::None);
-    // assert(tmpreg2 != ARMGeneralRegs::None);
-    // println(";%%%d", inst->unwrap()->id());
-    // if (inst->unwrap()->id() == 50) { tmp->isArray(); }
-    // cgMov(targetVar->reg, 0);
-    // assert(tmp != nullptr && tmp->isArray());
-    // for (int i = 1; i < inst->totalOperands() && tmp; i++) {
-    //     auto idx  = inst->useAt(i).value();
-    //     int  size = tmp->isInteger() ? 1 : tmp->asArrayType()->size();
-    //     auto e    = tmp->tryGetElementType();
-    //     while (e != nullptr && e->isArray()) {
-    //         size *= e->asArrayType()->size();
-    //         e     = e->tryGetElementType();
-    //     }
-    //     if (!Allocator::isVariable(idx)) {
-    //         int imm = static_cast<ConstantInt
-    //         *>(idx->asConstantData())->value; if (imm != 0) {
-    //             cgMov(tmpreg, imm);
-    //             cgMov(tmpreg2, size * 4);
-    //             cgMul(tmpreg, tmpreg, tmpreg2);
-    //             cgAdd(targetVar->reg, targetVar->reg, tmpreg);
-    //         }
-    //     } else {
-    //         auto var = findVariable(idx);
-    //         cgLsl(tmpreg, var->reg, size * 2);
-    //         cgAdd(targetVar->reg, targetVar->reg, tmpreg);
-    //     }
-    //     tmp = tmp->tryGetElementType();
-    // }
-    // generator_.allocator->releaseRegister(tmpreg);
-    // generator_.allocator->releaseRegister(tmpreg2);
-
-    // if (sourceVar->is_alloca) {
-    //     cgAdd(
-    //         targetVar->reg,
-    //         targetVar->reg,
-    //         generator_.stack->stackSize - sourceVar->stackpos);
-    //     cgAdd(targetVar->reg, ARMGeneralRegs::SP, targetVar->reg);
-    // } else {
-    //     cgAdd(targetVar->reg, targetVar->reg, sourceVar->reg);
-    //     // assert(0 && "unfinished yet!\n");
-    // }
-    // println("");
 }
 
 void Generator::genAddInst(AddInst *inst) {
-    ARMGeneralRegs rd  = findVariable(inst->unwrap())->reg;
-    ARMGeneralRegs rs  = findVariable(inst->useAt(0))->reg;
+    ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
+    ARMGeneralRegs rn;
+    auto           op1 = inst->useAt(0);
     auto           op2 = inst->useAt(1);
+    println("@ %%%d:", inst->unwrap()->id());
+
+    if (Allocator::isVariable(op1)) {
+        rn = findVariable(op1)->reg;
+    } else {
+        rn = rd;
+        cgMov(rd, static_cast<ConstantInt *>(op1->asConstantData())->value);
+    }
+
     if (Allocator::isVariable(op2)) {
         ARMGeneralRegs op2reg = findVariable(op2)->reg;
-        cgAdd(rd, rs, op2reg);
+        cgAdd(rd, rn, op2reg);
     } else {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        cgAdd(rd, rs, imm);
+        cgAdd(rd, rn, imm);
     }
 }
 
 void Generator::genSubInst(SubInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
+    println("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -728,6 +689,7 @@ void Generator::genSubInst(SubInst *inst) {
 void Generator::genMulInst(MulInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
+    println("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -751,15 +713,68 @@ void Generator::genUDivInst(UDivInst *inst) {
 }
 
 void Generator::genSDivInst(SDivInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    assert(!generator_.allocator->regAllocatedMap[0]);
+    assert(!generator_.allocator->regAllocatedMap[1]);
+    println("@ %%%d:", inst->unwrap()->id());
+    for (int i = 0; i < inst->totalOperands(); i++) {
+        if (inst->useAt(i)->isConstant()) {
+            cgMov(
+                static_cast<ARMGeneralRegs>(i),
+                static_cast<ConstantInt *>(inst->useAt(i)->asConstantData())
+                    ->value);
+        } else {
+            cgMov(
+                static_cast<ARMGeneralRegs>(i),
+                findVariable(inst->useAt(i))->reg);
+        }
+    }
+    auto resultReg = findVariable(inst->unwrap())->reg;
+    cgBl("__aeabi_idiv");
+    cgMov(resultReg, ARMGeneralRegs::R0);
 }
 
 void Generator::genURemInst(URemInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
+//! NOTE: 用除法和乘法完成求余
 void Generator::genSRemInst(SRemInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    auto targetReg = findVariable(inst->unwrap())->reg;
+
+    println("@ %%%d:", inst->unwrap()->id());
+    for (int i = 0; i < inst->totalOperands(); i++) {
+        if (inst->useAt(i)->isConstant()) {
+            cgMov(
+                static_cast<ARMGeneralRegs>(i),
+                static_cast<ConstantInt *>(inst->useAt(i)->asConstantData())
+                    ->value);
+        } else {
+            cgMov(
+                static_cast<ARMGeneralRegs>(i),
+                findVariable(inst->useAt(i))->reg);
+        }
+    }
+    cgBl("__aeabi_idiv");
+    ARMGeneralRegs tmpReg;
+    if (inst->useAt(1)->isConstant()) {
+        cgMov(
+            ARMGeneralRegs::R1,
+            static_cast<ConstantInt *>(inst->useAt(1)->asConstantData())
+                ->value);
+        tmpReg = ARMGeneralRegs::R1;
+    } else {
+        tmpReg = findVariable(inst->useAt(1))->reg;
+    }
+    cgMul(targetReg, tmpReg, ARMGeneralRegs::R0);
+    if (inst->useAt(0)->isConstant()) {
+        cgMov(
+            ARMGeneralRegs::R0,
+            static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())
+                ->value);
+        cgSub(targetReg, ARMGeneralRegs::R0, targetReg);
+    } else {
+        cgSub(targetReg, findVariable(inst->useAt(0))->reg, targetReg);
+    }
 }
 
 void Generator::genFNegInst(FNegInst *inst) {
@@ -790,6 +805,8 @@ void Generator::genFRemInst(FRemInst *inst) {
 void Generator::genShlInst(ShlInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
+
+    println("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -814,11 +831,49 @@ void Generator::genLShrInst(LShrInst *inst) {
 }
 
 void Generator::genAShrInst(AShrInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
+    ARMGeneralRegs rs;
+
+    println("@ %%%d:", inst->unwrap()->id());
+    if (!Allocator::isVariable(inst->useAt(0))) {
+        uint32_t imm =
+            static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
+        cgMov(rd, imm);
+        rs = rd;
+    } else
+        rs = findVariable(inst->useAt(0))->reg;
+
+    auto op2 = inst->useAt(1);
+    if (Allocator::isVariable(op2)) {
+        ARMGeneralRegs op2reg = findVariable(op2)->reg;
+        assert(0);
+        // cgAsr(rd, rs, op2reg);
+    } else {
+        uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
+        cgAsr(rd, rs, imm);
+    }
 }
 
 void Generator::genAndInst(AndInst *inst) {
-    assert(0 && "unfinished yet!\n");
+    ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
+    ARMGeneralRegs rs;
+    println("@ %%%d:", inst->unwrap()->id());
+    if (!Allocator::isVariable(inst->useAt(0))) {
+        uint32_t imm =
+            static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
+        cgMov(rd, imm);
+        rs = rd;
+    } else
+        rs = findVariable(inst->useAt(0))->reg;
+
+    auto op2 = inst->useAt(1);
+    if (Allocator::isVariable(op2)) {
+        ARMGeneralRegs op2reg = findVariable(op2)->reg;
+        cgAnd(rd, rs, op2reg);
+    } else {
+        uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
+        cgAnd(rd, rs, imm);
+    }
 }
 
 void Generator::genOrInst(OrInst *inst) {
@@ -847,6 +902,8 @@ void Generator::genSIToFPInst(SIToFPInst *inst) {
 
 void Generator::genICmpInst(ICmpInst *inst) {
     auto op1 = inst->useAt(0), op2 = inst->useAt(1);
+
+    println("@ %%%d:", inst->unwrap()->id());
     if (Allocator::isVariable(op2)) {
         Variable *lhs = findVariable(op1), *rhs = findVariable(op2);
         cgCmp(lhs->reg, rhs->reg);
@@ -870,11 +927,21 @@ void Generator::genFCmpInst(FCmpInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-void Generator::genPhiInst(PhiInst *inst) {
-    assert(0 && "unfinished yet!\n");
+//! TODO: optimise
+void Generator::genZExtInst(ZExtInst *inst) {
+    auto extVar = findVariable(inst->unwrap());
+    if (Allocator::isVariable(inst->useAt(0))) {
+        cgMov(extVar->reg, findVariable(inst->useAt(0))->reg);
+    } else {
+        int imm =
+            static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
+        cgMov(extVar->reg, imm);
+    }
 }
 
 void Generator::genCallInst(CallInst *inst) {
+    if (!inst->unwrap()->type()->isVoid())
+        println("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalParams(); i++) {
         if (i < 4) {
             assert(!generator_.allocator->regAllocatedMap[i]);
@@ -929,6 +996,21 @@ void Generator::cgMov(
         case ComparePredicationType::EQ:
             println("    moveq  %s, %s", reg2str(rd), reg2str(rs));
             break;
+        case ComparePredicationType::NE:
+            println("    movne  %s, #%d", reg2str(rd), reg2str(rs));
+            break;
+        case ComparePredicationType::SLE:
+            println("    movle  %s, #%d", reg2str(rd), reg2str(rs));
+            break;
+        case ComparePredicationType::SLT:
+            println("    movlt  %s, #%d", reg2str(rd), reg2str(rs));
+            break;
+        case ComparePredicationType::SGT:
+            println("    movgt  %s, #%d", reg2str(rd), reg2str(rs));
+            break;
+        case ComparePredicationType::SGE:
+            println("    movge  %s, #%d", reg2str(rd), reg2str(rs));
+            break;
         default:
             assert(0 && "unfinished comparative type");
     }
@@ -943,7 +1025,21 @@ void Generator::cgMov(
         case ComparePredicationType::EQ:
             println("    moveq  %s, #%d", reg2str(rd), imm);
             break;
+        case ComparePredicationType::NE:
+            println("    movne  %s, #%d", reg2str(rd), imm);
+            break;
+        case ComparePredicationType::SLE:
+            println("    movle  %s, #%d", reg2str(rd), imm);
+            break;
         case ComparePredicationType::SLT:
+            println("    movle  %s, #%d", reg2str(rd), imm);
+            break;
+        case ComparePredicationType::SGE:
+            println("    movge  %s, #%d", reg2str(rd), imm);
+            break;
+        case ComparePredicationType::SGT:
+            println("    movgt  %s, #%d", reg2str(rd), imm);
+            break;
         default:
             assert(0 && "unfinished comparative type");
     }
@@ -1015,6 +1111,10 @@ void Generator::cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
     println("    lsl    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
+void Generator::cgAsr(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
+    println("    asr    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+}
+
 void Generator::cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2) {
     println("    cmp    %s, %s", reg2str(op1), reg2str(op2));
 }
@@ -1050,7 +1150,7 @@ void Generator::cgB(Value *brTarget, ComparePredicationType cond) {
                 getBlockNum(blockid));
             break;
         case ComparePredicationType::SLT:
-        case ComparePredicationType::ULT:
+            // case ComparePredicationType::ULT:
             println(
                 "    blt     .F%dBB.%d",
                 generator_.cur_funcnum,
@@ -1059,6 +1159,18 @@ void Generator::cgB(Value *brTarget, ComparePredicationType cond) {
         case ComparePredicationType::SGT:
             println(
                 "    bgt     .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
+            break;
+        case ComparePredicationType::SLE:
+            println(
+                "    ble     .F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
+            break;
+        case ComparePredicationType::SGE:
+            println(
+                "    bge     .F%dBB.%d",
                 generator_.cur_funcnum,
                 getBlockNum(blockid));
             break;
@@ -1073,6 +1185,11 @@ void Generator::cgBx(ARMGeneralRegs rd) {
 
 void Generator::cgBl(Function *callee) {
     println("    bl     %s", callee->name().data());
+}
+
+void Generator::cgBl(const char *libfuncname) {
+    assert(libfunc.find(libfuncname) != libfunc.end());
+    println("    bl     %s", libfuncname);
 }
 
 void Generator::cgPush(RegList &reglist) {

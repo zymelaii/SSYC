@@ -171,6 +171,7 @@ struct Stack {
             if (e->var == var) return offset;
         }
         assert(0 && "it must be an error");
+        return UINT32_MAX;
     }
 
     void clear() {
@@ -215,14 +216,18 @@ public:
     void computeInterval(Function *func);
     void checkLiveInterval();
     void updateAllocation(Generator *gen, BasicBlock *block, Instruction *inst);
-    Variable *getMinIntervalRegVar(std::set<Variable *>);
-    Variable *createVariable(Value *val);
-    void      getUsedRegs(BasicBlockList &blocklist);
+    std::set<Variable *> *getInstOperands(Instruction *inst);
+    Variable             *getMinIntervalRegVar(std::set<Variable *>);
+    Variable             *createVariable(Value *val);
+    void                  getUsedRegs(BasicBlockList &blocklist);
 
-    ARMGeneralRegs allocateRegister();
-    void           releaseRegister(Variable *var);
-    void           releaseRegister(ARMGeneralRegs reg);
-    void           freeAllRegister();
+    ARMGeneralRegs allocateRegister(
+        bool                  force     = false,
+        std::set<Variable *> *whitelist = nullptr,
+        Generator            *gen       = nullptr);
+    void releaseRegister(Variable *var);
+    void releaseRegister(ARMGeneralRegs reg);
+    void freeAllRegister();
 
     void initAllocator();
 
