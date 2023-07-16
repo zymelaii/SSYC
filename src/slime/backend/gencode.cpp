@@ -1079,7 +1079,7 @@ void Generator::cgPush(RegList &reglist) {
     fprintf(generator_.asmFile, "    push   {");
     for (auto reg : reglist) {
         fprintf(generator_.asmFile, "%s", reg2str(reg));
-        if (reg != reglist.tail()->value()) printf(", ");
+        if (reg != reglist.tail()->value()) fprintf(generator_.asmFile, ", ");
     }
     println("}");
 }
@@ -1088,7 +1088,7 @@ void Generator::cgPop(RegList &reglist) {
     fprintf(generator_.asmFile, "    pop    {");
     for (auto reg : reglist) {
         fprintf(generator_.asmFile, "%s", reg2str(reg));
-        if (reg != reglist.tail()->value()) printf(", ");
+        if (reg != reglist.tail()->value()) fprintf(generator_.asmFile, ", ");
     }
     println("}");
 }
