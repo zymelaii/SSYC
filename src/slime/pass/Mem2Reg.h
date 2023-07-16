@@ -3,7 +3,7 @@
 #include "pass.h"
 
 #include <slime/ir/instruction.h>
-#include <unordered_map>
+#include <stack>
 #include <map>
 #include <set>
 #include <vector>
@@ -14,18 +14,18 @@ class Mem2RegPass : public UniversalIRPass {
 public:
     void runOnFunction(ir::Function *target) override;
 
-    ~Mem2RegPass();
-
 protected:
+    void searchAndRename(ir::BasicBlock *block);
     void solveDominanceFrontier(ir::Function *target);
 
 private:
     using IndexMap = std::unordered_map<ir::BasicBlock *, int>;
     using DomSet   = std::set<ir::BasicBlock *>;
 
-    IndexMap              id_;
-    std::vector<DomSet *> domSetList_;
-    std::vector<DomSet *> dfSetList_;
+    std::map<ir::BasicBlock *, DomSet>             domfrSetList_;
+    std::map<ir::Value *, std::stack<ir::Value *>> valueStacks_;
+    std::map<ir::PhiInst *, ir::AllocaInst *>      phiParent_;
+    std::set<ir::BasicBlock *>                     blockVisited_;
 };
 
 } // namespace slime::pass

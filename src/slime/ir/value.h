@@ -137,15 +137,21 @@ public:
     inline        operator Value *() const;
     inline Value *operator->() const;
 
+    inline void   attachTo(Value *user);
+    inline Value *owner() const;
+
 private:
-    const Value *value_ = nullptr;
+    const Value *value_  = nullptr;
+    Value       *parent_ = nullptr;
 };
 
 template <int N>
 class User : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        for (auto &use : operands_) { use.attachTo(this); }
+    }
 
 public:
     Use *op() const {
@@ -208,6 +214,7 @@ public:
         for (int i = 0; i < restore.size(); ++i) {
             operands_[i].reset(restore[i]);
         }
+        for (auto &use : operands_) { use.attachTo(this); }
     }
 
 private:
@@ -238,7 +245,9 @@ template <>
 class User<1> : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        operand_.attachTo(this);
+    }
 
 public:
     Use *op() const {
@@ -265,7 +274,10 @@ template <>
 class User<2> : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        operands_[0].attachTo(this);
+        operands_[1].attachTo(this);
+    }
 
 public:
     Use *op() const {
@@ -296,7 +308,11 @@ template <>
 class User<3> : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        operands_[0].attachTo(this);
+        operands_[1].attachTo(this);
+        operands_[2].attachTo(this);
+    }
 
 public:
     Use *op() const {
@@ -538,6 +554,14 @@ inline Value *Use::value() const {
 
 inline Value *Use::operator->() const {
     return value();
+}
+
+inline void Use::attachTo(Value *user) {
+    parent_ = user;
+}
+
+inline Value *Use::owner() const {
+    return const_cast<Use *>(this)->parent_;
 }
 
 inline Use::operator Value *() const {
