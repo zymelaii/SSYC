@@ -38,6 +38,7 @@ public:
     Variable          *findVariable(Value *val);
     static const char *reg2str(ARMGeneralRegs reg);
     Instruction       *getNextInst(Instruction *inst);
+    int                sizeOfType(ir::Type *type);
 
     void println(const char *fmt, ...) {
         assert(generator_.asmFile != nullptr);
@@ -64,6 +65,8 @@ public:
     void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    void cgMul(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    void cgMul(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
     void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     // void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);

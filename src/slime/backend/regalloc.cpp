@@ -284,7 +284,27 @@ void Allocator::updateAllocation(
         auto   var   = e.second;
         size_t start = var->livIntvl->start;
         size_t end   = var->livIntvl->end;
-        if (var->is_global) { int a = 1; }
+
+        // if (inst->id() == InstructionID::GetElementPtr
+        //     && inst->unwrap() == var->val) {
+        //     auto arrbase = valVarTable->find(inst->useAt(0).value())->second;
+        //     if (arrbase->is_global) {
+        //         assert(0 && "global array unsupported yet");
+        //     } else if(arrbase->is_alloca){
+        //         size_t arrsize = 1;
+        //         size_t offset = 0;
+        //         auto   e       = inst->unwrap()->type()->tryGetElementType();
+        //         while (e != nullptr && e->isArray()) {
+        //             arrsize *= e->asArrayType()->size();
+        //             e     = e->tryGetElementType();
+        //         }
+
+        //         var->is_alloca = true;
+        //         var->stackpos  = arrbase->stackpos;
+        //     }
+        //     continue;
+        // }
+
         if (cur_inst == start) {
             liveVars->insertToTail(var);
             if (inst->id() == InstructionID::ICmp

@@ -4,6 +4,7 @@
 #include "slime/ir/value.h"
 #include "slime/utils/list.h"
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <set>
 #include <slime/ir/module.h>
@@ -65,17 +66,17 @@ struct Variable {
         , is_spilled(0)
         , is_alloca(0)
         , is_global(val->isGlobal())
+        , stackpos(0)
         , reg(ARMGeneralRegs::None)
-        , predict(ComparePredicationType::FALSE)
         , livIntvl(new LiveInterval()) {}
 
-    Value                 *val;
-    ARMGeneralRegs         reg;
-    bool                   is_spilled;
-    bool                   is_alloca;
-    bool                   is_global;
-    LiveInterval          *livIntvl;
-    ComparePredicationType predict;
+    Value         *val;
+    ARMGeneralRegs reg;
+    bool           is_spilled;
+    bool           is_alloca;
+    bool           is_global;
+    size_t         stackpos; // only valid when is_spiiled or is_alloca is true
+    LiveInterval  *livIntvl;
 
     static Variable *create(Value *val) {
         return new Variable(val);
@@ -108,10 +109,12 @@ struct Stack {
     // return true if the space is newly allocated
     bool spillVar(Variable *var, uint32_t size) {
         assert(var->reg == ARMGeneralRegs::None);
-        auto it  = onStackVars->node_begin();
-        auto end = onStackVars->node_end();
+        auto   it      = onStackVars->node_begin();
+        auto   end     = onStackVars->node_end();
+        size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar = it->value();
+            auto stackvar  = it->value();
+            sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
                 auto tmp = it++;
@@ -125,16 +128,20 @@ struct Stack {
                         auto tmp = *it2++;
                         tmp.removeFromList();
                         stackvar->size += tmpvar->size;
+                        sizecnt        += stackvar->size;
                     }
                 }
                 if (stackvar->size == size) {
                     stackvar->var = var;
+                    var->stackpos = sizecnt;
                     return false;
                 } else if (stackvar->size > size) {
                     it->emplaceAfter(
                         new OnStackVar(nullptr, stackvar->size - size));
+                    sizecnt        = sizecnt - (stackvar->size - size);
                     stackvar->var  = var;
                     stackvar->size = size;
+                    var->stackpos  = sizecnt;
                     return false;
                 }
             }
@@ -142,7 +149,8 @@ struct Stack {
         }
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
-        stackSize += size;
+        stackSize     += size;
+        var->stackpos  = stackSize;
         return true;
     }
 
