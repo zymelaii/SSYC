@@ -46,7 +46,9 @@ class FCmpInst;
 class PhiInst;
 class CallInst;
 
-std::string_view getPredicateName(ComparePredicationType predicate);
+std::string_view        getPredicateName(ComparePredicationType predicate);
+std::string_view        getInstructionName(InstructionID id);
+inline std::string_view getInstructionName(Instruction *inst);
 
 class Instruction {
 protected:
@@ -887,6 +889,10 @@ public:
         return totalUse() - 1;
     }
 };
+
+inline std::string_view getInstructionName(Instruction *inst) {
+    return !inst ? "" : getInstructionName(inst->id());
+}
 
 inline AllocaInst *Instruction::createAlloca(Type *type) {
     return AllocaInst::create(type);

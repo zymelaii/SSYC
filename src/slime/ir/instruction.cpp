@@ -14,6 +14,19 @@ std::string_view getPredicateName(ComparePredicationType predicate) {
     return LOOKUP[static_cast<int>(predicate)];
 }
 
+std::string_view getInstructionName(InstructionID id) {
+    static constexpr auto INST_LOOKUP = std::array<
+        std::string_view,
+        static_cast<size_t>(InstructionID::LAST_INST) + 1>{
+        "alloca", "load", "store", "ret",  "br",     "getelementptr", "add",
+        "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
+        "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
+        "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
+        "sitofp", "zext", "icmp",  "fcmp", "phi",    "call",
+    };
+    return INST_LOOKUP[static_cast<int>(id)];
+}
+
 bool Instruction::insertToHead(BasicBlock* block) {
     //! FIXME: instruction is not always movable
     assert(block != nullptr);
