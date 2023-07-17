@@ -151,6 +151,7 @@ struct Stack {
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
         var->stackpos  = stackSize;
+        assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
 

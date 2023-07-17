@@ -506,8 +506,9 @@ void Generator::genBrInst(BrInst *inst) {
         Value    *target1 = inst->useAt(1), *target2 = inst->useAt(2);
         if (cond->reg != ARMGeneralRegs::None) {
             cgTst(cond->reg, 1);
-            cgB(target2, predict);
+            cgB(target2, ComparePredicationType::EQ);
             cgB(target1);
+            return;
         }
         // if (nextblock->id() == target1->id()) {
         //     cgB(target2, ComparePredicationType::EQ);
@@ -905,8 +906,20 @@ void Generator::genICmpInst(ICmpInst *inst) {
 
     println("@ %%%d:", inst->unwrap()->id());
     if (Allocator::isVariable(op2)) {
-        Variable *lhs = findVariable(op1), *rhs = findVariable(op2);
-        cgCmp(lhs->reg, rhs->reg);
+        if (!Allocator::isVariable(op1)) {
+            std::set<Variable *> *whitelist =
+                generator_.allocator->getInstOperands(inst);
+            auto tmpreg =
+                generator_.allocator->allocateRegister(true, whitelist, this);
+            cgMov(
+                tmpreg,
+                static_cast<ConstantInt *>(op1->asConstantData())->value);
+            cgCmp(tmpreg, findVariable(op2)->reg);
+            generator_.allocator->releaseRegister(tmpreg);
+        } else {
+            Variable *lhs = findVariable(op1), *rhs = findVariable(op2);
+            cgCmp(lhs->reg, rhs->reg);
+        }
     } else {
         //! TODO: float
         assert(!op2->asConstantData()->type()->isFloat());
