@@ -1,10 +1,9 @@
 #include <gtest/gtest.h>
 #include <slime/ir/instruction.h>
 #include <slime/parse/priority.h>
-#include <slime/visitor/IRDumpVisitor.h>
 
+namespace ir   = slime::ir;
 using Inst     = slime::ir::InstructionID;
-using Dump     = slime::visitor::IRDumpVisitor;
 using UnaryOp  = slime::ast::UnaryOperator;
 using BinaryOp = slime::ast::BinaryOperator;
 
@@ -83,40 +82,40 @@ TEST(EnumLookup, OperatorPriority) {
 }
 
 TEST(EnumLookup, InstructionName) {
-    ASSERT_TRUE(Dump::lookupInstName(nullptr).empty());
+    ASSERT_TRUE(ir::getInstructionName(nullptr).empty());
 
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Alloca) == "alloca");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Load) == "load");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Store) == "store");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Ret) == "ret");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Br) == "br");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::GetElementPtr) == "getelementptr");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Add) == "add");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Sub) == "sub");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Mul) == "mul");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::UDiv) == "udiv");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::SDiv) == "sdiv");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::URem) == "urem");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::SRem) == "srem");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FNeg) == "fneg");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FAdd) == "fadd");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FSub) == "fsub");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FMul) == "fmul");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FDiv) == "fdiv");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FRem) == "frem");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Shl) == "shl");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::LShr) == "lshr");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::AShr) == "ashr");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::And) == "and");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Or) == "or");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Xor) == "xor");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FPToUI) == "fptoui");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FPToSI) == "fptosi");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::UIToFP) == "uitofp");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::SIToFP) == "sitofp");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::ZExt) == "zext");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::ICmp) == "icmp");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::FCmp) == "fcmp");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Phi) == "phi");
-    ASSERT_TRUE(Dump::lookupInstName(Inst::Call) == "call");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Alloca) == "alloca");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Load) == "load");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Store) == "store");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Ret) == "ret");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Br) == "br");
+    ASSERT_TRUE(ir::getInstructionName(Inst::GetElementPtr) == "getelementptr");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Add) == "add");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Sub) == "sub");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Mul) == "mul");
+    ASSERT_TRUE(ir::getInstructionName(Inst::UDiv) == "udiv");
+    ASSERT_TRUE(ir::getInstructionName(Inst::SDiv) == "sdiv");
+    ASSERT_TRUE(ir::getInstructionName(Inst::URem) == "urem");
+    ASSERT_TRUE(ir::getInstructionName(Inst::SRem) == "srem");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FNeg) == "fneg");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FAdd) == "fadd");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FSub) == "fsub");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FMul) == "fmul");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FDiv) == "fdiv");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FRem) == "frem");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Shl) == "shl");
+    ASSERT_TRUE(ir::getInstructionName(Inst::LShr) == "lshr");
+    ASSERT_TRUE(ir::getInstructionName(Inst::AShr) == "ashr");
+    ASSERT_TRUE(ir::getInstructionName(Inst::And) == "and");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Or) == "or");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Xor) == "xor");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FPToUI) == "fptoui");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FPToSI) == "fptosi");
+    ASSERT_TRUE(ir::getInstructionName(Inst::UIToFP) == "uitofp");
+    ASSERT_TRUE(ir::getInstructionName(Inst::SIToFP) == "sitofp");
+    ASSERT_TRUE(ir::getInstructionName(Inst::ZExt) == "zext");
+    ASSERT_TRUE(ir::getInstructionName(Inst::ICmp) == "icmp");
+    ASSERT_TRUE(ir::getInstructionName(Inst::FCmp) == "fcmp");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Phi) == "phi");
+    ASSERT_TRUE(ir::getInstructionName(Inst::Call) == "call");
 }
