@@ -20,7 +20,7 @@ void PeekholePass::runOnFunction(Function *target) {
                     if (lhsImm && rhsImm) {
                         foldConstant(inst);
                     } else if (rhsImm) {
-                        binUserPeekholeOptmize(user);
+                        binUserPeekholeOptimize(user);
                     }
                 }
             }
@@ -78,105 +78,105 @@ void PeekholePass::foldBinaryConstant(User<2> *inst) {
     auto   self  = inst->asInstruction();
     Value *value = nullptr;
     switch (self->id()) {
-        case ir::InstructionID::Add:
-        case ir::InstructionID::Sub:
-        case ir::InstructionID::Mul:
-        case ir::InstructionID::UDiv:
-        case ir::InstructionID::SDiv:
-        case ir::InstructionID::URem:
-        case ir::InstructionID::SRem:
-        case ir::InstructionID::Shl:
-        case ir::InstructionID::LShr:
-        case ir::InstructionID::AShr:
-        case ir::InstructionID::And:
-        case ir::InstructionID::Or:
-        case ir::InstructionID::Xor:
-        case ir::InstructionID::ICmp: {
+        case InstructionID::Add:
+        case InstructionID::Sub:
+        case InstructionID::Mul:
+        case InstructionID::UDiv:
+        case InstructionID::SDiv:
+        case InstructionID::URem:
+        case InstructionID::SRem:
+        case InstructionID::Shl:
+        case InstructionID::LShr:
+        case InstructionID::AShr:
+        case InstructionID::And:
+        case InstructionID::Or:
+        case InstructionID::Xor:
+        case InstructionID::ICmp: {
             auto lhs = static_cast<ConstantInt *>(inst->lhs().value())->value;
             auto rhs = static_cast<ConstantInt *>(inst->rhs().value())->value;
             switch (self->id()) {
-                case ir::InstructionID::Add: {
+                case InstructionID::Add: {
                     value = ConstantInt::create(lhs + rhs);
                 } break;
-                case ir::InstructionID::Sub: {
+                case InstructionID::Sub: {
                     value = ConstantInt::create(lhs - rhs);
                 } break;
-                case ir::InstructionID::Mul: {
+                case InstructionID::Mul: {
                     value = ConstantInt::create(lhs * rhs);
                 } break;
-                case ir::InstructionID::UDiv: {
+                case InstructionID::UDiv: {
                     value = ConstantInt::create(
                         static_cast<uint32_t>(lhs)
                         / static_cast<uint32_t>(rhs));
                 } break;
-                case ir::InstructionID::SDiv: {
+                case InstructionID::SDiv: {
                     value = ConstantInt::create(lhs / rhs);
                 } break;
-                case ir::InstructionID::URem: {
+                case InstructionID::URem: {
                     value = ConstantInt::create(
                         static_cast<uint32_t>(lhs)
                         % static_cast<uint32_t>(rhs));
                 } break;
-                case ir::InstructionID::SRem: {
+                case InstructionID::SRem: {
                     value = ConstantInt::create(lhs % rhs);
                 } break;
-                case ir::InstructionID::Shl: {
+                case InstructionID::Shl: {
                     value = ConstantInt::create(lhs << rhs);
                 } break;
-                case ir::InstructionID::LShr: {
+                case InstructionID::LShr: {
                     value =
                         ConstantInt::create(static_cast<uint32_t>(lhs) >> rhs);
                 } break;
-                case ir::InstructionID::AShr: {
+                case InstructionID::AShr: {
                     value = ConstantInt::create(lhs >> rhs);
                 } break;
-                case ir::InstructionID::And: {
+                case InstructionID::And: {
                     value = ConstantInt::create(lhs & rhs);
                 } break;
-                case ir::InstructionID::Or: {
+                case InstructionID::Or: {
                     value = ConstantInt::create(lhs | rhs);
                 } break;
-                case ir::InstructionID::Xor: {
+                case InstructionID::Xor: {
                     value = ConstantInt::create(lhs ^ rhs);
                 } break;
-                case ir::InstructionID::ICmp: {
+                case InstructionID::ICmp: {
                     switch (self->asICmp()->predicate()) {
-                        case ir::ComparePredicationType::EQ: {
+                        case ComparePredicationType::EQ: {
                             value = ConstantData::getBoolean(lhs == rhs);
                         } break;
-                        case ir::ComparePredicationType::NE: {
+                        case ComparePredicationType::NE: {
                             value = ConstantData::getBoolean(lhs != rhs);
                         } break;
-                        case ir::ComparePredicationType::UGT: {
+                        case ComparePredicationType::UGT: {
                             value = ConstantData::getBoolean(
                                 static_cast<uint32_t>(lhs)
                                 > static_cast<uint32_t>(rhs));
                         } break;
-                        case ir::ComparePredicationType::UGE: {
+                        case ComparePredicationType::UGE: {
                             value = ConstantData::getBoolean(
                                 static_cast<uint32_t>(lhs)
                                 >= static_cast<uint32_t>(rhs));
                         } break;
-                        case ir::ComparePredicationType::ULT: {
+                        case ComparePredicationType::ULT: {
                             value = ConstantData::getBoolean(
                                 static_cast<uint32_t>(lhs)
                                 <= static_cast<uint32_t>(rhs));
                         } break;
-                        case ir::ComparePredicationType::ULE: {
+                        case ComparePredicationType::ULE: {
                             value = ConstantData::getBoolean(
                                 static_cast<uint32_t>(lhs)
                                 <= static_cast<uint32_t>(rhs));
                         } break;
-                        case ir::ComparePredicationType::SGT: {
+                        case ComparePredicationType::SGT: {
                             value = ConstantData::getBoolean(lhs > rhs);
                         } break;
-                        case ir::ComparePredicationType::SGE: {
+                        case ComparePredicationType::SGE: {
                             value = ConstantData::getBoolean(lhs >= rhs);
                         } break;
-                        case ir::ComparePredicationType::SLT: {
+                        case ComparePredicationType::SLT: {
                             value = ConstantData::getBoolean(lhs < rhs);
                         } break;
-                        case ir::ComparePredicationType::SLE: {
+                        case ComparePredicationType::SLE: {
                             value = ConstantData::getBoolean(lhs <= rhs);
                         } break;
                         default: {
@@ -187,77 +187,77 @@ void PeekholePass::foldBinaryConstant(User<2> *inst) {
                 } break;
             }
         } break;
-        case ir::InstructionID::FAdd:
-        case ir::InstructionID::FSub:
-        case ir::InstructionID::FMul:
-        case ir::InstructionID::FDiv:
-        case ir::InstructionID::FRem:
-        case ir::InstructionID::FCmp: {
+        case InstructionID::FAdd:
+        case InstructionID::FSub:
+        case InstructionID::FMul:
+        case InstructionID::FDiv:
+        case InstructionID::FRem:
+        case InstructionID::FCmp: {
             auto lhs = static_cast<ConstantFloat *>(inst->lhs().value())->value;
             auto rhs = static_cast<ConstantFloat *>(inst->rhs().value())->value;
             switch (self->id()) {
-                case ir::InstructionID::FAdd: {
+                case InstructionID::FAdd: {
                     value = ConstantFloat::create(lhs + rhs);
                 } break;
-                case ir::InstructionID::FSub: {
+                case InstructionID::FSub: {
                     value = ConstantFloat::create(lhs - rhs);
                 } break;
-                case ir::InstructionID::FMul: {
+                case InstructionID::FMul: {
                     value = ConstantFloat::create(lhs * rhs);
                 } break;
-                case ir::InstructionID::FDiv: {
+                case InstructionID::FDiv: {
                     value = ConstantFloat::create(lhs / rhs);
                 } break;
-                case ir::InstructionID::FRem: {
+                case InstructionID::FRem: {
                     //! FIXME: fmod may have precision issues
                     value = ConstantFloat::create(fmod(lhs, rhs));
                 } break;
-                case ir::InstructionID::FCmp: {
+                case InstructionID::FCmp: {
                     switch (self->asFCmp()->predicate()) {
-                        case ir::ComparePredicationType::FALSE: {
+                        case ComparePredicationType::FALSE: {
                             value = ConstantData::getBoolean(false);
                         } break;
-                        case ir::ComparePredicationType::OEQ: {
+                        case ComparePredicationType::OEQ: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs) && lhs == rhs);
                         } break;
-                        case ir::ComparePredicationType::OGT: {
+                        case ComparePredicationType::OGT: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs) && lhs > rhs);
                         } break;
-                        case ir::ComparePredicationType::OGE: {
+                        case ComparePredicationType::OGE: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs) && lhs >= rhs);
                         } break;
-                        case ir::ComparePredicationType::OLT: {
+                        case ComparePredicationType::OLT: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs) && lhs < rhs);
                         } break;
-                        case ir::ComparePredicationType::OLE: {
+                        case ComparePredicationType::OLE: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs) && lhs <= rhs);
                         } break;
-                        case ir::ComparePredicationType::ONE: {
+                        case ComparePredicationType::ONE: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs) && lhs != rhs);
                         } break;
-                        case ir::ComparePredicationType::ORD: {
+                        case ComparePredicationType::ORD: {
                             value = ConstantData::getBoolean(
                                 !isnan(lhs) && !isnan(rhs));
                         } break;
-                        case ir::ComparePredicationType::UEQ: {
+                        case ComparePredicationType::UEQ: {
                             value = ConstantData::getBoolean(
                                 isnan(lhs) || isnan(rhs) || lhs == rhs);
                         } break;
-                        case ir::ComparePredicationType::UNE: {
+                        case ComparePredicationType::UNE: {
                             value = ConstantData::getBoolean(
                                 isnan(lhs) || isnan(rhs) || lhs != rhs);
                         } break;
-                        case ir::ComparePredicationType::UNO: {
+                        case ComparePredicationType::UNO: {
                             value = ConstantData::getBoolean(
                                 isnan(lhs) || isnan(rhs));
                         } break;
-                        case ir::ComparePredicationType::TRUE: {
+                        case ComparePredicationType::TRUE: {
                             value = ConstantData::getBoolean(true);
                         }
                         default: {
@@ -272,14 +272,14 @@ void PeekholePass::foldBinaryConstant(User<2> *inst) {
         } break;
     }
     if (value != nullptr) {
-        auto it = inst->uses().begin();
-        while (it != inst->uses().end()) { (*it++)->reset(value); }
+        std::vector<Use *> uses(inst->uses().begin(), inst->uses().end());
+        for (auto use : uses) { use->reset(value); }
         auto ok = self->removeFromBlock(true);
         assert(ok);
     }
 }
 
-void PeekholePass::binUserPeekholeOptmize(User<2> *inst) {
+void PeekholePass::binUserPeekholeOptimize(User<2> *inst) {
     auto       self         = inst->asInstruction();
     const auto op           = self->id();
     bool       shouldRemove = false;
