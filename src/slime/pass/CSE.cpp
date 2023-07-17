@@ -93,14 +93,27 @@ std::pair<bool, CSEPass::key_type> CSEPass::encode(ir::Instruction* inst) {
         ret = key_type{inst->id(), lhs, rhs, 0};
         ok  = true;
     } else if (inst->id() == InstructionID::GetElementPtr) {
-        auto gep     = inst->asGetElementPtr();
-        auto address = gep->op<0>();
-        auto index1  = gep->op<1>();
-        auto index2  = gep->op<2>();
-        if ((address->isInstruction()
-             && address->asInstruction()->id() == InstructionID::Alloca)
-            || address->isGlobal()) {
-            if (index1->isImmediate() && index2->isImmediate()) {
+        auto gep           = inst->asGetElementPtr();
+        auto address       = gep->op<0>();
+        bool isConstantPtr = false;
+        if (address->isGlobal()) {
+            isConstantPtr = true;
+        } else if (address->isInstruction()) {
+            auto iaddr = address->asInstruction();
+            if (iaddr->id() == InstructionID::Alloca) {
+                isConstantPtr = true;
+            } else if (
+                iaddr->id() == InstructionID::GetElementPtr
+                && constantPtrInst_.count(iaddr->asGetElementPtr())) {
+                isConstantPtr = true;
+            }
+        }
+        if (isConstantPtr) {
+            constantPtrInst_.insert(gep);
+            auto index1 = gep->op<1>();
+            auto index2 = gep->op<2>();
+            if (index1->isImmediate()
+                && (index2 == nullptr || index2->isImmediate())) {
                 ret = key_type{
                     inst->id(),
                     ptr2int(address),

@@ -22,7 +22,8 @@ protected:
     std::pair<bool, key_type> encode(ir::Instruction* inst);
 
 private:
-    std::map<key_type, ir::Value*> numberingTable_;
+    std::map<key_type, ir::Value*>   numberingTable_;
+    std::set<ir::GetElementPtrInst*> constantPtrInst_;
 };
 
 } // namespace slime::pass
