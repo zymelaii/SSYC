@@ -2,10 +2,14 @@
 
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
+#include <slime/visitor/ASTExprSimplifier.h>
 #include <slime/pass/Peekhole.h>
 #include <slime/pass/DeadCodeElimination.h>
 #include <slime/pass/FunctionInlining.h>
+#include <slime/pass/CSE.h>
+#include <slime/pass/Mem2Reg.h>
 #include <slime/pass/ValueNumbering.h>
+#include <slime/pass/CopyPropagation.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -199,10 +203,24 @@ Module *ASTToIRTranslator::translate(
         }
     }
     auto module = translator.module_.release();
-    pass::PeekholePass{}.run(module);
+
     pass::DeadCodeEliminationPass{}.run(module);
+    pass::PeekholePass{}.run(module);
+    pass::CopyPropagationPass{}.run(module);
+    pass::DeadCodeEliminationPass{}.run(module);
+
     pass::FunctionInliningPass{}.run(module);
+
+    pass::PeekholePass{}.run(module);
+    pass::CSEPass{}.run(module);
+    pass::CopyPropagationPass{}.run(module);
+    pass::CSEPass{}.run(module);
+    pass::CopyPropagationPass{}.run(module);
+    pass::DeadCodeEliminationPass{}.run(module);
+
+    // pass::MemoryToRegisterPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
+
     return module;
 }
 
@@ -338,7 +356,12 @@ void ASTToIRTranslator::translateStmt(BasicBlock *block, Stmt *stmt) {
             translateDoStmt(block, stmt->asDoStmt());
         } break;
         case ast::StmtID::While: {
+            //! NOTE: convert while to if (...) { do-while }
             translateWhileStmt(block, stmt->asWhileStmt());
+            // translateIfStmt(
+            //     block,
+            //     ASTExprSimplifier::transformIntoDoWhileLoop(stmt->asWhileStmt())
+            //         ->asIfStmt());
         } break;
         case ast::StmtID::For: {
             translateForStmt(block, stmt->asForStmt());
