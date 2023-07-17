@@ -80,11 +80,21 @@ void DeadCodeEliminationPass::runOnFunction(Function *target) {
                         block->reset(block->branch());
                     }
                 }
-                continue;
+                break;
             }
             if (inst->id() == ir::InstructionID::Alloca) {
                 allocas.push_front(inst->asAlloca());
                 continue;
+            }
+        }
+        auto instRIter = block->instructions().rbegin();
+        while (instRIter != block->instructions().rend()) {
+            auto inst = *instRIter++;
+            if (inst->unwrap()->type()->isVoid()) { continue; }
+            if (inst->id() == InstructionID::Call) { continue; }
+            if (inst->unwrap()->uses().size() == 0) {
+                auto ok = inst->removeFromBlock();
+                assert(ok);
             }
         }
         for (auto alloca : allocas) {
@@ -101,15 +111,14 @@ void DeadCodeEliminationPass::runOnFunction(Function *target) {
         auto address = store->lhs();
         //! alloca is only used by store itself
         if (address->uses().size() == 1) {
-            auto ok = store->removeFromBlock();
-            assert(ok);
             if (address->isInstruction()
                 && address->asInstruction()->id() == InstructionID::Alloca) {
                 auto alloca = address->asInstruction()->asAlloca();
-                if (alloca->uses().size() == 0) {
-                    auto ok = alloca->removeFromBlock();
-                    assert(ok);
-                }
+                auto ok     = store->removeFromBlock();
+                assert(ok);
+                assert(alloca->uses().size() == 0);
+                ok = alloca->removeFromBlock();
+                assert(ok);
             }
         }
     }
