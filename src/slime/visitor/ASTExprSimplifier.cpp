@@ -13,6 +13,41 @@ Expr* ASTExprSimplifier::trySimplify(Expr* expr) {
     return !e ? expr : e;
 }
 
+bool ASTExprSimplifier::trySmallLoopUnroll(LoopStmt* stmt) {
+    if (auto whileStmt = stmt->tryIntoWhileStmt()) {
+        auto cond = whileStmt->condition->tryIntoExprStmt();
+        if (cond == nullptr) { return false; }
+        auto op = cond->unwrap()->tryIntoBinary();
+        if (op == nullptr) { return false; }
+        switch (op->op) {
+            case BinaryOperator::LT:
+            case BinaryOperator::LE:
+            case BinaryOperator::GT:
+            case BinaryOperator::GE:
+            case BinaryOperator::EQ:
+            case BinaryOperator::NE: {
+            } break;
+            default: {
+                return false;
+            } break;
+        }
+    } else if (auto doStmt = stmt->tryIntoDoStmt()) {
+        //! TODO: detect small do loop
+        return false;
+    } else if (auto forStmt = stmt->tryIntoForStmt()) {
+        //! TODO: implement small for-loop unroll
+        return false;
+    }
+    return false;
+}
+
+Stmt* ASTExprSimplifier::transformIntoDoWhileLoop(WhileStmt* stmt) {
+    auto cond    = stmt->condition->asExprStmt()->unwrap();
+    auto doStmt  = DoStmt::create(cond, stmt->loopBody);
+    auto wrapper = IfStmt::create(cond, doStmt);
+    return wrapper;
+}
+
 Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
     switch (expr->exprId) {
         case ExprID::DeclRef: {
