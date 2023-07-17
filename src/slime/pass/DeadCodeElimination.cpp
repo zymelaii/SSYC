@@ -19,6 +19,9 @@ void DeadCodeEliminationPass::run(Module *module) {
 void DeadCodeEliminationPass::runOnFunction(Function *target) {
     auto blockIter = target->basicBlocks().begin();
     if (blockIter == target->basicBlocks().end()) { return; }
+
+    std::set<StoreInst *> storeSet;
+
     auto entry = *blockIter;
     while (blockIter != target->basicBlocks().end()) {
         auto block = *blockIter++;
@@ -42,11 +45,14 @@ void DeadCodeEliminationPass::runOnFunction(Function *target) {
                             && lastLoad->parent() == lastStore->parent()
                             && lastStore->parent() == store->parent()
                             && lastLoad->uses().size() == 0) {
-                            lastStore->removeFromBlock();
+                            auto ok = lastStore->removeFromBlock();
+                            assert(ok);
+                            storeSet.erase(lastStore);
                         }
                     }
                     lastStore = store;
                 }
+                storeSet.insert(store);
             }
             if (inst->id() == ir::InstructionID::Load) {
                 auto load = inst->asLoad();
@@ -86,6 +92,24 @@ void DeadCodeEliminationPass::runOnFunction(Function *target) {
                 alloca->removeFromBlock();
             } else {
                 alloca->insertToHead(entry);
+            }
+        }
+    }
+
+    //! remove no-effect store
+    for (auto store : storeSet) {
+        auto address = store->lhs();
+        //! alloca is only used by store itself
+        if (address->uses().size() == 1) {
+            auto ok = store->removeFromBlock();
+            assert(ok);
+            if (address->isInstruction()
+                && address->asInstruction()->id() == InstructionID::Alloca) {
+                auto alloca = address->asInstruction()->asAlloca();
+                if (alloca->uses().size() == 0) {
+                    auto ok = alloca->removeFromBlock();
+                    assert(ok);
+                }
             }
         }
     }
