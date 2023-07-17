@@ -77,7 +77,7 @@ void Driver::execute() {
         visitor->dump(module);
     }
 
-    if (!done) {
+    if (!done && flags_.DumpAssembly) {
         auto armv7aGen = backend::Generator::generate();
         armv7aGen->genCode(stdout, module);
     }

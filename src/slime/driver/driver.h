@@ -8,9 +8,10 @@ namespace slime {
 class Driver {
 public:
     struct Flags {
-        bool LexOnly = false;
-        bool DumpAST = false;
-        bool EmitIR  = false;
+        bool LexOnly      = false;
+        bool DumpAST      = false;
+        bool EmitIR       = false;
+        bool DumpAssembly = false;
     };
 
     static Driver* create();
