@@ -41,9 +41,9 @@ bool ASTExprSimplifier::trySmallLoopUnroll(LoopStmt* stmt) {
     return false;
 }
 
-Stmt* ASTExprSimplifier::transformIntoDoWhileLoop(WhileStmt* stmt) {
+IfStmt* ASTExprSimplifier::transformIntoDoWhileLoop(WhileStmt* stmt) {
     auto cond    = stmt->condition->asExprStmt()->unwrap();
-    auto doStmt  = DoStmt::create(cond, stmt->loopBody);
+    auto doStmt  = new (stmt) DoStmt(cond, stmt->loopBody);
     auto wrapper = IfStmt::create(cond, doStmt);
     return wrapper;
 }

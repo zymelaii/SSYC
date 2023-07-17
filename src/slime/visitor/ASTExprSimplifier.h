@@ -9,7 +9,7 @@ class ASTExprSimplifier {
 public:
     static ast::Expr*         trySimplify(ast::Expr* expr);
     static bool               trySmallLoopUnroll(ast::LoopStmt* stmt);
-    static ast::Stmt*         transformIntoDoWhileLoop(ast::WhileStmt* stmt);
+    static ast::IfStmt*       transformIntoDoWhileLoop(ast::WhileStmt* stmt);
     static ast::Expr*         tryEvaluateCompileTimeExpr(ast::Expr* expr);
     static ast::ConstantExpr* tryEvaluateCompileTimeUnaryExpr(ast::Expr* expr);
     static ast::ConstantExpr* tryEvaluateCompileTimeBinaryExpr(ast::Expr* expr);

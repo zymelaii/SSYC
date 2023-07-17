@@ -357,8 +357,7 @@ Stmt *Parser::parseStmt(bool standalone) {
             stmt = parseDoStmt();
         } break;
         case TOKEN::TK_WHILE: {
-            stmt =
-                ASTExprSimplifier::transformIntoDoWhileLoop(parseWhileStmt());
+            stmt = parseWhileStmt();
         } break;
         case TOKEN::TK_FOR: {
             stmt = parseForStmt();
