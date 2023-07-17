@@ -8,28 +8,25 @@ using namespace ir;
 
 void CopyPropagationPass::runOnFunction(Function *target) {
     for (auto block : target->basicBlocks()) {
-        std::map<Value*, StoreInst*> def;
-        std::set<Instruction*> deleteLater;
-        auto it = block->instructions().begin();
+        std::map<Value *, StoreInst *> def;
+        std::set<Instruction *>        deleteLater;
+        auto                           it = block->instructions().begin();
         while (it != block->instructions().end()) {
             auto inst = *it++;
             if (inst->id() == InstructionID::Store) {
-                auto store = inst->asStore();
+                auto  store     = inst->asStore();
                 auto &lastStore = def[store->lhs()];
-                if (lastStore != nullptr) {
-                    deleteLater.insert(lastStore);
-                }
+                if (lastStore != nullptr) { deleteLater.insert(lastStore); }
                 lastStore = store;
                 continue;
             }
             if (inst->id() == InstructionID::Load) {
-                auto load = inst->asLoad();
+                auto load  = inst->asLoad();
                 auto store = def[load->operand()];
                 if (store != nullptr) {
-                    std::vector<Use*> uses(load->uses().begin(), load->uses().end());
-                    for (auto use : uses) {
-                        use->reset(store->rhs());
-                    }
+                    std::vector<Use *> uses(
+                        load->uses().begin(), load->uses().end());
+                    for (auto use : uses) { use->reset(store->rhs()); }
                     deleteLater.insert(load);
                 }
                 continue;
@@ -60,8 +57,7 @@ void CopyPropagationPass::runOnFunction(Function *target) {
                     auto load = inst->asLoad();
                     auto ptr  = load->operand();
                     //! ptr may from a global object
-                    if (ptr->isGlobal())
-                    assert(ptr != nullptr);
+                    if (ptr->isGlobal()) assert(ptr != nullptr);
                     auto &[value, store, used] = useDef_[ptr];
                     if (value == nullptr) {
                         //! WANRING: load before store
