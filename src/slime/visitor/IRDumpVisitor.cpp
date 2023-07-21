@@ -75,20 +75,7 @@ std::ostream& IRDumpVisitor::dumpValueRef(Value* value) {
             && value->asInstruction()->id() != InstructionID::Br
             && value->asInstruction()->id() != InstructionID::Ret));
     if (value->isImmediate()) {
-        auto imm = value->asConstantData();
-        if (imm->type()->isInteger()) {
-            os() << static_cast<ConstantInt*>(imm)->value;
-        } else {
-            union {
-                float    fp;
-                uint32_t u32;
-            } v;
-
-            // v.fp = static_cast<ConstantFloat*>(imm)->value;
-            // os() << std::showpoint << std::scientific << v.fp;
-            os() << "float " << std::fixed
-                 << static_cast<ConstantFloat*>(imm)->value;
-        }
+        os() << dumpConstant(value->asConstantData());
     } else if (value->isGlobal()) {
         os() << "@" << value->asGlobalObject()->name();
     } else if (value->isLabel() && !value->name().empty()) {
@@ -101,18 +88,16 @@ std::ostream& IRDumpVisitor::dumpValueRef(Value* value) {
 
 std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
     if (data->type()->isInteger()) {
-        os() << "i32 " << static_cast<ConstantInt*>(data)->value;
+        os() << static_cast<ConstantInt*>(data)->value;
     } else if (data->type()->isFloat()) {
-        union {
-            double   fp;
-            uint64_t u64;
-        } v;
-
-        v.fp = static_cast<ConstantFloat*>(data)->value;
-        os() << "float " << std::fixed
-             << static_cast<ConstantFloat*>(data)->value;
-        // os() << "float 0x" << std::setfill('0') << std::setw(16)
-        //      << std::ios::hex << v.u64;
+        char   fp[32]{};
+        double v = static_cast<ConstantFloat*>(data)->value;
+        if (v == 0.) {
+            strcpy(fp, "0.000000e+00");
+        } else {
+            sprintf(fp, "%#llx", *reinterpret_cast<uint64_t*>(&v));
+        }
+        os() << fp;
     } else {
         assert(data->type()->isArray());
         os() << dumpArrayData(static_cast<ConstantArray*>(data));
@@ -121,18 +106,18 @@ std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
 }
 
 std::ostream& IRDumpVisitor::dumpArrayData(ConstantArray* data) {
-    os() << dumpType(data->type()) << " ";
     if (data->size() == 0) {
         os() << "zeroinitializer";
     } else {
+        const int n        = data->type()->asArrayType()->size();
+        auto      type     = data->type()->tryGetElementType();
+        bool      isBottom = !type->isArray();
         os() << "[";
         for (int i = 0; i < data->size(); ++i) {
-            os() << dumpConstant(data->at(i));
+            os() << dumpType(type) << " " << dumpConstant(data->at(i));
             if (i + 1 < data->size()) { os() << ", "; }
         }
         ConstantData* value = nullptr;
-        const int     n     = data->type()->asArrayType()->size();
-        auto          type  = data->type()->tryGetElementType();
         if (type->isArray()) {
             value = ConstantArray::create(type->asArrayType());
         } else if (type->isInteger()) {
@@ -142,7 +127,7 @@ std::ostream& IRDumpVisitor::dumpArrayData(ConstantArray* data) {
         }
         assert(value != nullptr);
         for (int i = data->size(); i < n; ++i) {
-            os() << ", " << dumpConstant(value);
+            os() << ", " << dumpType(type) << " " << dumpConstant(value);
         }
         os() << "]";
     }
@@ -191,6 +176,7 @@ void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {
     auto type = object->type()->tryGetElementType();
     assert(type->isInteger() || type->isFloat() || type->isArray());
     os() << "@" << object->name() << " = global "
+         << dumpType(object->type()->tryGetElementType()) << " "
          << dumpConstant(const_cast<ConstantData*>(object->data()))
          << ", align 4\n\n";
 }
