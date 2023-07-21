@@ -1,8 +1,10 @@
 int main() {
-    for (;;)
-        ;
-    for (;;) { int a = 3, b = a + 3; }
-    for (int a = 0;;) {}
+    for (;;) break;
+    for (;;) {
+        int a = 3, b = a + 3;
+        break;
+    }
+    for (int a = 0;;) { break; }
     int a = 3;
     for (; a < 6; a = a + 1) {}
     for (int a = 0; a < 6; a = a + 1) {}

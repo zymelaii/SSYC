@@ -1,6 +1,7 @@
 project(slimec)
 
 add_subdirectory(slime)
+add_subdirectory(libslime)
 
 set(SOURCE_FILES main.cpp)
 

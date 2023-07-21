@@ -13,3 +13,7 @@ int c() {
 }
 
 extern int c();
+
+int main() {
+    return 0;
+}

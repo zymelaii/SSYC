@@ -3,3 +3,7 @@ static inline const int foo() {
 }
 
 extern int bar();
+
+int main() {
+    return 0;
+}
