@@ -12,8 +12,10 @@ endmacro()
 get_directories(CATEGORY_LIST ${CMAKE_CURRENT_SOURCE_DIR})
 
 get_target_property(LIBSLIME_INCLUDEDIR ssyc::libslime INCLUDE_DIRECTORIES)
-get_target_property(LIBSLIME ssyc::libslime BINARY_DIR)
-string(APPEND LIBSLIME "/liblibslime.a")
+get_target_property(LIBSLIME_LIBDIR ssyc::libslime BINARY_DIR)
+get_target_property(LIBSLIME ssyc::libslime NAME)
+
+message(STATUS ${LIBSLIME_LIBDIR})
 
 foreach(CATEGORY ${CATEGORY_LIST})
     file(GLOB SYSY_SOURCES ${CATEGORY}/*.sy)
@@ -26,11 +28,12 @@ foreach(CATEGORY ${CATEGORY_LIST})
             ${TARGET}
             DEPENDS slimec ssyc::libslime
             SOURCES ${SOURCE}
-            COMMAND
+            COMMENT "Building standard program for testcase ${CATEGORY}/${TESTCASE}"
             COMMAND gcc -w -m32 -Ui386
-                ${LIBSLIME}
                 -include ${LIBSLIME_INCLUDEDIR}/libslime/stdslime.h
                 -x c ${SOURCE}
+                -L${LIBSLIME_LIBDIR}
+                -l${LIBSLIME}
                 -o ${CMAKE_CURRENT_BINARY_DIR}/${CATEGORY}/${TESTCASE}
         )
         list(APPEND CATEGORY_TESTCASES ${TARGET})
