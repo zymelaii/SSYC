@@ -11,12 +11,12 @@ endmacro()
 
 get_directories(CATEGORY_LIST ${CMAKE_CURRENT_SOURCE_DIR})
 
-get_target_property(LIBSLIME_INCLUDEDIR ssyc::libslime INCLUDE_DIRECTORIES)
-get_target_property(LIBSLIME_LIBDIR ssyc::libslime BINARY_DIR)
-get_target_property(LIBSLIME ssyc::libslime NAME)
+set(SLIME_STDLIB ssyc::libslime)
+get_target_property(LIBSLIME_INCLUDEDIR ${SLIME_STDLIB} INCLUDE_DIRECTORIES)
+get_target_property(LIBSLIME_LIBDIR ${SLIME_STDLIB} BINARY_DIR)
+get_target_property(LIBSLIME ${SLIME_STDLIB} NAME)
 
-message(STATUS ${LIBSLIME_LIBDIR})
-
+set(CATEGORY_TARGET_LIST)
 foreach(CATEGORY ${CATEGORY_LIST})
     file(GLOB SYSY_SOURCES ${CATEGORY}/*.sy)
     set(CATEGORY_TESTCASES)
@@ -26,7 +26,7 @@ foreach(CATEGORY ${CATEGORY_LIST})
         file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${CATEGORY})
         add_custom_target(
             ${TARGET}
-            DEPENDS slimec ssyc::libslime
+            DEPENDS slimec ${SLIME_STDLIB}
             SOURCES ${SOURCE}
             COMMENT "Building standard program for testcase ${CATEGORY}/${TESTCASE}"
             COMMAND gcc -w -m32 -Ui386
@@ -39,5 +39,8 @@ foreach(CATEGORY ${CATEGORY_LIST})
         list(APPEND CATEGORY_TESTCASES ${TARGET})
     endforeach()
     string(CONCAT CATEGORY_TARGET category - ${CATEGORY})
+    list(APPEND CATEGORY_TARGET_LIST ${CATEGORY_TARGET})
     add_custom_target(${CATEGORY_TARGET} DEPENDS ${CATEGORY_TESTCASES})
 endforeach()
+
+add_custom_target(testcase DEPENDS ${CATEGORY_TARGET_LIST})
