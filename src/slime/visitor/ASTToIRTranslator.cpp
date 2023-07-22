@@ -7,7 +7,6 @@
 #include <slime/pass/DeadCodeElimination.h>
 #include <slime/pass/FunctionInlining.h>
 #include <slime/pass/CSE.h>
-#include <slime/pass/Mem2Reg.h>
 #include <slime/pass/ValueNumbering.h>
 #include <slime/pass/CopyPropagation.h>
 #include <assert.h>

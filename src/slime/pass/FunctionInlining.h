@@ -2,6 +2,8 @@
 
 #include "pass.h"
 
+#include <functional>
+
 namespace slime::pass {
 
 class FunctionInliningPass : public UniversalIRPass {

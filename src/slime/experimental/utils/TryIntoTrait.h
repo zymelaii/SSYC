@@ -129,21 +129,15 @@ public:
     inline bool is() const {
         using this_type  = std::add_pointer_t<wrapper_type>;
         using other_type = std::add_pointer_t<G>;
-        if constexpr (std::is_same_v<E, detail::EmptyEnum>) {
+        if constexpr (std::is_same_v<G, wrapper_type>) {
+            return true;
+        } else if constexpr (std::is_same_v<G, inner_type>) {
+            return true;
+        } else if constexpr (std::is_same_v<E, detail::EmptyEnum>) {
             return false;
         } else {
             return (this->*FnEnum)() == declare_t<G>;
         }
-    }
-
-    template <>
-    inline constexpr bool is<wrapper_type>() const {
-        return true;
-    }
-
-    template <>
-    inline constexpr bool is<inner_type>() const {
-        return true;
     }
 
     //! FIXME: -1 can be a valid of scoped enum E
@@ -169,7 +163,7 @@ private:
 #define emit(type) \
  template <>       \
  template <>       \
- constexpr type
+ /*constexpr*/ type
 
 #define DECLARE_TRY_INTO_ITEM_M4(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
 #define DECLARE_TRY_INTO_ITEM_M3(...) \

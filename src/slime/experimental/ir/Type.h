@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
+#include <initializer_list>
 #include <memory>
 
 namespace slime::experimental::ir {
