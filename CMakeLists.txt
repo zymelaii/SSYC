@@ -18,16 +18,19 @@ if(MSVC)
 endif()
 
 option(BUILD_TEST "build test unit" OFF)
+option(ENABLE_PROFILE "generate profile information" OFF)
 
-SET(
-	PROFILE_FLAGS
-	-fprofile-instr-generate
-	-fcoverage-mapping
-)
+set(PROFILE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
 
-if (CMAKE_BUILD_TYPE STREQUAL Debug)
+if(CMAKE_BUILD_TYPE STREQUAL Debug)
 	add_compile_options(-g)
-	add_link_options(${PROFILE_FLAGS})
+endif()
+
+if(ENABLE_PROFILE)
+	if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		message(WARNING "profile options are now only available for clang")
+		set(ENABLE_PROFILE OFF)
+	endif()
 endif()
 
 add_subdirectory(src)
