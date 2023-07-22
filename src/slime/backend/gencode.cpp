@@ -1,13 +1,13 @@
 #include "gencode.h"
 #include "regalloc.h"
 
-#include <set>
 #include <slime/ir/instruction.def>
 #include <slime/ir/module.h>
 #include <slime/ir/value.h>
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <slime/utils/list.h>
+#include <set>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

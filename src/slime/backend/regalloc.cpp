@@ -1,14 +1,14 @@
 #include "regalloc.h"
 #include "gencode.h"
-#include "slime/ir/instruction.def"
 
+#include <slime/ir/instruction.def>
+#include <slime/ir/value.h>
+#include <slime/ir/instruction.h>
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <set>
-#include <slime/ir/value.h>
-#include <slime/ir/instruction.h>
 #include <vector>
 
 namespace slime::backend {

@@ -1,12 +1,11 @@
-#include <set>
 #include <slime/ir/type.h>
 #include <slime/ast/decl.h>
-#include "slime/ir/instruction.def"
-#include "slime/ir/value.h"
+#include <slime/ir/instruction.def>
+#include <slime/ir/value.h>
 #include <slime/ir/module.h>
 #include <slime/utils/list.h>
 #include <slime/ir/instruction.h>
-
+#include <set>
 #include <assert.h>
 #include <stdint.h>
 #include <stddef.h>

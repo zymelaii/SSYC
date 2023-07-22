@@ -1,15 +1,14 @@
-#include "slime/ir/instruction.def"
-#include "slime/ir/instruction.h"
-#include "slime/ir/user.h"
-#include "slime/ir/value.h"
-#include "slime/utils/list.h"
+#include <slime/ir/instruction.def>
+#include <slime/ir/instruction.h>
+#include <slime/ir/user.h>
+#include <slime/ir/value.h>
+#include <slime/utils/list.h>
+#include <slime/ir/module.h>
+#include <slime/ir/type.h>
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <set>
-#include <slime/ir/module.h>
-#include <slime/ir/type.h>
-
 #include <map>
 #include <type_traits>
 
@@ -113,7 +112,7 @@ struct Stack {
         auto   end     = onStackVars->node_end();
         size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar  = it->value();
+            auto stackvar = it->value();
             sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
@@ -150,7 +149,7 @@ struct Stack {
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
-        var->stackpos  = stackSize;
+        var->stackpos = stackSize;
         assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
