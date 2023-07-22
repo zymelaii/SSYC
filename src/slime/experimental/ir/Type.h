@@ -10,6 +10,7 @@
 #include <assert.h>
 #include <initializer_list>
 #include <memory>
+#include <string_view>
 
 namespace slime::experimental::ir {
 
@@ -38,16 +39,55 @@ class FP128Type; //<! 128-bit floating point
 class TypeImpl {
 protected:
     inline TypeImpl(TypeKind kind, TypeFlag property);
+    ~TypeImpl();
+
+    template <typename T>
+    void generateAndResetTypeSignature();
 
 public:
-    inline TypeKind kind() const;
+    inline TypeKind         kind() const;
+    inline std::string_view signature() const;
+
+    template <
+        typename Self = EnumBasedTryIntoTraitWrapper<TypeImpl, &TypeImpl::kind>>
+    static Self* from(const char* sign);
+
+    static inline VoidType*  getVoidTy();
+    static inline BoolType*  getBoolTy();
+    static inline I8Type*    getI8Ty();
+    static inline U8Type*    getU8Ty();
+    static inline I16Type*   getI16Ty();
+    static inline U16Type*   getU16Ty();
+    static inline I32Type*   getI32Ty();
+    static inline U32Type*   getU32Ty();
+    static inline I64Type*   getI64Ty();
+    static inline U64Type*   getU64Ty();
+    static inline UPtrType*  getUPtrTy();
+    static inline FP32Type*  getFP32Ty();
+    static inline FP64Type*  getFP64Ty();
+    static inline FP128Type* getFP128Ty();
+
+    static IntType* getIntTy(size_t bitWidth, bool isSigned);
+    template <size_t BitWidth, bool IsSigned>
+    static inline IntType* getIntTy();
+
+    static FPType* getFPTy(size_t bitWidth);
+    template <size_t BitWidth>
+    static inline FPType* getFPTy();
+
+    static PtrType*   getPtrTy(TypeImpl* dataType);
+    static ArrayType* getArrayTy(TypeImpl* dataType, size_t length);
+
+    template <typename... Args>
+    static inline FnType* getFnTy(Args&&... args);
 
 protected:
     inline TypeFlag flag() const;
     inline TypeFlag property() const;
 
 private:
-    TypeFlag flag_;
+    TypeFlag    flag_;
+    const char* signature_;
 };
 
 using Type = EnumBasedTryIntoTraitWrapper<TypeImpl, &TypeImpl::kind>;
@@ -195,11 +235,73 @@ public:
     inline FP128Type();
 };
 
+template <>
+Type* TypeImpl::from(const char* sign);
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<VoidType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<IntType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<FPType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<PtrType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<ArrayType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<FnType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<BoolType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<I8Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<U8Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<I16Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<U16Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<I32Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<U32Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<I64Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<U64Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<UPtrType>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<FP32Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<FP64Type>();
+
+template <>
+void TypeImpl::generateAndResetTypeSignature<FP128Type>();
+
 } // namespace slime::experimental::ir
 
 namespace slime::experimental::ir {
 
-inline TypeImpl::TypeImpl(TypeKind kind, TypeFlag property) {
+inline TypeImpl::TypeImpl(TypeKind kind, TypeFlag property)
+    : flag_{0}
+    , signature_{nullptr} {
     const auto f1 = TypeFlagMask::makePropertyField(property);
     const auto f2 = static_cast<TypeFlag>(kind);
     flag_         = f1 | f2;
@@ -207,6 +309,134 @@ inline TypeImpl::TypeImpl(TypeKind kind, TypeFlag property) {
 
 inline TypeKind TypeImpl::kind() const {
     return TypeFlagMask::getKindField(flag());
+}
+
+inline std::string_view TypeImpl::signature() const {
+    assert(signature_ != nullptr);
+    return signature_;
+}
+
+inline VoidType* TypeImpl::getVoidTy() {
+    static VoidType SINGLETON;
+    return &SINGLETON;
+}
+
+inline BoolType* TypeImpl::getBoolTy() {
+    static BoolType SINGLETON;
+    return &SINGLETON;
+}
+
+inline I8Type* TypeImpl::getI8Ty() {
+    static I8Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline U8Type* TypeImpl::getU8Ty() {
+    static U8Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline I16Type* TypeImpl::getI16Ty() {
+    static I16Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline U16Type* TypeImpl::getU16Ty() {
+    static U16Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline I32Type* TypeImpl::getI32Ty() {
+    static I32Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline U32Type* TypeImpl::getU32Ty() {
+    static U32Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline I64Type* TypeImpl::getI64Ty() {
+    static I64Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline U64Type* TypeImpl::getU64Ty() {
+    static U64Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline UPtrType* TypeImpl::getUPtrTy() {
+    static UPtrType SINGLETON;
+    return &SINGLETON;
+}
+
+inline FP32Type* TypeImpl::getFP32Ty() {
+    static FP32Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline FP64Type* TypeImpl::getFP64Ty() {
+    static FP64Type SINGLETON;
+    return &SINGLETON;
+}
+
+inline FP128Type* TypeImpl::getFP128Ty() {
+    static FP128Type SINGLETON;
+    return &SINGLETON;
+}
+
+template <size_t BitWidth, bool IsSigned>
+inline IntType* TypeImpl::getIntTy() {
+    if constexpr (BitWidth == 0) {
+        return getUPtrTy();
+    } else if constexpr (BitWidth == 1) {
+        return getBoolTy();
+    } else if constexpr (BitWidth == 8) {
+        if constexpr (IsSigned) {
+            return getI8Ty();
+        } else {
+            return getU8Ty();
+        }
+    } else if constexpr (BitWidth == 16) {
+        if constexpr (IsSigned) {
+            return getI16Ty();
+        } else {
+            return getU16Ty();
+        }
+    } else if constexpr (BitWidth == 32) {
+        if constexpr (IsSigned) {
+            return getI32Ty();
+        } else {
+            return getU32Ty();
+        }
+    } else if constexpr (BitWidth == 64) {
+        if constexpr (IsSigned) {
+            return getI64Ty();
+        } else {
+            return getU64Ty();
+        }
+    } else {
+        unreachable();
+    }
+}
+
+template <size_t BitWidth>
+inline FPType* TypeImpl::getFPTy() {
+    if constexpr (BitWidth == 32) {
+        return getFP32Ty();
+    } else if constexpr (BitWidth == 64) {
+        return getFP64Ty();
+    } else if constexpr (BitWidth == 128) {
+        return getFP128Ty();
+    } else {
+        unreachable();
+    }
+}
+
+template <typename... Args>
+inline FnType* TypeImpl::getFnTy(Args&&... args) {
+    return new FnType(std::forward<Args>(args)...);
 }
 
 inline TypeFlag TypeImpl::flag() const {
@@ -218,10 +448,14 @@ inline TypeFlag TypeImpl::property() const {
 }
 
 inline VoidType::VoidType()
-    : Type(TypeKind::Void, 0) {}
+    : Type(TypeKind::Void, 0) {
+    generateAndResetTypeSignature<VoidType>();
+}
 
 inline IntType::IntType(size_t bitWidth, bool isSigned)
-    : Type(TypeKind::Integer, isSigned | (bitWidth << 1)) {}
+    : Type(TypeKind::Integer, isSigned | (bitWidth << 1)) {
+    generateAndResetTypeSignature<IntType>();
+}
 
 inline bool IntType::isSigned() const {
     return property() & 1;
@@ -236,7 +470,9 @@ inline size_t IntType::byteWidth() const {
 }
 
 inline FPType::FPType(size_t bitWidth)
-    : Type(TypeKind::Float, bitWidth) {}
+    : Type(TypeKind::Float, bitWidth) {
+    generateAndResetTypeSignature<FPType>();
+}
 
 inline size_t FPType::bitWidth() const {
     return property();
@@ -272,7 +508,9 @@ inline int FPType::expMax() const {
 
 inline PtrType::PtrType(const Type* dataType)
     : Type(TypeKind::Pointer, 0)
-    , dataType_{dataType} {}
+    , dataType_{dataType} {
+    generateAndResetTypeSignature<PtrType>();
+}
 
 inline const Type* PtrType::dataType() const {
     return dataType_;
@@ -282,6 +520,7 @@ inline ArrayType::ArrayType(const Type* dataType, size_t size)
     : Type(TypeKind::Array, size)
     , dataType_{dataType} {
     assert(size >= 0 && size <= TypeFlagMask::Property);
+    generateAndResetTypeSignature<ArrayType>();
 }
 
 inline const Type* ArrayType::dataType() const {
@@ -307,6 +546,7 @@ FnType::FnType(bool variadic, const Type* rtype, const T& iterable)
         int index = 0;
         for (auto type : iterable) { paramTypes_[index++] = type; }
     }
+    generateAndResetTypeSignature<FnType>();
 }
 
 inline const Type* FnType::rtype() const {
@@ -367,6 +607,28 @@ inline FP128Type::FP128Type()
     : FPType(128) {}
 
 } // namespace slime::experimental::ir
+
+emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+    slime::experimental::ir::VoidType, slime::experimental::ir::TypeKind::Void);
+
+emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+    slime::experimental::ir::IntType,
+    slime::experimental::ir::TypeKind::Integer);
+
+emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+    slime::experimental::ir::FPType, slime::experimental::ir::TypeKind::Float);
+
+emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+    slime::experimental::ir::PtrType,
+    slime::experimental::ir::TypeKind::Pointer);
+
+emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+    slime::experimental::ir::ArrayType,
+    slime::experimental::ir::TypeKind::Array);
+
+emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+    slime::experimental::ir::FnType,
+    slime::experimental::ir::TypeKind::Function);
 
 emit(
     bool) slime::experimental::ir::Type::is<slime::experimental::ir::BoolType>()
