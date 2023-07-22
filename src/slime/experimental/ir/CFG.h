@@ -27,17 +27,10 @@ public:
     bool tryMarkAsTerminal(Value* hint = nullptr);
     void syncFlowWithInstUnsafe();
 
-    inline size_t totalInBlocks() const {
-        return inBlocks_.size();
-    }
+    inline size_t                       totalInBlocks() const;
+    inline const std::set<BasicBlock*>& inBlocks() const;
 
-    inline bool maybeFrom(BasicBlock* block) {
-        return inBlocks_.count(block) == 1;
-    }
-
-    inline const std::set<BasicBlock*>& inBlocks() const {
-        return inBlocks_;
-    }
+    inline bool maybeFrom(BasicBlock* block);
 
 protected:
     static BasicBlock* terminal();
@@ -53,6 +46,10 @@ private:
     BasicBlock*           branchElse_ = nullptr;
     std::set<BasicBlock*> inBlocks_;
 };
+
+} // namespace slime::experimental::ir
+
+namespace slime::experimental::ir {
 
 inline bool CFGNode::isOrphan() const {
     return branch_ == nullptr && inBlocks_.empty();
@@ -84,6 +81,18 @@ inline BasicBlock* CFGNode::branch() const {
 
 inline BasicBlock* CFGNode::branchElse() const {
     return branchElse_;
+}
+
+inline const std::set<BasicBlock*>& CFGNode::inBlocks() const {
+    return inBlocks_;
+}
+
+inline size_t CFGNode::totalInBlocks() const {
+    return inBlocks_.size();
+}
+
+inline bool CFGNode::maybeFrom(BasicBlock* block) {
+    return inBlocks_.count(block) == 1;
 }
 
 } // namespace slime::experimental::ir

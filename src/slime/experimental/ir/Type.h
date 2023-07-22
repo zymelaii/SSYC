@@ -36,6 +36,82 @@ class FP32Type;  //<! 32-bit floating point
 class FP64Type;  //<! 64-bit floating point
 class FP128Type; //<! 128-bit floating point
 
+namespace detail {
+
+template <typename T>
+struct datatype_of;
+
+template <>
+struct datatype_of<BoolType> {
+    using type = bool;
+};
+
+template <>
+struct datatype_of<I8Type> {
+    using type = int8_t;
+};
+
+template <>
+struct datatype_of<U8Type> {
+    using type = uint8_t;
+};
+
+template <>
+struct datatype_of<I16Type> {
+    using type = int16_t;
+};
+
+template <>
+struct datatype_of<U16Type> {
+    using type = uint16_t;
+};
+
+template <>
+struct datatype_of<I32Type> {
+    using type = int32_t;
+};
+
+template <>
+struct datatype_of<U32Type> {
+    using type = uint32_t;
+};
+
+template <>
+struct datatype_of<I64Type> {
+    using type = int64_t;
+};
+
+template <>
+struct datatype_of<U64Type> {
+    using type = uint64_t;
+};
+
+template <>
+struct datatype_of<UPtrType> {
+    //! NOTE: use the longest integer type to store address
+    using type = uint64_t;
+};
+
+template <>
+struct datatype_of<FP32Type> {
+    using type = float;
+};
+
+template <>
+struct datatype_of<FP64Type> {
+    using type = double;
+};
+
+template <>
+struct datatype_of<FP128Type> {
+    using type = long double;
+};
+
+} // namespace detail
+
+template <typename T>
+using datatype_of = typename detail::datatype_of<T>::type;
+
 class TypeImpl {
 protected:
     inline TypeImpl(TypeKind kind, TypeFlag property);

@@ -162,4 +162,4 @@ void CFGNode::unlinkFrom(BasicBlock* inBlock) {
     }
 }
 #endif
-} // namespace slime::ir
+} // namespace slime::experimental::ir
