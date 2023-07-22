@@ -60,6 +60,8 @@ protected:
     inline Value(Type *type, uint32_t tag = 0);
 
 public:
+    inline const UseList &uses() const;
+
     inline void addUse(Use *use) const;
     inline void removeUse(Use *use) const;
 
@@ -105,8 +107,9 @@ public:
     inline void  setPatch(void *patch) const;
     inline void *patch() const;
 
-protected:
     inline void setName(std::string_view name, bool force = false);
+    inline void setIdUnsafe(int32_t id, uint32_t version = 0);
+    inline void resetValueTypeUnsafe(Type *valueType);
 
 private:
     std::string_view name_      = "";
@@ -134,15 +137,21 @@ public:
     inline        operator Value *() const;
     inline Value *operator->() const;
 
+    inline void   attachTo(Value *user);
+    inline Value *owner() const;
+
 private:
-    const Value *value_ = nullptr;
+    const Value *value_  = nullptr;
+    Value       *parent_ = nullptr;
 };
 
 template <int N>
 class User : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        for (auto &use : operands_) { use.attachTo(this); }
+    }
 
 public:
     Use *op() const {
@@ -193,8 +202,19 @@ public:
     }
 
     void resize(size_t n) {
-        for (int i = n - 1; i < operands_.size(); ++i) { operands_[i].reset(); }
+        //! NOTE: resize will lead to memmove, so as the address of Use, yet the
+        //! users and used values will sill hold the out-dated value, so rebind
+        //! to make it stay in active
+        std::vector<Value *> restore;
+        for (int i = 0; i < operands_.size(); ++i) {
+            restore.push_back(operands_[i].value());
+            operands_[i].reset();
+        }
         operands_.resize(n);
+        for (int i = 0; i < restore.size(); ++i) {
+            operands_[i].reset(restore[i]);
+        }
+        for (auto &use : operands_) { use.attachTo(this); }
     }
 
 private:
@@ -225,7 +245,9 @@ template <>
 class User<1> : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        operand_.attachTo(this);
+    }
 
 public:
     Use *op() const {
@@ -252,7 +274,10 @@ template <>
 class User<2> : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        operands_[0].attachTo(this);
+        operands_[1].attachTo(this);
+    }
 
 public:
     Use *op() const {
@@ -283,7 +308,11 @@ template <>
 class User<3> : public Value {
 protected:
     User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
+        : Value(type, tag) {
+        operands_[0].attachTo(this);
+        operands_[1].attachTo(this);
+        operands_[2].attachTo(this);
+    }
 
 public:
     Use *op() const {
@@ -320,11 +349,16 @@ public:
 
     inline bool isInserted() const;
 
+    inline InstructionList       &instructions();
+    inline const InstructionList &instructions() const;
+
     void insertOrMoveToHead();
     void insertOrMoveToTail();
 
     bool insertOrMoveAfter(BasicBlock *block);
     bool insertOrMoveBefore(BasicBlock *block);
+
+    bool remove();
 
 private:
     Function *const            parent_;
@@ -365,6 +399,10 @@ inline Value::Value(Type *type, uint32_t tag)
     : valueType_{type}
     , tag_{tag} {}
 
+inline const UseList &Value::uses() const {
+    return useList_;
+}
+
 inline void Value::addUse(Use *use) const {
     for (auto e : useList_) {
         if (e == use) { return; }
@@ -379,6 +417,7 @@ inline void Value::removeUse(Use *use) const {
             return;
         }
     }
+    assert(false);
 }
 
 inline bool Value::usedBy(const Use *use) const {
@@ -479,10 +518,19 @@ inline void Value::setName(std::string_view name, bool force) {
     if (name_.empty() || force) { name_ = name; }
 }
 
+inline void Value::setIdUnsafe(int32_t id, uint32_t version) {
+    id_      = id;
+    version_ = version;
+}
+
+inline void Value::resetValueTypeUnsafe(Type *valueType) {
+    valueType_ = valueType;
+}
+
 inline void Use::reset(const Value *value) {
     if (value != value_) {
         if (value_ != nullptr) { value_->removeUse(this); }
-        value->addUse(this);
+        if (value != nullptr) { value->addUse(this); }
         value_ = value;
     }
 }
@@ -508,6 +556,14 @@ inline Value *Use::operator->() const {
     return value();
 }
 
+inline void Use::attachTo(Value *user) {
+    parent_ = user;
+}
+
+inline Value *Use::owner() const {
+    return const_cast<Use *>(this)->parent_;
+}
+
 inline Use::operator Value *() const {
     return value();
 }
@@ -523,6 +579,14 @@ inline Function *BasicBlock::parent() const {
 
 inline bool BasicBlock::isInserted() const {
     return node_ != nullptr;
+}
+
+inline InstructionList &BasicBlock::instructions() {
+    return *this;
+}
+
+inline const InstructionList &BasicBlock::instructions() const {
+    return *this;
 }
 
 inline Parameter::Parameter()

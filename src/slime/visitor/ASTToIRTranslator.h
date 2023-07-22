@@ -60,6 +60,9 @@ protected:
     ir::Value *translateSubscriptExpr(
         ir::BasicBlock *block, ast::SubscriptExpr *expr);
 
+    void translateArrayInitAssign(ir::Value *address, ast::InitListExpr *data);
+    ir::Value *bicastIntFP(ir::Value *value, ir::Type *expected);
+
 protected:
     ASTToIRTranslator(std::string_view name)
         : module_(std::make_unique<ir::Module>(name.data())) {}

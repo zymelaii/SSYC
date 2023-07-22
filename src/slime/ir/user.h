@@ -6,6 +6,7 @@
 #include <slime/utils/traits.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <memory>
 
 namespace slime::ir {
 
@@ -29,6 +30,7 @@ public:
     ConstantData(Type* type, uint32_t tag)
         : Constant(type, tag) {}
 
+    static inline ConstantInt*   getBoolean(bool value);
     static inline ConstantInt*   createI32(int32_t data);
     static inline ConstantFloat* createF32(float data);
 };
@@ -37,8 +39,8 @@ class ConstantInt final
     : public ConstantData
     , public utils::BuildTrait<ConstantInt> {
 public:
-    ConstantInt(int32_t value)
-        : ConstantData(Type::getIntegerType(), ValueTag::Immediate | 0)
+    ConstantInt(int32_t value, Type* type = Type::getIntegerType())
+        : ConstantData(type, ValueTag::Immediate | 0)
         , value{value} {}
 
 public:
@@ -136,6 +138,14 @@ public:
         setName(name);
     }
 
+    inline BasicBlockList& basicBlocks() {
+        return *this;
+    }
+
+    inline const BasicBlockList& basicBlocks() const {
+        return *this;
+    }
+
     inline BasicBlock* front() {
         assert(size() > 0);
         return head()->value();
@@ -166,12 +176,19 @@ public:
         if (index >= totalParams()) { return; }
         auto& param = params_.get()[index];
         param.setName(name);
+        param.resetValueTypeUnsafe(proto()->paramTypeAt(index));
         param.attachTo(this, index);
     }
 
 private:
     std::unique_ptr<Parameter> params_;
 };
+
+inline ConstantInt* ConstantData::getBoolean(bool value) {
+    static ConstantInt trueSingleton(true, Type::getBooleanType());
+    static ConstantInt falseSingleton(false, Type::getBooleanType());
+    return value ? &trueSingleton : &falseSingleton;
+}
 
 inline ConstantInt* ConstantData::createI32(int32_t data) {
     return ConstantInt::create(data);

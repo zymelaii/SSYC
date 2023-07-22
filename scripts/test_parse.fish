@@ -17,7 +17,7 @@ function check_content
     end
 end
 
-for file in (ls test/testcase/*.sy)
+for file in (ls test/functional/*.sy)
     # echo $(realpath $file)
     trap handle_sigsegv SIGSEGV
     set output (slimec $(realpath $file) 2>> /dev/null)

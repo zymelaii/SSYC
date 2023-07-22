@@ -14,10 +14,23 @@ std::string_view getPredicateName(ComparePredicationType predicate) {
     return LOOKUP[static_cast<int>(predicate)];
 }
 
+std::string_view getInstructionName(InstructionID id) {
+    static constexpr auto INST_LOOKUP = std::array<
+        std::string_view,
+        static_cast<size_t>(InstructionID::LAST_INST) + 1>{
+        "alloca", "load", "store", "ret",  "br",     "getelementptr", "add",
+        "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
+        "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
+        "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
+        "sitofp", "zext", "icmp",  "fcmp", "phi",    "call",
+    };
+    return INST_LOOKUP[static_cast<int>(id)];
+}
+
 bool Instruction::insertToHead(BasicBlock* block) {
     //! FIXME: instruction is not always movable
     assert(block != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     parent_ = block;
     self_   = parent_->insertToHead(this);
     return true;
@@ -26,7 +39,7 @@ bool Instruction::insertToHead(BasicBlock* block) {
 bool Instruction::insertToTail(BasicBlock* block) {
     //! FIXME: instruction is not always movable
     assert(block != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     parent_ = block;
     self_   = parent_->insertToTail(this);
     return true;
@@ -35,7 +48,7 @@ bool Instruction::insertToTail(BasicBlock* block) {
 bool Instruction::insertBefore(Instruction* inst) {
     //! FIXME: instruction is not always movable
     assert(inst != nullptr);
-    if (parent_ != nullptr) { removeFromBlock(); }
+    if (parent_ != nullptr) { removeFromBlock(false); }
     if (!inst->parent_) { return false; }
     parent_ = inst->parent_;
     self_   = parent_->insertToTail(this);
@@ -46,6 +59,7 @@ bool Instruction::insertBefore(Instruction* inst) {
 bool Instruction::insertAfter(Instruction* inst) {
     //! FIXME: instruction is not always movable
     assert(inst != nullptr);
+    if (parent_ != nullptr) { removeFromBlock(false); }
     if (!inst->parent_) { return false; }
     parent_ = inst->parent_;
     self_   = parent_->insertToTail(this);
@@ -69,9 +83,12 @@ bool Instruction::moveToNext() {
     return true;
 }
 
-bool Instruction::removeFromBlock() {
-    //! FIXME: instruction is not always movable
+bool Instruction::removeFromBlock(bool reset) {
+    if (reset && unwrap()->uses().size() > 0) { return false; }
     if (!parent_ || !self_) { return false; }
+    if (reset) {
+        for (int i = 0; i < totalOperands(); ++i) { useAt(i).reset(); }
+    }
     self_->removeFromList();
     self_   = nullptr;
     parent_ = nullptr;
@@ -103,7 +120,7 @@ bool PhiInst::removeValueFrom(BasicBlock* block) {
         op()[i - 1] = op()[n - 2];
         op()[i]     = op()[n - 1];
     }
-    return false;
+    return true;
 }
 
 } // namespace slime::ir

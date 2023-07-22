@@ -3,6 +3,7 @@
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <array>
+#include <iomanip>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -17,7 +18,7 @@ void IRDumpVisitor::dump(Module* module) {
     assert(!currentModule_);
     assert(module != nullptr);
     currentModule_ = module;
-    for (auto object : *module) {
+    for (auto object : module->globalObjects()) {
         assert(object->isGlobal());
         if (object->isFunction()) {
             dumpFunction(object->asFunction());
@@ -28,34 +29,24 @@ void IRDumpVisitor::dump(Module* module) {
     currentModule_ = nullptr;
 }
 
-int IRDumpVisitor::idOf(Value* value) {
-    if (value->isGlobal() || value->isImmediate()) { return -1; }
-    if (auto inst = value->tryIntoInstruction()) {
-        if (inst->id() == InstructionID::Store
-            || inst->id() == InstructionID::Br
-            || inst->id() == InstructionID::Ret) {
-            return -2;
-        }
-    }
-    if (!numberingTable_.count(value)) {
-        int nextId             = numberingTable_.size();
-        numberingTable_[value] = nextId;
-    }
-    return numberingTable_[value];
-}
-
 std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
     switch (type->kind()) {
         case TypeKind::Void: {
             os() << "void";
         } break;
         case TypeKind::Integer: {
-            os() << "i32";
+            os() << (type->isBoolean() ? "i1" : "i32");
         } break;
         case TypeKind::Float: {
             os() << "float";
         } break;
-        case TypeKind::Pointer:
+        case TypeKind::Pointer: {
+            if (testFlag(DumpOption::explicitPointerType) && !decay) {
+                os() << dumpType(type->tryGetElementType()) << "*";
+            } else {
+                os() << "ptr";
+            }
+        } break;
         case TypeKind::Function: {
             os() << "ptr";
         } break;
@@ -67,7 +58,7 @@ std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
                 os() << "[" << array->size() << " x "
                      << dumpType(array->elementType(), false) << "]";
             }
-        }
+        } break;
         case TypeKind::Label: {
             os() << "label";
         } break;
@@ -84,25 +75,66 @@ std::ostream& IRDumpVisitor::dumpValueRef(Value* value) {
             && value->asInstruction()->id() != InstructionID::Br
             && value->asInstruction()->id() != InstructionID::Ret));
     if (value->isImmediate()) {
-        auto imm = value->asConstantData();
-        if (imm->type()->isInteger()) {
-            os() << static_cast<ConstantInt*>(imm)->value;
-        } else {
-            os() << static_cast<ConstantFloat*>(imm)->value;
-        }
+        os() << dumpConstant(value->asConstantData());
     } else if (value->isGlobal()) {
         os() << "@" << value->asGlobalObject()->name();
     } else if (value->isLabel() && !value->name().empty()) {
         os() << "%" << value->name();
     } else {
-        os() << "%" << idOf(value);
+        os() << "%" << value->id();
+    }
+    return os();
+}
+
+std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
+    if (data->type()->isInteger()) {
+        os() << static_cast<ConstantInt*>(data)->value;
+    } else if (data->type()->isFloat()) {
+        char   fp[32]{};
+        double v = static_cast<ConstantFloat*>(data)->value;
+        if (v == 0.) {
+            strcpy(fp, "0.000000e+00");
+        } else {
+            sprintf(fp, "%#llx", *reinterpret_cast<uint64_t*>(&v));
+        }
+        os() << fp;
+    } else {
+        assert(data->type()->isArray());
+        os() << dumpArrayData(static_cast<ConstantArray*>(data));
+    }
+    return os();
+}
+
+std::ostream& IRDumpVisitor::dumpArrayData(ConstantArray* data) {
+    if (data->size() == 0) {
+        os() << "zeroinitializer";
+    } else {
+        const int n        = data->type()->asArrayType()->size();
+        auto      type     = data->type()->tryGetElementType();
+        bool      isBottom = !type->isArray();
+        os() << "[";
+        for (int i = 0; i < data->size(); ++i) {
+            os() << dumpType(type) << " " << dumpConstant(data->at(i));
+            if (i + 1 < data->size()) { os() << ", "; }
+        }
+        ConstantData* value = nullptr;
+        if (type->isArray()) {
+            value = ConstantArray::create(type->asArrayType());
+        } else if (type->isInteger()) {
+            value = ConstantInt::create(0);
+        } else if (type->isFloat()) {
+            value = ConstantFloat::create(0);
+        }
+        assert(value != nullptr);
+        for (int i = data->size(); i < n; ++i) {
+            os() << ", " << dumpType(type) << " " << dumpConstant(value);
+        }
+        os() << "]";
     }
     return os();
 }
 
 void IRDumpVisitor::dumpFunction(Function* func) {
-    numberingTable_.clear();
-
     bool declareOnly = func->size() == 0;
     if (declareOnly) {
         os() << "declare ";
@@ -124,13 +156,13 @@ void IRDumpVisitor::dumpFunction(Function* func) {
     }
 
     os() << ") {\n";
-    for (auto block : *func) {
+    for (auto block : func->basicBlocks()) {
         if (!block->name().empty()) {
             os() << block->name() << ":\n";
         } else {
-            os() << idOf(block) << ":\n";
+            os() << block->id() << ":\n";
         }
-        for (auto inst : *block) {
+        for (auto inst : block->instructions()) {
             os() << "    ";
             dumpInstruction(inst);
             os() << "\n";
@@ -139,19 +171,18 @@ void IRDumpVisitor::dumpFunction(Function* func) {
     os() << "}\n\n";
 }
 
-void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {}
+void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {
+    assert(object->data() != nullptr);
+    auto type = object->type()->tryGetElementType();
+    assert(type->isInteger() || type->isFloat() || type->isArray());
+    os() << "@" << object->name() << " = global "
+         << dumpType(object->type()->tryGetElementType()) << " "
+         << dumpConstant(const_cast<ConstantData*>(object->data()))
+         << ", align 4\n\n";
+}
 
 void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
-    static constexpr auto INST_LOOKUP = std::array<
-        std::string_view,
-        static_cast<size_t>(InstructionID::LAST_INST) + 1>{
-        "alloca", "load", "store", "ret",  "br",     "getelementptr", "add",
-        "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
-        "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
-        "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
-        "sitofp", "icmp", "fcmp",  "phi",  "call",
-    };
-    auto name  = INST_LOOKUP[static_cast<int>(instruction->id())];
+    auto name  = getInstructionName(instruction);
     auto value = instruction->unwrap();
     auto type  = value->type();
     switch (instruction->id()) {
@@ -162,18 +193,19 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::Load: {
             auto inst = instruction->asLoad();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(type) << ", ptr " << dumpValueRef(inst->operand())
-                 << ", align 4";
+                 << dumpType(type) << ", " << dumpType(inst->operand()->type())
+                 << " " << dumpValueRef(inst->operand()) << ", align 4";
         } break;
         case InstructionID::Store: {
             auto inst = instruction->asStore();
             os() << name << " " << dumpType(inst->rhs()->type()) << " "
-                 << dumpValueRef(inst->rhs()) << ", ptr "
+                 << dumpValueRef(inst->rhs()) << ", "
+                 << dumpType(inst->lhs()->type()) << " "
                  << dumpValueRef(inst->lhs()) << ", align 4";
         } break;
         case InstructionID::Ret: {
             auto inst = instruction->asRet();
-            if (inst->type()->isVoid()) {
+            if (inst->operand() == nullptr) {
                 os() << name << " void";
             } else {
                 os() << name << " " << dumpType(inst->operand()->type(), true)
@@ -189,13 +221,19 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
                      << ", label " << dumpValueRef(inst->op<1>()) << ", label "
                      << dumpValueRef(inst->op<2>());
             }
-            os() << "\n";
         } break;
         case InstructionID::GetElementPtr: {
             auto inst = instruction->asGetElementPtr();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << dumpType(type) << ", ptr " << dumpValueRef(inst->lhs())
-                 << ", i32 0, i32 " << dumpValueRef(inst->rhs());
+                 << dumpType(inst->op<0>()->type()->tryGetElementType()) << ", "
+                 << dumpType(inst->op<0>()->type()) << " "
+                 << dumpValueRef(inst->op<0>()) << ", ";
+            if (inst->op<2>() != nullptr) {
+                os() << "i32 " << dumpValueRef(inst->op<1>()) << ", i32 "
+                     << dumpValueRef(inst->op<2>());
+            } else {
+                os() << "i32 " << dumpValueRef(inst->op<1>());
+            }
         } break;
         case InstructionID::Add:
         case InstructionID::Sub:
@@ -242,10 +280,16 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
             os() << dumpValueRef(value) << " = " << name << " i32 "
                  << dumpValueRef(inst->operand()) << " to float";
         } break;
+        case InstructionID::ZExt: {
+            auto inst = static_cast<User<1>*>(value);
+            os() << dumpValueRef(value) << " = " << name << " i1 "
+                 << dumpValueRef(inst->operand()) << " to i32";
+        } break;
         case InstructionID::ICmp: {
             auto inst = instruction->asICmp();
             os() << dumpValueRef(value) << " = " << name << " "
-                 << getPredicateName(inst->predicate()) << " i32 "
+                 << getPredicateName(inst->predicate()) << " "
+                 << dumpType(inst->lhs()->type()) << " "
                  << dumpValueRef(inst->lhs()) << ", "
                  << dumpValueRef(inst->rhs());
         } break;
@@ -270,11 +314,11 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         case InstructionID::Call: {
             auto inst = instruction->asCall();
             if (!type->isVoid()) { os() << dumpValueRef(value) << " = "; }
-            os() << name << " " << dumpType(type) << " "
+            os() << name << " " << dumpType(type, true) << " "
                  << dumpValueRef(inst->callee()) << "(";
             for (int i = 0; i < inst->totalParams(); ++i) {
                 auto& param = inst->paramAt(i);
-                os() << dumpType(param->type()) << " noundef "
+                os() << dumpType(param->type(), true) << " noundef "
                      << dumpValueRef(param);
                 if (i + 1 < inst->totalParams()) { os() << ", "; }
             }

@@ -74,14 +74,23 @@ public:
 
     inline std::string_view name() const;
 
-    ConstantInt*   createI32(int32_t value);
-    ConstantFloat* createF32(float value);
+    [[nodiscard]] ConstantInt*   createI32(int32_t value);
+    [[nodiscard]] ConstantFloat* createF32(float value);
 
     bool acceptFunction(Function* fn);
     bool acceptGlobalVariable(GlobalVariable* var);
 
     Function*       lookupFunction(std::string_view name);
     GlobalVariable* lookupGlobalVariable(std::string_view name);
+
+    inline GlobalObjectList&       globalObjects();
+    inline const GlobalObjectList& globalObjects() const;
+
+    [[nodiscard]] CallInst* createMemset(
+        Value* address, uint8_t value, size_t n);
+
+protected:
+    void initializeBuiltinFunctions();
 
 private:
     const char* moduleName_;
@@ -95,6 +104,14 @@ private:
 
 inline std::string_view Module::name() const {
     return moduleName_;
+}
+
+inline GlobalObjectList& Module::globalObjects() {
+    return *this;
+}
+
+inline const GlobalObjectList& Module::globalObjects() const {
+    return *this;
 }
 
 } // namespace slime::ir

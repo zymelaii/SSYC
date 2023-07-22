@@ -195,6 +195,22 @@ public:
         }
     }
 
+    template <typename... Args>
+    ListNode *emplaceAfter(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        insertAfter(node);
+        return node;
+    }
+
+    template <typename... Args>
+    ListNode *emplaceBefore(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        insertBefore(node);
+        return node;
+    }
+
 private:
     const bool isPtr_;
 
@@ -219,7 +235,7 @@ public:
     public:
         using iterator_category = std::forward_iterator_tag;
         using difference_type   = std::ptrdiff_t;
-        using value_type        = value_type;
+        using value_type        = ListTrait::value_type;
         using pointer           = value_type *;
         using reference         = value_type &;
 
@@ -299,7 +315,7 @@ public:
         }
 
         pointer operator->() {
-            return ptr_->value();
+            return &ptr_->value();
         }
 
         bool operator==(const const_iterator &other) const {

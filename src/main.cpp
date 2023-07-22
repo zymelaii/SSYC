@@ -19,7 +19,7 @@ int main(int argc, char* argv[]) {
     int optval = -1;
     int optidx = -1;
 
-    while ((optval = getopt_long(argc, argv, "", opts, &optidx)) != -1) {
+    while ((optval = getopt_long(argc, argv, "S", opts, &optidx)) != -1) {
         if (optval == 0) {
             if (strcmp(opts[optidx].name, "lex-only") == 0) {
                 flags.LexOnly = true;
@@ -29,6 +29,8 @@ int main(int argc, char* argv[]) {
             } else if (strcmp(opts[optidx].name, "emit-ir") == 0) {
                 flags.EmitIR = true;
             }
+        } else if (optval == 'S') {
+            flags.DumpAssembly = true;
         }
     }
 

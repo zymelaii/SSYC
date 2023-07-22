@@ -542,7 +542,8 @@ Expr *Parser::parsePrimaryExpr() {
             lexer_.next();
         } break;
         case TOKEN::TK_INTVAL: {
-            expr = ConstantExpr::createI32(atoi(token()));
+            expr = ConstantExpr::createI32(
+                std::stoi(std::string{token()}, nullptr, 0));
             lexer_.next();
         } break;
         case TOKEN::TK_FLTVAL: {
@@ -887,7 +888,9 @@ void Parser::dropUnusedExternalSymbols() {
     while (it != end) {
         auto &node = *it++;
         auto  decl = static_cast<NamedDecl *>(node.value());
-        if (state_.symref_set.count(decl) == 0) { node.removeFromList(); }
+        if (state_.symref_set.count(decl) == 0 && decl->specifier->isExtern()) {
+            node.removeFromList();
+        }
     }
 }
 

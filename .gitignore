@@ -1,9 +1,10 @@
 /.*/
-build/
+build*/
 BUILD_*/
 debug/
 release/
 
+*.ll
 *.o
 *.obj
 *.a
@@ -12,3 +13,7 @@ release/
 *.exe
 
 *.log
+testcase_*.json
+*.prof*
+
+test/testcase/*performance*/
