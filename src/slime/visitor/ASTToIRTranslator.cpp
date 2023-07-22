@@ -9,6 +9,7 @@
 #include <slime/pass/CSE.h>
 #include <slime/pass/ValueNumbering.h>
 #include <slime/pass/CopyPropagation.h>
+#include <slime/pass/ControlFlowSimplification.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -203,21 +204,29 @@ Module *ASTToIRTranslator::translate(
     }
     auto module = translator.module_.release();
 
-    pass::DeadCodeEliminationPass{}.run(module);
-    pass::PeekholePass{}.run(module);
-    pass::CopyPropagationPass{}.run(module);
-    pass::DeadCodeEliminationPass{}.run(module);
+    for (auto obj : module->globalObjects()) {
+        if (obj->isFunction()) {
+            auto fn = obj->asFunction();
+            auto it = fn->basicBlocks().begin();
+            while (it != fn->basicBlocks().end()) {
+                auto block = *it++;
+                if (block->isBranched()) {
+                    if (!block->control()->isImmediate()) { continue; }
+                    auto imm =
+                        static_cast<ConstantInt *>(block->control())->value;
+                    if (imm) {
+                        block->reset(block->branch());
+                    } else {
+                        block->reset(block->branchElse());
+                    }
+                    continue;
+                }
+                if (block->isIncomplete()) { block->remove(); }
+            }
+        }
+    }
 
-    pass::FunctionInliningPass{}.run(module);
-
-    pass::PeekholePass{}.run(module);
-    pass::CSEPass{}.run(module);
-    pass::CopyPropagationPass{}.run(module);
-    pass::CSEPass{}.run(module);
-    pass::CopyPropagationPass{}.run(module);
-    pass::DeadCodeEliminationPass{}.run(module);
-
-    // pass::MemoryToRegisterPass{}.run(module);
+    pass::ControlFlowSimplificationPass{}.run(module);
     pass::ValueNumberingPass{}.run(module);
 
     return module;
