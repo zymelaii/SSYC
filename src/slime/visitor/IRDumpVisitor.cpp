@@ -4,6 +4,7 @@
 #include <slime/ir/instruction.h>
 #include <array>
 #include <iomanip>
+#include <sstream>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -157,11 +158,32 @@ void IRDumpVisitor::dumpFunction(Function* func) {
 
     os() << ") {\n";
     for (auto block : func->basicBlocks()) {
+        std::stringstream ss;
         if (!block->name().empty()) {
-            os() << block->name() << ":\n";
+            ss << block->name() << ":";
         } else {
-            os() << block->id() << ":\n";
+            ss << block->id() << ":";
         }
+        os() << ss.str();
+        if (block->inBlocks().size() > 1) {
+            os() << std::setw(48 - ss.str().size()) << "";
+            auto it = block->inBlocks().begin();
+            os() << "; preds ";
+            if (!(*it)->name().empty()) {
+                os() << (*it)->name();
+            } else {
+                os() << (*it)->id();
+            }
+            while (++it != block->inBlocks().end()) {
+                os() << ", ";
+                if (!(*it)->name().empty()) {
+                    os() << (*it)->name();
+                } else {
+                    os() << (*it)->id();
+                }
+            }
+        }
+        os() << "\n";
         for (auto inst : block->instructions()) {
             os() << "    ";
             dumpInstruction(inst);
