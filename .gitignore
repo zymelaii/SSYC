@@ -1,0 +1,13 @@
+/*/
+
+*.ll
+*.o
+*.obj
+*.a
+*.dll
+*.so
+*.exe
+
+*.log
+testcase_*.json
+*.prof*
