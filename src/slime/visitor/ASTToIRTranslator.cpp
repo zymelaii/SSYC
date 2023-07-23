@@ -4,6 +4,7 @@
 #include <slime/ir/instruction.h>
 #include <slime/visitor/ASTExprSimplifier.h>
 #include <assert.h>
+#include <stack>
 
 namespace slime::visitor {
 
@@ -203,6 +204,11 @@ Module *ASTToIRTranslator::translate(
             auto it = fn->basicBlocks().begin();
             while (it != fn->basicBlocks().end()) {
                 auto block = *it++;
+                if (block->totalInBlocks() == 0 && block != fn->front()) {
+                    auto ok = block->remove();
+                    assert(ok);
+                    continue;
+                }
                 if (block->isBranched()) {
                     if (!block->control()->isImmediate()) { continue; }
                     auto imm =
@@ -214,7 +220,11 @@ Module *ASTToIRTranslator::translate(
                     }
                     continue;
                 }
-                if (block->isIncomplete()) { block->remove(); }
+                if (block->isIncomplete()) {
+                    auto ok = block->tryMarkAsTerminal();
+                    assert(ok);
+                    continue;
+                }
             }
         }
     }

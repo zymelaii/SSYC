@@ -1,6 +1,7 @@
 #include "ControlFlowSimplification.h"
 
 #include <stack>
+#include <assert.h>
 
 namespace slime::pass {
 
@@ -15,12 +16,16 @@ void ControlFlowSimplificationPass::runOnFunction(ir::Function* target) {
 
         //! 1. fold constant branch
         if (block->isBranched()) {
-            if (!block->control()->isImmediate()) { continue; }
-            auto imm = static_cast<ConstantInt*>(block->control())->value;
-            if (imm) {
+            if (block->branch() == block->branchElse()) {
                 block->reset(block->branch());
             } else {
-                block->reset(block->branchElse());
+                if (!block->control()->isImmediate()) { continue; }
+                auto imm = static_cast<ConstantInt*>(block->control())->value;
+                if (imm) {
+                    block->reset(block->branch());
+                } else {
+                    block->reset(block->branchElse());
+                }
             }
         }
 
@@ -56,7 +61,17 @@ void ControlFlowSimplificationPass::runOnFunction(ir::Function* target) {
             continue;
         }
 
-        //! 4. remove useless branch
+        //! 4 check simplifiable
+        bool simplifiable = true;
+        for (auto use : block->uses()) {
+            if (use->owner()->asInstruction()->id() != InstructionID::Br) {
+                simplifiable = false;
+                break;
+            }
+        }
+        if (!simplifiable) { continue; }
+
+        //! 5. remove useless branch
         if (block->size() == 1) {
             std::vector<Use*> uses(block->uses().begin(), block->uses().end());
             for (auto use : uses) {
@@ -71,7 +86,7 @@ void ControlFlowSimplificationPass::runOnFunction(ir::Function* target) {
             continue;
         }
 
-        //! 5. combine linear branch
+        //! 6. combine linear branch
         if (nextBlock->totalInBlocks() == 1) {
             block->reset();
             std::vector<Instruction*> instrs(

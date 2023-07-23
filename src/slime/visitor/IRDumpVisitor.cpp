@@ -167,22 +167,12 @@ void IRDumpVisitor::dumpFunction(Function* func) {
             ss << block->id() << ":";
         }
         os() << ss.str();
-        if (block->inBlocks().size() > 1) {
+        if (block->inBlocks().size() >= 1) {
             os() << std::setw(48 - ss.str().size()) << "";
             auto it = block->inBlocks().begin();
-            os() << "; preds ";
-            if (!(*it)->name().empty()) {
-                os() << (*it)->name();
-            } else {
-                os() << (*it)->id();
-            }
+            os() << "; preds = " << dumpValueRef(*it);
             while (++it != block->inBlocks().end()) {
-                os() << ", ";
-                if (!(*it)->name().empty()) {
-                    os() << (*it)->name();
-                } else {
-                    os() << (*it)->id();
-                }
+                os() << ", " << dumpValueRef(*it);
             }
         }
         os() << "\n";
