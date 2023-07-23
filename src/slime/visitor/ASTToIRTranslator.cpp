@@ -3,13 +3,6 @@
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <slime/visitor/ASTExprSimplifier.h>
-#include <slime/pass/Peekhole.h>
-#include <slime/pass/DeadCodeElimination.h>
-#include <slime/pass/FunctionInlining.h>
-#include <slime/pass/CSE.h>
-#include <slime/pass/ValueNumbering.h>
-#include <slime/pass/CopyPropagation.h>
-#include <slime/pass/ControlFlowSimplification.h>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -225,9 +218,6 @@ Module *ASTToIRTranslator::translate(
             }
         }
     }
-
-    pass::ControlFlowSimplificationPass{}.run(module);
-    pass::ValueNumberingPass{}.run(module);
 
     return module;
 }

@@ -2,6 +2,7 @@
 
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
+#include <slime/pass/ValueNumbering.h>
 #include <array>
 #include <iomanip>
 #include <sstream>
@@ -18,6 +19,7 @@ static inline std::ostream& operator<<(std::ostream&, std::ostream& other) {
 void IRDumpVisitor::dump(Module* module) {
     assert(!currentModule_);
     assert(module != nullptr);
+    pass::ValueNumberingPass{}.run(module);
     currentModule_ = module;
     for (auto object : module->globalObjects()) {
         assert(object->isGlobal());

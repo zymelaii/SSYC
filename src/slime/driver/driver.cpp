@@ -4,6 +4,12 @@
 #include <slime/visitor/ASTToIRTranslator.h>
 #include <slime/visitor/IRDumpVisitor.h>
 #include <slime/backend/gencode.h>
+#include <slime/pass/ControlFlowSimplification.h>
+#include <slime/pass/Peekhole.h>
+#include <slime/pass/DeadCodeElimination.h>
+#include <slime/pass/FunctionInlining.h>
+#include <slime/pass/CSE.h>
+#include <slime/pass/CopyPropagation.h>
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -71,6 +77,7 @@ void Driver::execute() {
     }
 
     auto module = visitor::ASTToIRTranslator::translate("default", unit);
+    pass::ControlFlowSimplificationPass{}.run(module);
 
     if (!done && flags_.EmitIR) {
         auto visitor = visitor::IRDumpVisitor::createWithOstream(&std::cout);
