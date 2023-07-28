@@ -1,12 +1,22 @@
 #include "stdslime.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 #include <sys/time.h>
+
+#ifdef __WIN32__
+#include <io.h>
+#include <windows.h>
+#define check_file_readable(fp) (_access((fp), 6) == 0)
+#elif defined(__linux__) || defined(__APPLE__)
+#include <unistd.h>
+#define check_file_readable(fp) (access((fp), R_OK) == 0)
+#endif
 
 #define MAX_TIMEPOINT 1024
 
@@ -23,6 +33,8 @@ static size_t            __SLIME_TIMEPOINT_INDEX;
 static timepoint_table_t __SLIME_TIMEPOINT_TABLE;
 static timer_records_t   __SLIME_TIMER_RECORDS;
 
+static FILE* __INSTREAM;
+
 static size_t __us_now() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -30,18 +42,18 @@ static size_t __us_now() {
 }
 
 int getch() {
-    return (int)getchar();
+    return fgetc(__INSTREAM);
 }
 
 int getint() {
     int v = 0;
-    scanf("%d", &v);
+    fscanf(__INSTREAM, "%d", &v);
     return v;
 }
 
 float getfloat() {
     float v = 0.f;
-    scanf("%a", &v);
+    fscanf(__INSTREAM, "%a", &v);
     return v;
 }
 
@@ -119,6 +131,25 @@ void __slime_stoptime(const char* file, int lineno) {
 
 __attribute((constructor)) void __slime_main_ctor() {
     __SLIME_TIMEPOINT_INDEX = 0;
+
+    char path[_MAX_PATH] = {};
+#ifdef __WIN32__
+    DWORD  size = _MAX_PATH;
+    DWORD  pid  = GetCurrentProcessId();
+    HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+    QueryFullProcessImageNameA(proc, 0, path, &size);
+    strcpy(strrchr(path, '.') + 1, "in");
+#elif defined(__linux__) || defined(__APPLE__)
+    readlink("/proc/self/exe", path, _MAX_PATH);
+    char* p = strrchr(path, '.') + 1;
+    if (p == NULL) {
+        strcat(path, ".in");
+    } else {
+        strcpy(p, "in");
+    }
+#endif
+    if (check_file_readable(path)) { __INSTREAM = fopen(path, "r"); }
+    if (__INSTREAM == NULL) { __INSTREAM = stdin; }
 }
 
 __attribute((destructor)) void __slime_main_dtor() {
@@ -131,4 +162,7 @@ __attribute((destructor)) void __slime_main_dtor() {
         const size_t dur = __SLIME_TIMER_RECORDS[item->index];
         fprintf(stderr, "[%zu] %s:%zu: %zuus\n", index, file, lineno, dur);
     }
+
+    if (__INSTREAM != stdin) { fclose(__INSTREAM); }
+    __INSTREAM = NULL;
 }
