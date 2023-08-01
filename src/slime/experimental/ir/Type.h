@@ -124,10 +124,6 @@ public:
     inline TypeKind         kind() const;
     inline std::string_view signature() const;
 
-    template <
-        typename Self = EnumBasedTryIntoTraitWrapper<TypeImpl, &TypeImpl::kind>>
-    static Self* from(const char* sign);
-
     static inline VoidType*  getVoidTy();
     static inline BoolType*  getBoolTy();
     static inline I8Type*    getI8Ty();
@@ -166,7 +162,16 @@ private:
     const char* signature_;
 };
 
-using Type = EnumBasedTryIntoTraitWrapper<TypeImpl, &TypeImpl::kind>;
+using TypeBase = EnumBasedTryIntoTraitWrapper<TypeImpl, &TypeImpl::kind>;
+
+class Type : public TypeBase {
+public:
+    template <typename... Args>
+    Type(Args&&... args)
+        : TypeBase(std::forward<Args>(args)...) {}
+
+    static Type* from(const char* sign);
+};
 
 class VoidType final : public Type {
 public:
@@ -310,9 +315,6 @@ class FP128Type final : public FPType {
 public:
     inline FP128Type();
 };
-
-template <>
-Type* TypeImpl::from(const char* sign);
 
 template <>
 void TypeImpl::generateAndResetTypeSignature<VoidType>();
@@ -684,106 +686,114 @@ inline FP128Type::FP128Type()
 
 } // namespace slime::experimental::ir
 
-emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+emit(auto) slime::experimental::ir::TypeBase::declareTryIntoItem(
     slime::experimental::ir::VoidType, slime::experimental::ir::TypeKind::Void);
 
-emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+emit(auto) slime::experimental::ir::TypeBase::declareTryIntoItem(
     slime::experimental::ir::IntType,
     slime::experimental::ir::TypeKind::Integer);
 
-emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+emit(auto) slime::experimental::ir::TypeBase::declareTryIntoItem(
     slime::experimental::ir::FPType, slime::experimental::ir::TypeKind::Float);
 
-emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+emit(auto) slime::experimental::ir::TypeBase::declareTryIntoItem(
     slime::experimental::ir::PtrType,
     slime::experimental::ir::TypeKind::Pointer);
 
-emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+emit(auto) slime::experimental::ir::TypeBase::declareTryIntoItem(
     slime::experimental::ir::ArrayType,
     slime::experimental::ir::TypeKind::Array);
 
-emit(auto) slime::experimental::ir::Type::declareTryIntoItem(
+emit(auto) slime::experimental::ir::TypeBase::declareTryIntoItem(
     slime::experimental::ir::FnType,
     slime::experimental::ir::TypeKind::Function);
 
-emit(
-    bool) slime::experimental::ir::Type::is<slime::experimental::ir::BoolType>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::BoolType>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 1 && !e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::I8Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::I8Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 8 && e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::U8Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::U8Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 8 && !e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::I16Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::I16Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 16 && e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::U16Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::U16Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 16 && !e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::I32Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::I32Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 32 && e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::U32Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::U32Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 32 && !e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::I64Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::I64Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 64 && e->isSigned();
 }
 
-emit(bool) slime::experimental::ir::Type::is<slime::experimental::ir::U64Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::U64Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 64 && !e->isSigned();
 }
 
-emit(
-    bool) slime::experimental::ir::Type::is<slime::experimental::ir::UPtrType>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::UPtrType>()
+        const {
     const auto e = tryInto<slime::experimental::ir::IntType>();
     return e && e->bitWidth() == 0 && !e->isSigned();
 }
 
-emit(
-    bool) slime::experimental::ir::Type::is<slime::experimental::ir::FP32Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::FP32Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::FPType>();
     return e && e->bitWidth() == 32;
 }
 
-emit(
-    bool) slime::experimental::ir::Type::is<slime::experimental::ir::FP64Type>()
-    const {
+emit(bool)
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::FP64Type>()
+        const {
     const auto e = tryInto<slime::experimental::ir::FPType>();
     return e && e->bitWidth() == 64;
 }
 
 emit(bool)
-    slime::experimental::ir::Type::is<slime::experimental::ir::FP128Type>()
+    slime::experimental::ir::TypeBase::is<slime::experimental::ir::FP128Type>()
         const {
     const auto e = tryInto<slime::experimental::ir::FPType>();
     return e && e->bitWidth() == 128;

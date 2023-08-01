@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <stack>
+#include <functional>
 
 namespace slime::pass {
 
@@ -203,6 +204,106 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
         }
     }
 
+    //! compute reaching defines
+    struct ReachDefLink {
+        int         origin = -1;
+        BasicBlock *source = nullptr;
+        Value      *define = nullptr;
+    };
+
+    std::map<Value *, std::vector<ReachDefLink>>   reachDefs;
+    std::map<BasicBlock *, std::map<Value *, int>> incomingDefs;
+
+    std::stack<BasicBlock *> stack;
+    stack.push(target->front());
+    while (!stack.empty()) {
+        auto block = stack.top();
+        stack.pop();
+
+        auto &incomingDef = incomingDefs[block];
+        for (auto inst : block->instructions()) {
+            if (inst->id() == InstructionID::Phi) {
+                auto  phi      = inst->asPhi();
+                auto  var      = phiSource[phi];
+                auto &reachDef = reachDefs[var];
+                reachDef.push_back(ReachDefLink{-1, block, phi});
+                incomingDef[var] = reachDef.size() - 1;
+                continue;
+            }
+            if (inst->id() == InstructionID::Store) {
+                auto store = inst->asStore();
+                auto var   = store->lhs();
+                if (!promotableVarSet.count(var)) { continue; }
+                auto &reachDef = reachDefs[var];
+                //! FIXME: assert failure
+                // assert(
+                //     !store->rhs()->isInstruction()
+                //     || store->rhs()->asInstruction()->id()
+                //            != InstructionID::Load
+                //     || !promotableVarSet.count(
+                //         store->rhs()->asInstruction()->asLoad()->operand()));
+                reachDef.push_back(ReachDefLink{-1, block, store->rhs()});
+                deleteLater.insert(store);
+                continue;
+            }
+            if (inst->id() == InstructionID::Load) {
+                auto load = inst->asLoad();
+                auto var  = load->operand();
+                if (!promotableVarSet.count(var)) { continue; }
+                auto &reachDef = reachDefs[var];
+                if (incomingDef.count(var)) {
+                    auto originDefIndex = incomingDef[var];
+                    while (reachDef[originDefIndex].origin != -1) {
+                        originDefIndex = reachDef[originDefIndex].origin;
+                    }
+                    auto def = reachDef[originDefIndex].define;
+                    assert(def != load);
+                    std::vector<Use *> uses(
+                        load->uses().begin(), load->uses().end());
+                    for (auto use : uses) { use->reset(def); }
+                    deleteLater.insert(load);
+                } else {
+                    //! FIXME: assert failure
+                    assert(maybeUseBeforeDef.count(var));
+                    //! WARNING: use before def
+                    //! WARNING: uncertain load may be ignored due to single
+                    //! store forward optimize
+                    //! transform load into a def
+                    reachDef.push_back(ReachDefLink{-1, block, load});
+                    incomingDef[var] = reachDef.size() - 1;
+                }
+                continue;
+            }
+        }
+        for (auto inst : deleteLater) {
+            auto ok = inst->removeFromBlock();
+            assert(ok);
+        }
+        deleteLater.clear();
+
+        std::vector<BasicBlock *> succs;
+        if (block->isBranched()) {
+            succs.push_back(block->branch());
+            succs.push_back(block->branchElse());
+        } else if (block->isLinear() && !block->isTerminal()) {
+            succs.push_back(block->branch());
+        }
+        for (auto succ : succs) {
+            auto &outcomeDef = incomingDefs[succ];
+            for (auto [var, defIndex] : incomingDef) {
+                auto &reachDef = reachDefs[var];
+                reachDef.push_back(
+                    ReachDefLink{defIndex, succ, reachDef[defIndex].define});
+                outcomeDef[var] = reachDef.size() - 1;
+            }
+        }
+
+        for (auto succ : idomSuccs[block]) { stack.push(succ); }
+    }
+
+    //! update incoming values for phi nodes
+
+#if 0
     //! compute reach defines
     std::vector<std::map<Value *, Value *>> reachDefines(blocks.size());
     std::map<Value *, BasicBlock *>         defSource;
@@ -306,6 +407,7 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
         auto ok = alloca->asInstruction()->removeFromBlock();
         assert(ok);
     }
+#endif
 }
 
 void MemoryToRegisterPass::computeDomFrontier(

@@ -15,6 +15,7 @@
 #define check_file_readable(fp) (_access((fp), 6) == 0)
 #elif defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>
+#include <linux/limits.h>
 #define check_file_readable(fp) (access((fp), R_OK) == 0)
 #endif
 
@@ -132,15 +133,15 @@ void __slime_stoptime(const char* file, int lineno) {
 __attribute((constructor)) void __slime_main_ctor() {
     __SLIME_TIMEPOINT_INDEX = 0;
 
-    char path[_MAX_PATH] = {};
+    char path[PATH_MAX] = {};
 #ifdef __WIN32__
-    DWORD  size = _MAX_PATH;
+    DWORD  size = PATH_MAX;
     DWORD  pid  = GetCurrentProcessId();
     HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
     QueryFullProcessImageNameA(proc, 0, path, &size);
     strcpy(strrchr(path, '.') + 1, "in");
 #elif defined(__linux__) || defined(__APPLE__)
-    readlink("/proc/self/exe", path, _MAX_PATH);
+    readlink("/proc/self/exe", path, PATH_MAX);
     char* p = strrchr(path, '.') + 1;
     if (p == NULL) {
         strcat(path, ".in");

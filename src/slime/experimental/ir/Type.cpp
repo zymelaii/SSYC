@@ -4,127 +4,13 @@
 #include <string.h>
 #include <ctype.h>
 #include <sstream>
+#include <vector>
 
 namespace slime::experimental::ir {
 
 TypeImpl::~TypeImpl() {
     free(const_cast<char*>(signature_));
     signature_ = nullptr;
-}
-
-template <>
-Type* TypeImpl::from(const char* sign) {
-    const char* p = sign;
-    switch (*p) {
-        case 'v': { //<! void
-            return Type::getVoidTy();
-        } break;
-        case 'a': { //<! addr
-            return Type::getUPtrTy();
-        } break;
-        case 'b': { //<! bool
-            return Type::getBoolTy();
-        } break;
-        case 'i': { //<! i<bitWidth>
-            int bitWidth = 0;
-            sscanf(p, "i%d", &bitWidth);
-            switch (bitWidth) {
-                case 8: {
-                    return Type::getI8Ty();
-                } break;
-                case 16: {
-                    return Type::getI16Ty();
-                } break;
-                case 32: {
-                    return Type::getI32Ty();
-                } break;
-                case 64: {
-                    return Type::getI64Ty();
-                } break;
-                default: {
-                    unreachable();
-                } break;
-            }
-        } break;
-        case 'u': { //<! u<bitWidth>
-            int bitWidth = 0;
-            sscanf(p, "u%d", &bitWidth);
-            switch (bitWidth) {
-                case 8: {
-                    return Type::getU8Ty();
-                } break;
-                case 16: {
-                    return Type::getU16Ty();
-                } break;
-                case 32: {
-                    return Type::getU32Ty();
-                } break;
-                case 64: {
-                    return Type::getU64Ty();
-                } break;
-                default: {
-                    unreachable();
-                } break;
-            }
-        } break;
-        case 'f': { //<! f<bitWidth>
-            int bitWidth = 0;
-            sscanf(p, "f%d", &bitWidth);
-            switch (bitWidth) {
-                case 32: {
-                    return Type::getFP32Ty();
-                } break;
-                case 64: {
-                    return Type::getFP64Ty();
-                } break;
-                case 128: {
-                    return Type::getFP128Ty();
-                } break;
-                default: {
-                    unreachable();
-                } break;
-            }
-        } break;
-        case 'P': { //<! PtrType
-            return Type::getPtrTy(from(++p));
-        } break;
-        case 'A': { //<! ArrayType
-            const char* q = p + 1;
-            assert(std::isdigit(*q));
-            while (!std::isalpha(*++q)) {}
-            auto type = from(q--);
-            assert(*q == '_');
-            do {
-                while (std::isdigit(*--q)) {}
-                assert(*q == 'A' || *q == '_');
-                int size = 0;
-                sscanf(q + 1, "%d_", &size);
-                type = Type::getArrayTy(type, size);
-            } while (q != p);
-            return type;
-        } break;
-        case 'F': { //<! FnType
-            bool isVariadic = *++p == 'V';
-            if (isVariadic) { ++p; }
-            auto rtype = from(p);
-            p          += rtype->signature().size();
-            assert(*p == '_' || *p == 'T');
-            std::vector<Type*> paramTypes{};
-            if (*p == '_') {
-                ++p;
-                do {
-                    auto paramType = from(p);
-                    paramTypes.push_back(paramType);
-                    p += paramType->signature().size();
-                } while (*p != 'T');
-            }
-            assert(p[0] == 'T');
-            return Type::getFnTy(isVariadic, rtype, paramTypes);
-        } break;
-        default: {
-            unreachable();
-        }
-    }
 }
 
 template <>
@@ -390,6 +276,120 @@ PtrType* TypeImpl::getPtrTy(TypeImpl* dataType) {
 
 ArrayType* TypeImpl::getArrayTy(TypeImpl* dataType, size_t length) {
     return new ArrayType(static_cast<Type*>(dataType), length);
+}
+
+Type* Type::from(const char* sign) {
+    const char* p = sign;
+    switch (*p) {
+        case 'v': { //<! void
+            return Type::getVoidTy();
+        } break;
+        case 'a': { //<! addr
+            return Type::getUPtrTy();
+        } break;
+        case 'b': { //<! bool
+            return Type::getBoolTy();
+        } break;
+        case 'i': { //<! i<bitWidth>
+            int bitWidth = 0;
+            sscanf(p, "i%d", &bitWidth);
+            switch (bitWidth) {
+                case 8: {
+                    return Type::getI8Ty();
+                } break;
+                case 16: {
+                    return Type::getI16Ty();
+                } break;
+                case 32: {
+                    return Type::getI32Ty();
+                } break;
+                case 64: {
+                    return Type::getI64Ty();
+                } break;
+                default: {
+                    unreachable();
+                } break;
+            }
+        } break;
+        case 'u': { //<! u<bitWidth>
+            int bitWidth = 0;
+            sscanf(p, "u%d", &bitWidth);
+            switch (bitWidth) {
+                case 8: {
+                    return Type::getU8Ty();
+                } break;
+                case 16: {
+                    return Type::getU16Ty();
+                } break;
+                case 32: {
+                    return Type::getU32Ty();
+                } break;
+                case 64: {
+                    return Type::getU64Ty();
+                } break;
+                default: {
+                    unreachable();
+                } break;
+            }
+        } break;
+        case 'f': { //<! f<bitWidth>
+            int bitWidth = 0;
+            sscanf(p, "f%d", &bitWidth);
+            switch (bitWidth) {
+                case 32: {
+                    return Type::getFP32Ty();
+                } break;
+                case 64: {
+                    return Type::getFP64Ty();
+                } break;
+                case 128: {
+                    return Type::getFP128Ty();
+                } break;
+                default: {
+                    unreachable();
+                } break;
+            }
+        } break;
+        case 'P': { //<! PtrType
+            return Type::getPtrTy(from(++p));
+        } break;
+        case 'A': { //<! ArrayType
+            const char* q = p + 1;
+            assert(std::isdigit(*q));
+            while (!std::isalpha(*++q)) {}
+            auto type = from(q--);
+            assert(*q == '_');
+            do {
+                while (std::isdigit(*--q)) {}
+                assert(*q == 'A' || *q == '_');
+                int size = 0;
+                sscanf(q + 1, "%d_", &size);
+                type = Type::getArrayTy(type, size);
+            } while (q != p);
+            return type;
+        } break;
+        case 'F': { //<! FnType
+            bool isVariadic = *++p == 'V';
+            if (isVariadic) { ++p; }
+            auto rtype = from(p);
+            p          += rtype->signature().size();
+            assert(*p == '_' || *p == 'T');
+            std::vector<Type*> paramTypes{};
+            if (*p == '_') {
+                ++p;
+                do {
+                    auto paramType = from(p);
+                    paramTypes.push_back(paramType);
+                    p += paramType->signature().size();
+                } while (*p != 'T');
+            }
+            assert(p[0] == 'T');
+            return Type::getFnTy(isVariadic, rtype, paramTypes);
+        } break;
+        default: {
+            unreachable();
+        }
+    }
 }
 
 } // namespace slime::experimental::ir
