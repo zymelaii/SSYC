@@ -1,5 +1,6 @@
 #include "ASTExprSimplifier.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/utils/list.h>
 #include <vector>
 
@@ -70,6 +71,9 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                 case DeclID::Function: {
                     return expr;
                 }
+                default: {
+                    unreachable();
+                } break;
             }
         } break;
         case ExprID::Constant: {
@@ -150,6 +154,9 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
         case ExprID::NoInit: {
             return nullptr;
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -204,6 +211,9 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
         case UnaryOperator::Paren: {
             assert(false && "ParenExpr is unreachable in UnaryExpr");
             return nullptr;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
@@ -372,6 +382,9 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
         case BinaryOperator::Unreachable: {
             assert(false && "unreachable binary expression");
             return nullptr;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }

@@ -1,5 +1,6 @@
 #include "ASTToIRTranslator.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <slime/visitor/ASTExprSimplifier.h>
@@ -28,6 +29,9 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
                 } break;
                 case BuiltinTypeID::Void: {
                     return ir::Type::getVoidType();
+                } break;
+                default: {
+                    unreachable();
                 } break;
             }
         } break;
@@ -64,6 +68,9 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
             }
             return ir::Type::createFunctionType(type, params);
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -84,6 +91,7 @@ Value *ASTToIRTranslator::getCompatibleIRValue(
                 return ConstantArray::create(desired->asArrayType());
             } break;
             default: {
+                unreachable();
             } break;
         }
     }

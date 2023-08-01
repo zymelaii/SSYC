@@ -1,5 +1,6 @@
 #include "expr.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/visitor/ASTExprSimplifier.h>
 
 namespace slime::ast {
@@ -56,6 +57,9 @@ bool Expr::isNoEffectExpr() {
         case ExprID::NoInit: {
             return false;
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -77,6 +81,9 @@ Type *UnaryExpr::resolveType(UnaryOperator op, Type *type) {
         } break;
         case UnaryOperator::Paren: {
             return type;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
@@ -126,6 +133,9 @@ Type *BinaryExpr::resolveType(BinaryOperator op, Type *lhsType, Type *rhsType) {
         case BinaryOperator::Unreachable: {
             assert(false && "unreachable");
             return NoneType::get();
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
