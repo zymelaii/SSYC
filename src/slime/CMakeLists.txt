@@ -11,6 +11,8 @@ if(ENABLE_PROFILE)
     target_compile_options(${PROJECT_NAME} PRIVATE ${PROFILE_FLAGS})
 endif()
 
+target_compile_options(${PROJECT_NAME} PRIVATE -Wno-format)
+
 include(GNUInstallDirs)
 set(PROJECT_EXPORT_TARGETS ${PROJECT_NAME})
 set(PROJECT_EXPORT_NAME ${CMAKE_PROJECT_NAME})

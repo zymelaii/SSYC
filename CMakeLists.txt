@@ -24,6 +24,8 @@ set(PROFILE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
 	add_compile_options(-g)
+else()
+	add_compile_options(-O2)
 endif()
 
 if(ENABLE_PROFILE)
