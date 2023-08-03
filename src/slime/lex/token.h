@@ -141,12 +141,12 @@ inline bool Token::isComment() const {
 }
 
 inline bool Token::isSingleCharToken() const {
-    auto v = static_cast<uint8_t>(id);
+    auto v = static_cast<std::underlying_type_t<TOKEN>>(id);
     return v > 0 && v < 128;
 }
 
 inline bool Token::isReserved() const {
-    auto v = static_cast<uint8_t>(id);
+    auto v = static_cast<std::underlying_type_t<TOKEN>>(id);
     return v >= detail::FIRST_RESERVED && v <= detail::LAST_RESERVED;
 }
 
