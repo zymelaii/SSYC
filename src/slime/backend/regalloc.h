@@ -112,7 +112,7 @@ struct Stack {
         auto   end     = onStackVars->node_end();
         size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar = it->value();
+            auto stackvar  = it->value();
             sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
@@ -149,7 +149,7 @@ struct Stack {
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
-        var->stackpos = stackSize;
+        var->stackpos  = stackSize;
         assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
@@ -215,16 +215,21 @@ public:
     void initVarInterval(Function *func);
     void computeInterval(Function *func);
     void checkLiveInterval();
-    void updateAllocation(Generator *gen, BasicBlock *block, Instruction *inst);
+    void updateAllocation(
+        Generator   *gen,
+        std::string *instcode,
+        BasicBlock  *block,
+        Instruction *inst);
     std::set<Variable *> *getInstOperands(Instruction *inst);
+    Variable             *getVarOfAllocatedReg(ARMGeneralRegs reg);
     Variable             *getMinIntervalRegVar(std::set<Variable *>);
     Variable             *createVariable(Value *val);
-    void                  getUsedRegs(BasicBlockList &blocklist);
 
     ARMGeneralRegs allocateRegister(
         bool                  force     = false,
         std::set<Variable *> *whitelist = nullptr,
-        Generator            *gen       = nullptr);
+        Generator            *gen       = nullptr,
+        std::string          *instcode  = nullptr);
     void releaseRegister(Variable *var);
     void releaseRegister(ARMGeneralRegs reg);
     void freeAllRegister();

@@ -180,6 +180,14 @@ void Allocator::computeInterval(Function *func) {
     assert(cur_inst == 0);
 }
 
+Variable *Allocator::getVarOfAllocatedReg(ARMGeneralRegs reg) {
+    assert(regAllocatedMap[static_cast<int>(reg)] == true);
+    for (auto e : *liveVars) {
+        if (e->reg == reg) { return e; }
+    }
+    assert(false && "it must be an error here.");
+}
+
 Variable *Allocator::getMinIntervalRegVar(std::set<Variable *> whitelist) {
     uint32_t  min = UINT32_MAX;
     Variable *retVar;
@@ -211,69 +219,45 @@ std::set<Variable *> *Allocator::getInstOperands(Instruction *inst) {
     return &operands;
 }
 
-//! TODO: 把统计使用过的寄存器从生成指令前预测改为实际生成完指令后统计
-//! TODO: 目前采用println的方法难以向已经打印的指令处追加新内容
-void Allocator::getUsedRegs(BasicBlockList &blocklist) {
-    int max_regs = 0;
-    for (auto block : blocklist) {
-        int                 count = 0; // 最多几个变量同时被分配
-        auto                valVarTable = blockVarTable->find(block)->second;
-        std::vector<size_t> startVec, endVec;
-        for (auto it : *valVarTable) {
-            size_t start = it.second->livIntvl->start;
-            size_t end   = it.second->livIntvl->end;
-            if (!it.second->is_alloca) {
-                startVec.insert(startVec.begin(), start);
-                endVec.insert(endVec.begin(), end);
-            }
-        }
-        std::sort(startVec.begin(), startVec.end());
-        std::sort(endVec.begin(), endVec.end());
-        size_t tmp = 0;
-        for (int i = 0, j = 0; i < startVec.size() && j < startVec.size();) {
-            if (startVec[i] < endVec[j]) {
-                count++, i++;
-                max_regs = std::max(max_regs, count);
-            } else if (startVec[i] == endVec[j])
-                i++, j++;
-            else
-                count--, j++;
-        }
-    }
-    if (strImmFlag) max_regs += 1;
-    //! FIXME: 带参数的函数会把参数也当做使用过的寄存器保存起来
-    //! FIXME: 有些情况下会push多余的寄存器，如10_var_defn_func.sy
-    int regBegin = max_funcargs == 0 ? 1 : max_funcargs;
-    for (int i = regBegin; i < std::min(max_funcargs + max_regs, (size_t)12);
-         i++)
-        usedRegs.insert(static_cast<ARMGeneralRegs>(i));
-}
 
 ARMGeneralRegs Allocator::allocateRegister(
-    bool force, std::set<Variable *> *whitelist, Generator *gen) {
+    bool                  force,
+    std::set<Variable *> *whitelist,
+    Generator            *gen,
+    std::string          *instcode) {
+    ARMGeneralRegs retreg;
     if (!has_funccall) {
         for (int i = 0; i < 12; i++) {
             if (!regAllocatedMap[i]) {
                 regAllocatedMap[i] = true;
-                return static_cast<ARMGeneralRegs>(i);
+                retreg             = static_cast<ARMGeneralRegs>(i);
+                if (usedRegs.find(retreg) == usedRegs.end())
+                    usedRegs.insert(retreg);
+                return retreg;
             }
         }
     } else {
         for (int i = max_funcargs; i < 12; i++) {
             if (!regAllocatedMap[i]) {
+                retreg             = static_cast<ARMGeneralRegs>(i);
                 regAllocatedMap[i] = true;
-                return static_cast<ARMGeneralRegs>(i);
+                if (usedRegs.find(retreg) == usedRegs.end())
+                    usedRegs.insert(retreg);
+                return retreg;
             }
         }
         for (int i = max_funcargs - 1; i >= 0; i--) {
             if (!regAllocatedMap[i]) {
+                retreg             = static_cast<ARMGeneralRegs>(i);
                 regAllocatedMap[i] = true;
-                return static_cast<ARMGeneralRegs>(i);
+                if (usedRegs.find(retreg) == usedRegs.end())
+                    usedRegs.insert(retreg);
+                return retreg;
             }
         }
     }
     if (!force) return ARMGeneralRegs::None;
-    assert(gen && "Generator couldn't be null in this case");
+    assert(instcode && "instcode couldn't be null in this case");
     if (!whitelist) {
         std::set<Variable *> emptylistHolder;
         whitelist = &emptylistHolder;
@@ -283,10 +267,12 @@ ARMGeneralRegs Allocator::allocateRegister(
     minlntvar->is_spilled = true;
     auto ret              = minlntvar->reg;
     minlntvar->reg        = ARMGeneralRegs::None;
-    gen->println("# Spill %d to stack", minlntvar->val->id());
+    *instcode +=
+        Generator::sprintln("# Spill %d to stack", minlntvar->val->id());
     if (stack->spillVar(minlntvar, 4))
-        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-    gen->cgStr(ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
+        *instcode += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+    *instcode += gen->cgStr(
+        ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
     return ret;
 }
 
@@ -310,7 +296,10 @@ void Allocator::freeAllRegister() {
 }
 
 void Allocator::updateAllocation(
-    Generator *gen, BasicBlock *block, Instruction *inst) {
+    Generator   *gen,
+    std::string *instcode,
+    BasicBlock  *block,
+    Instruction *inst) {
     std::set<Variable *> *operands    = getInstOperands(inst);
     auto                  valVarTable = blockVarTable->find(block)->second;
 
@@ -361,9 +350,11 @@ void Allocator::updateAllocation(
                 if (!minlntvar->is_global) {
                     minlntvar->is_spilled = true;
                     if (stack->spillVar(minlntvar, 4))
-                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-                    gen->println("# Spill %d to stack", minlntvar->val->id());
-                    gen->cgStr(
+                        *instcode += gen->cgSub(
+                            ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+                    *instcode += gen->sprintln(
+                        "# Spill %d to stack", minlntvar->val->id());
+                    *instcode += gen->cgStr(
                         var->reg,
                         ARMGeneralRegs::SP,
                         stack->stackSize - minlntvar->stackpos);
@@ -382,7 +373,7 @@ void Allocator::updateAllocation(
         } else if (
             var->is_global && var->reg == ARMGeneralRegs::None
             && inst->id() != InstructionID::Load) {
-            var->reg        = allocateRegister(true, operands, gen);
+            var->reg = allocateRegister(true, operands, gen);
         }
     }
 }
