@@ -83,7 +83,7 @@ void Driver::execute() {
 
     if (!done && flags_.DumpAssembly) {
         auto armv7aGen = backend::Generator::generate();
-        armv7aGen->genCode(stdout, module);
+        std::cout << armv7aGen->genCode(module) << std::endl;
     }
 
     ready_ = false;
