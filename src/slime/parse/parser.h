@@ -56,7 +56,7 @@ public:
     [[nodiscard]] Expr*            parsePrimaryExpr();
     [[nodiscard]] Expr*            parsePostfixExpr();
     [[nodiscard]] Expr*            parseUnaryExpr();
-    [[nodiscard]] inline Expr*     parseBinaryExpr();
+    [[nodiscard]] Expr*            parseBinaryExpr();
     [[nodiscard]] Expr*            parseCommaExpr();
     [[nodiscard]] InitListExpr*    parseInitListExpr();
     [[nodiscard]] ExprList*        parseExprList();
@@ -113,10 +113,6 @@ inline Lexer* Parser::unbindLexer() {
     auto lexer = new Lexer(std::move(lexer_));
     new (&lexer_) Lexer;
     return lexer;
-}
-
-inline Expr* Parser::parseBinaryExpr() {
-    return parseBinaryExprWithPriority(std::numeric_limits<int>::max());
 }
 
 } // namespace slime

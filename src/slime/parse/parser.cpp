@@ -3,11 +3,11 @@
 #include "diagnosis.h"
 
 #include <slime/visitor/ASTExprSimplifier.h>
-#include <cstddef>
-#include <iostream>
+#include <stddef.h>
 #include <sstream>
 #include <map>
 #include <array>
+#include <stack>
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>
@@ -621,6 +621,118 @@ Expr *Parser::parseUnaryExpr() {
     if (isUnary) { lexer_.next(); }
     return isUnary ? UnaryExpr::create(op, parseUnaryExpr())->intoSimplified()
                    : parsePostfixExpr();
+}
+
+Expr *foldExprList(BinaryOperator op, Expr **list, int first, int last) {
+    assert(first <= last);
+    if (first == last) {
+        return list[first];
+    } else if (first + 1 == last) {
+        return BinaryExpr::create(op, list[first], list[last]);
+    } else {
+        int m = (first + last) / 2;
+        return BinaryExpr::create(
+            op,
+            foldExprList(op, list, first, m - 1),
+            foldExprList(op, list, m, last));
+    }
+}
+
+Expr *Parser::parseBinaryExpr() {
+    auto first = parseUnaryExpr();
+    auto tok   = token();
+
+    Expr *expr = nullptr;
+
+    if (auto isUnary =
+            tok.isSemicolon() || tok.isComma() || tok.isRightBracket()) {
+        expr = first;
+    } else {
+        std::vector<Expr *>                        operands{first};
+        std::vector<BinaryOperator>                ops;
+        std::stack<Expr *>                         stack;
+        std::stack<std::pair<int, BinaryOperator>> opStack;
+        do {
+            ops.emplace_back(lookupBinaryOperator(tok));
+            lexer_.next();
+            operands.emplace_back(parseUnaryExpr());
+            tok = token();
+            isUnary =
+                tok.isSemicolon() || tok.isComma() || tok.isRightBracket();
+        } while (!isUnary);
+        stack.push(first);
+        for (int i = 0; i < ops.size(); ++i) {
+            const auto &op   = ops[i];
+            const auto  desc = lookupOperatorPriority(op);
+
+            //! FIXME: consider priority of left-assoc op is new ops are
+            //! introduced
+            if (!desc.assoc) { //<! left-assoc
+                stack.push(operands[i + 1]);
+                opStack.push({i, op});
+                continue;
+            }
+
+            //! combine swappable ops sequence without side effects
+            if (op == BinaryOperator::Add || op == BinaryOperator::Mul) {
+                //! get op range longest continuous sequence
+                auto seqFirst = i;
+                auto seqLast  = seqFirst + 1;
+                while (seqLast < ops.size()) {
+                    if (ops[seqLast] != op) { break; }
+                    ++seqLast;
+                }
+                --seqLast;
+                if (seqFirst > 0) {
+                    const auto &prevOp = ops[seqFirst - 1];
+                    if (prevOp != BinaryOperator::Unreachable && prevOp != op) {
+                        const auto prevDesc = lookupOperatorPriority(prevOp);
+                        if (prevDesc.priority <= desc.priority) { ++seqFirst; }
+                    }
+                }
+                if (seqLast + 1 < ops.size()) {
+                    const auto nextDesc =
+                        lookupOperatorPriority(ops[seqLast + 1]);
+                    if (nextDesc.priority <= desc.priority) { --seqLast; }
+                }
+                if (i == seqFirst && seqFirst < seqLast) {
+                    stack.top() = foldExprList(
+                        op, operands.data(), seqFirst, seqLast + 1);
+                    i = seqLast;
+                    continue;
+                }
+            }
+
+            //! default rpn solution
+            while (!opStack.empty()) {
+                const auto [index, lastOp] = opStack.top();
+                const auto lastDesc        = lookupOperatorPriority(lastOp);
+                if (lastDesc.assoc && lastDesc.priority <= desc.priority) {
+                    auto rhs = stack.top();
+                    stack.pop();
+                    stack.top() = BinaryExpr::create(lastOp, stack.top(), rhs);
+                    ops[index]  = index == 0 ? BinaryOperator::Unreachable
+                                             : ops[index - 1]; //<! update ops
+                    opStack.pop();
+                } else {
+                    break;
+                }
+            }
+            stack.push(operands[i + 1]);
+            opStack.push({i, op});
+        }
+        while (!opStack.empty()) {
+            auto [index, op] = opStack.top();
+            opStack.pop();
+            auto rhs = stack.top();
+            stack.pop();
+            stack.top() = BinaryExpr::create(op, stack.top(), rhs);
+        }
+        assert(stack.size() == 1);
+        expr = stack.top()->intoSimplified();
+    }
+
+    return expr;
 }
 
 Expr *Parser::parseCommaExpr() {
