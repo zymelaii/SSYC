@@ -88,6 +88,38 @@ const char *Generator::reg2str(ARMGeneralRegs reg) {
     }
 }
 
+std::string Generator::genGlobalArrayInitData(
+    ConstantArray *globarr, uint32_t baseSize) {
+    static uint32_t consecutiveCnt = 0;
+    static uint32_t consecutiveVal = 0;
+    std::string     initcode;
+    bool            baseDimensionFlag = (globarr->size() == 0);
+
+    assert(baseSize != 0);
+    initcode.clear();
+    for (int i = 0; i < globarr->size(); i++) {
+        auto initval = globarr->at(i);
+        if (initval->isImmediate()) {
+            assert(!initval->type()->isFloat());
+            baseDimensionFlag = true;
+            uint32_t imm =
+                static_cast<ConstantInt *>(initval->asConstantData())->value;
+            initcode += sprintln("   .long   %d", imm);
+        } else {
+            auto nextDimension = static_cast<ConstantArray *>(
+                const_cast<ConstantData *>(initval));
+            initcode += genGlobalArrayInitData(nextDimension, baseSize);
+        }
+    }
+    if (baseDimensionFlag && globarr->size() < baseSize) {
+        for (int i = 0; i < baseSize - globarr->size(); i++) {
+            initcode += sprintln("   .long   0");
+        }
+    }
+
+    return initcode;
+}
+
 std::string Generator::genGlobalDef(GlobalObject *obj) {
     std::string globdefs;
     if (obj->tryIntoFunction() != nullptr) {
@@ -99,29 +131,37 @@ std::string Generator::genGlobalDef(GlobalObject *obj) {
     } else if (obj->tryIntoGlobalVariable()) {
         auto globvar  = obj->asGlobalVariable();
         auto initData = globvar->type()->tryGetElementType();
-        globdefs += sprintln("   .type %s, %%object", globvar->name().data());
-        if (initData->isArray()) {
-            uint32_t size = 1;
-            auto     e    = initData;
-            while (e != nullptr && e->isArray()) {
-                size *= e->asArrayType()->size();
-                e     = e->tryGetElementType();
-            }
-            //! TODO: Initialisation of global arrary
-            // auto initVals = static_cast<ConstantArray
-            // *>(const_cast<ConstantData *>(globvar->data()));
-            // initVals->size();
 
-            globdefs += sprintln(
-                "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
+        globdefs += sprintln("   .type %s, %%object", globvar->name().data());
+        globdefs += sprintln("   .data");
+        globdefs += sprintln("   .globl %s", globvar->name().data());
+        globdefs += sprintln("   .p2align 2");
+        if (initData->isArray()) {
+            uint32_t size     = 1;
+            uint32_t baseSize = 0;
+            auto     e        = initData;
+            while (e != nullptr && e->isArray()) {
+                baseSize  = e->asArrayType()->size();
+                size     *= e->asArrayType()->size();
+                e         = e->tryGetElementType();
+            }
+
+            globdefs      += sprintln("%s:", globvar->name().data());
+            auto initVals  = static_cast<ConstantArray *>(
+                const_cast<ConstantData *>(globvar->data()));
+            if (initVals->size() == 0) {
+                globdefs += sprintln(
+                    "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
+            } else {
+                globdefs += genGlobalArrayInitData(initVals, baseSize);
+                globdefs += sprintln(
+                    "   .size %s, %d\n", globvar->name().data(), size * 4);
+            }
         } else {
-            globdefs += sprintln("   .data");
-            globdefs += sprintln("   .globl %s", globvar->name().data());
-            globdefs += sprintln("   .p2align 2");
-            globdefs += sprintln("%s:", globvar->name().data());
             //! TODO: float global var
             assert(!initData->isFloat());
             if (initData->isInteger()) {
+                globdefs += sprintln("%s:", globvar->name().data());
                 globdefs += sprintln(
                     "   .long   %d",
                     static_cast<const ConstantInt *>(globvar->data())->value);
@@ -1158,6 +1198,7 @@ InstCode *Generator::genZExtInst(ZExtInst *inst) {
 InstCode *Generator::genCallInst(CallInst *inst) {
     InstCode   *callcode = new InstCode(inst);
     std::string commentCode;
+    auto        whitelist = generator_.allocator->getInstOperands(inst);
     if (!inst->unwrap()->type()->isVoid())
         commentCode += sprintln("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalParams(); i++) {
@@ -1165,7 +1206,6 @@ InstCode *Generator::genCallInst(CallInst *inst) {
             // param register has already been allocated
             if (generator_.allocator->regAllocatedMap[i]) {
                 // allocate a new one
-                auto whitelist = generator_.allocator->getInstOperands(inst);
                 ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
                     true, whitelist, this, &callcode->code);
                 auto var = generator_.allocator->getVarOfAllocatedReg(
@@ -1212,11 +1252,14 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         }
     }
     if (inst->unwrap()->uses().size() != 0) {
-        if (inst->totalParams() == 0
-            && generator_.allocator->regAllocatedMap[0]) {
+        if (generator_.allocator->regAllocatedMap[0]) {
             auto var =
                 generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
-            generator_.allocator->releaseRegister(var);
+            assert(var->val->asInstruction()->id() == InstructionID::Call);
+            ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
+                true, whitelist, this, &callcode->code);
+            callcode->code += cgMov(newreg, var->reg);
+            var->reg        = newreg;
         }
         generator_.allocator->regAllocatedMap[0] = true;
         auto var                                 = findVariable(inst->unwrap());

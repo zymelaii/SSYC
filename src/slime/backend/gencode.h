@@ -1,3 +1,4 @@
+#include "slime/ir/user.h"
 #include <slime/ir/type.h>
 #include <slime/ast/decl.h>
 #include <slime/ir/instruction.def>
@@ -58,6 +59,7 @@ class Generator {
 public:
     static Generator *generate();
     std::string       genCode(Module *module);
+    std::string       genGlobalArrayInitData(ConstantArray *globarr, uint32_t baseSize);
     std::string       genGlobalDef(GlobalObject *obj);
     std::string       genUsedGlobVars();
     std::string       genAssembly(Function *func);
