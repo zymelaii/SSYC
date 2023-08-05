@@ -1197,7 +1197,7 @@ std::string Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
     auto it = generator_.usedGlobalVars->find(var);
     if (it == generator_.usedGlobalVars->end())
         assert(0 && "it must be an error here.");
-    return sprintln("    ldr    %s, %s", reg2str(dst), it->second.data());
+    return sprintln("    ldr    %s, =%s", reg2str(dst), it->second.data());
 }
 
 std::string Generator::cgStr(
