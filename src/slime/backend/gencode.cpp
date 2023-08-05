@@ -1,6 +1,7 @@
 #include "gencode.h"
 #include "regalloc.h"
 
+#include <cassert>
 #include <slime/ir/instruction.def>
 #include <slime/ir/module.h>
 #include <slime/ir/value.h>
@@ -340,8 +341,17 @@ InstCodeList *Generator::genInstList(InstructionList *instlist) {
             if (inst->parent()
                     == generator_.cur_func->basicBlocks().head()->value()
                 && allocaSize != 0) {
-                allocacode->code +=
-                    cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, allocaSize);
+                if (!isImmediateValid(allocaSize)) {
+                    ARMGeneralRegs tmpreg =
+                        generator_.allocator->allocateRegister();
+                    assert(tmpreg != ARMGeneralRegs::None);
+                    allocacode->code += cgLdr(tmpreg, allocaSize);
+                    allocacode->code +=
+                        cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, tmpreg);
+                    generator_.allocator->releaseRegister(tmpreg);
+                } else
+                    allocacode->code += cgSub(
+                        ARMGeneralRegs::SP, ARMGeneralRegs::SP, allocaSize);
                 instCodeList->insertToTail(allocacode);
             }
         }
@@ -613,11 +623,20 @@ InstCode *Generator::genRetInst(RetInst *inst) {
                 retcode->code += cgMov(ARMGeneralRegs::R0, var->reg);
         }
     }
-    if (generator_.stack->stackSize > 0)
-        retcode->code += cgAdd(
-            ARMGeneralRegs::SP,
-            ARMGeneralRegs::SP,
-            generator_.stack->stackSize);
+    if (generator_.stack->stackSize > 0) {
+        if (!isImmediateValid(generator_.stack->stackSize)) {
+            ARMGeneralRegs tmpreg = generator_.allocator->allocateRegister();
+            assert(tmpreg != ARMGeneralRegs::None);
+            retcode->code += cgLdr(tmpreg, generator_.stack->stackSize);
+            retcode->code +=
+                cgAdd(ARMGeneralRegs::SP, ARMGeneralRegs::SP, tmpreg);
+            generator_.allocator->releaseRegister(tmpreg);
+        } else
+            retcode->code += cgAdd(
+                ARMGeneralRegs::SP,
+                ARMGeneralRegs::SP,
+                generator_.stack->stackSize);
+    }
 
     // caller registers' restoration will be handled in funciton 'genAssembly'
     return retcode;
@@ -628,7 +647,7 @@ InstCode *Generator::genBrInst(BrInst *inst) {
     BasicBlock *nextblock = getNextBlock();
     if (generator_.cur_block->isLinear()) {
         Value *target = inst->useAt(0);
-        if (target->id() != nextblock->id())
+        if (!nextblock || target->id() != nextblock->id())
             brcode->code += cgB(inst->useAt(0));
     } else {
         auto control = inst->parent()->control()->asInstruction();
