@@ -41,6 +41,7 @@ public:
     static const char *reg2str(ARMGeneralRegs reg);
     Instruction       *getNextInst(Instruction *inst);
     int                sizeOfType(ir::Type *type);
+    bool               isImmediateValid(uint32_t imm);
 
     static std::string sprintln(const char *fmt, ...) {
         static char strbuf[64];
