@@ -61,6 +61,7 @@ public:
         int32_t                imm,
         ComparePredicationType cond = ComparePredicationType::TRUE);
     std::string cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
+    std::string cgLdr(ARMGeneralRegs dst, int32_t imm);
     std::string cgLdr(ARMGeneralRegs dst, Variable *var); // only for globalvar
     std::string cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset);
     std::string cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);

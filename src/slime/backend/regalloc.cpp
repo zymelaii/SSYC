@@ -263,12 +263,13 @@ ARMGeneralRegs Allocator::allocateRegister(
         whitelist = &emptylistHolder;
     }
     Variable *minlntvar = getMinIntervalRegVar(*whitelist);
+    assert(minlntvar);
     assert(!minlntvar->is_spilled);
     minlntvar->is_spilled = true;
     auto ret              = minlntvar->reg;
     minlntvar->reg        = ARMGeneralRegs::None;
     *instcode +=
-        Generator::sprintln("# Spill %d to stack", minlntvar->val->id());
+        Generator::sprintln("# Spill %%%d to stack", minlntvar->val->id());
     if (stack->spillVar(minlntvar, 4))
         *instcode += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
     *instcode += gen->cgStr(
@@ -353,7 +354,7 @@ void Allocator::updateAllocation(
                         *instcode += gen->cgSub(
                             ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
                     *instcode += gen->sprintln(
-                        "# Spill %d to stack", minlntvar->val->id());
+                        "# Spill %%%d to stack", minlntvar->val->id());
                     *instcode += gen->cgStr(
                         var->reg,
                         ARMGeneralRegs::SP,
@@ -368,12 +369,12 @@ void Allocator::updateAllocation(
     for (auto var : *operands) {
         if (var->is_spilled) {
             stack->releaseOnStackVar(var);
-            var->reg        = allocateRegister(true, operands, gen);
+            var->reg        = allocateRegister(true, operands, gen, instcode);
             var->is_spilled = false;
         } else if (
             var->is_global && var->reg == ARMGeneralRegs::None
             && inst->id() != InstructionID::Load) {
-            var->reg = allocateRegister(true, operands, gen);
+            var->reg = allocateRegister(true, operands, gen, instcode);
         }
     }
 }
