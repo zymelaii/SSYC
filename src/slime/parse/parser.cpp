@@ -287,12 +287,12 @@ ParamVarDeclList Parser::parseFunctionParams() {
                 spec->type = BuiltinType::getIntType();
                 lexer_.next();
             } break;
-            case TOKEN::TK_FLOAT: {
-                spec->type = BuiltinType::getFloatType();
-                lexer_.next();
-            } break;
             case TOKEN::TK_CHAR: {
                 spec->type = BuiltinType::getCharType();
+                lexer_.next();
+            } break;
+            case TOKEN::TK_FLOAT: {
+                spec->type = BuiltinType::getFloatType();
                 lexer_.next();
             } break;
             default: {
@@ -384,6 +384,7 @@ Stmt *Parser::parseStmt(bool standalone) {
         case TOKEN::TK_EXTERN:
         case TOKEN::TK_VOID:
         case TOKEN::TK_INT:
+        case TOKEN::TK_CHAR:
         case TOKEN::TK_FLOAT: {
             if (standalone) { enterBlock(); }
             stmt = parseDeclStmt();
@@ -804,6 +805,10 @@ void Parser::enterDecl() {
             } break;
             case TOKEN::TK_INT: {
                 spec->type = BuiltinType::getIntType();
+                done       = true;
+            } break;
+            case TOKEN::TK_CHAR: {
+                spec->type = BuiltinType::getCharType();
                 done       = true;
             } break;
             case TOKEN::TK_FLOAT: {
