@@ -59,10 +59,11 @@ class Generator {
 public:
     static Generator *generate();
     std::string       genCode(Module *module);
-    std::string       genGlobalArrayInitData(ConstantArray *globarr, uint32_t baseSize);
-    std::string       genGlobalDef(GlobalObject *obj);
-    std::string       genUsedGlobVars();
-    std::string       genAssembly(Function *func);
+    std::string       genGlobalArrayInitData(
+              ConstantArray *globarr, uint32_t baseSize);
+    std::string genGlobalDef(GlobalObject *obj);
+    std::string genUsedGlobVars();
+    std::string genAssembly(Function *func);
 
     Variable          *findVariable(Value *val);
     static const char *reg2str(ARMGeneralRegs reg);
@@ -169,15 +170,30 @@ protected:
 
 private:
     std::set<std::string> libfunc = {
+        //! built-in
         "memset",
-        "putint",
-        "getint",
-        "putarray",
-        "getarray",
-        "putch",
-        "getch",
         "__aeabi_idiv",
-        "__aeabi_uidiv"};
+        "__aeabi_uidiv",
+        //! stdlib - debug & profile
+        "starttime",
+        "stoptime",
+        "__slime_starttime",
+        "__slime_stoptime",
+        "_sysy_starttime",
+        "_sysy_stoptime",
+        //! stdlib - io
+        "getint",
+        "getch",
+        "getfloat",
+        "putint",
+        "putch",
+        "putarray",
+        "putfarray",
+        "getfarray",
+        "getarray",
+        "putfloat",
+        "putf",
+    };
 
     struct GeneratorState {
         BasicBlock     *cur_block      = nullptr;

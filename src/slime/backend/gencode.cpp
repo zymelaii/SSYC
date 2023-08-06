@@ -29,8 +29,8 @@ std::string Generator::genCode(Module *module) {
     generator_.usedGlobalVars    = new UsedGlobalVars;
     GlobalObjectList *global_var = new GlobalObjectList;
     std::string       modulecode;
-    modulecode += sprintln("   .arch armv7a");
-    modulecode += sprintln("   .text");
+    modulecode += sprintln("    .arch armv7a");
+    modulecode += sprintln("    .text");
     for (auto e : *module) {
         if (e->type()->isFunction()) {
             generator_.allocator->initAllocator();
@@ -38,7 +38,7 @@ std::string Generator::genCode(Module *module) {
             if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             modulecode += genAssembly(static_cast<Function *>(e));
             generator_.cur_funcnum++;
-            modulecode += sprintln("   .pool\n");
+            modulecode += sprintln("    .pool\n");
         } else {
             if (e->tryIntoGlobalVariable() != nullptr)
                 global_var->insertToTail(e);
@@ -91,94 +91,177 @@ const char *Generator::reg2str(ARMGeneralRegs reg) {
 
 std::string Generator::genGlobalArrayInitData(
     ConstantArray *globarr, uint32_t baseSize) {
-    static uint32_t consecutiveCnt = 0;
-    static uint32_t consecutiveVal = 0;
-    std::string     initcode;
-    bool            baseDimensionFlag = (globarr->size() == 0);
+    std::string body;
+    if (baseSize == 0) { return body; }
 
-    assert(baseSize != 0);
-    initcode.clear();
-    for (int i = 0; i < globarr->size(); i++) {
-        auto initval = globarr->at(i);
-        if (initval->isImmediate()) {
-            assert(!initval->type()->isFloat());
-            baseDimensionFlag = true;
-            uint32_t imm =
-                static_cast<ConstantInt *>(initval->asConstantData())->value;
-            initcode += sprintln("   .long   %d", imm);
+    auto type     = globarr->type()->asArrayType();
+    auto dataType = type->elementType();
+
+    if (globarr->size() == 0) {
+        body = sprintln("    .zero %d", baseSize * type->size());
+        return body;
+    }
+
+    auto left = type->size() - globarr->size();
+
+    if (dataType->isArray()) {
+        for (int i = 0; i < globarr->size(); ++i) {
+            body += genGlobalArrayInitData(
+                static_cast<ConstantArray *>(globarr->at(i)),
+                baseSize / dataType->asArrayType()->size());
+        }
+        if (left > 0) { body += sprintln("    .zero %d", baseSize * left); }
+        return body;
+    }
+
+    if (auto type = dataType->tryIntoIntegerType()) {
+        if (type->isI32()) {
+            for (int i = 0; i < globarr->size(); ++i) {
+                uint32_t value =
+                    static_cast<ConstantInt *>(globarr->at(i))->value;
+                body += sprintln("    .long %d", value);
+            }
+        } else if (type->isI8()) {
+            if (left > 8) {
+                for (int i = 0; i < globarr->size(); ++i) {
+                    uint32_t value =
+                        static_cast<ConstantInt *>(globarr->at(i))->value;
+                    body += sprintln("    .byte %d", value);
+                }
+            } else {
+                std::string ascii;
+                for (int i = 0; i < globarr->size(); ++i) {
+                    uint32_t value =
+                        static_cast<ConstantInt *>(globarr->at(i))->value;
+                    if (value == '\\') {
+                        ascii += "\\\\";
+                    } else if (value >= 0x20 && value <= 0x7e) {
+                        ascii += static_cast<char>(value);
+                    } else {
+                        char octal[5]{};
+                        sprintf(octal, "\\%03o", value);
+                        ascii += octal;
+                    }
+                }
+                for (int i = 0; i < left; ++i) { ascii += "\\000"; }
+                body += sprintln("    .asciz \"%s\"", ascii.c_str());
+                left = 0;
+            }
         } else {
-            auto nextDimension = static_cast<ConstantArray *>(
-                const_cast<ConstantData *>(initval));
-            initcode += genGlobalArrayInitData(nextDimension, baseSize);
+            unreachable();
         }
-    }
-    if (baseDimensionFlag && globarr->size() < baseSize) {
-        for (int i = 0; i < baseSize - globarr->size(); i++) {
-            initcode += sprintln("   .long   0");
-        }
+        if (left > 0) { body += sprintln("    .zero %d", baseSize * left); }
+        return body;
     }
 
-    return initcode;
+    if (dataType->isFloat()) {
+        for (int i = 0; i < globarr->size(); ++i) {
+            float value = static_cast<ConstantFloat *>(globarr->at(i))->value;
+            body        += sprintln(
+                "    .long 0x%08x", *reinterpret_cast<uint32_t *>(&value));
+        }
+        if (left > 0) { body += sprintln("    .zero %d", baseSize * left); }
+        return body;
+    }
+
+    if (auto type = dataType->asPointerType()) {
+        //! TODO: complete pointer data
+        unreachable();
+        if (left > 0) { body += sprintln("    .zero %d", baseSize * left); }
+        return body;
+    }
+
+    unreachable();
 }
 
 std::string Generator::genGlobalDef(GlobalObject *obj) {
     std::string globdefs;
-    if (obj->tryIntoFunction() != nullptr) {
-        auto func = obj->asFunction();
-        globdefs  += sprintln("   .globl %s", func->name().data());
-        globdefs  += sprintln("   .p2align 2");
-        globdefs  += sprintln("   .type %s, %%function", func->name().data());
-        globdefs  += sprintln("%s:", func->name().data());
-    } else if (obj->tryIntoGlobalVariable()) {
-        auto globvar  = obj->asGlobalVariable();
-        auto initData = globvar->type()->tryGetElementType();
+    globdefs += sprintln("    .globl %s", obj->name().data());
 
-        globdefs += sprintln("   .type %s, %%object", globvar->name().data());
-        globdefs += sprintln("   .data");
-        globdefs += sprintln("   .globl %s", globvar->name().data());
-        globdefs += sprintln("   .p2align 2");
-        if (initData->isArray()) {
-            uint32_t size     = 1;
-            uint32_t baseSize = 0;
-            auto     e        = initData;
-            while (e != nullptr && e->isArray()) {
-                baseSize = e->asArrayType()->size();
-                size     *= e->asArrayType()->size();
-                e        = e->tryGetElementType();
+    if (auto func = obj->tryIntoFunction()) {
+        globdefs += sprintln("    .type %s, %%function", func->name().data());
+        globdefs += sprintln("    .p2align 1");
+        globdefs += sprintln("%s:", func->name().data());
+        return globdefs;
+    }
+
+    if (auto var = obj->tryIntoGlobalVariable()) {
+        std::string body;
+        int         align = -1; //<! no alignment
+        int         size  = 0;
+        auto        type  = var->type()->tryGetElementType();
+        if (auto arrayType = type->tryIntoArrayType()) {
+            Type *tmp = arrayType;
+            size      = 1;
+            while (tmp->isArray()) {
+                size *= tmp->asArrayType()->size();
+                tmp  = tmp->tryGetElementType();
             }
-
-            auto initVals = static_cast<ConstantArray *>(
-                const_cast<ConstantData *>(globvar->data()));
-            if (initVals->size() == 0) {
-                globdefs += sprintln(
-                    "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
+            if (auto type = tmp->tryIntoIntegerType()) {
+                if (type->isI32()) {
+                    size  *= 4;
+                    align = 2;
+                }
+            } else if (tmp->isFloat()) {
+                size  *= 4;
+                align = 2;
+            } else if (tmp->isPointer()) {
+                size  *= 4;
+                align = 2;
             } else {
-                globdefs += sprintln("%s:", globvar->name().data());
-                globdefs += genGlobalArrayInitData(initVals, baseSize);
-                globdefs += sprintln(
-                    "   .size %s, %d\n", globvar->name().data(), size * 4);
+                unreachable();
+            }
+            auto data = static_cast<ConstantArray *>(
+                const_cast<ConstantData *>(var->data()));
+            body = genGlobalArrayInitData(
+                data, arrayType->size() == 0 ? size : size / arrayType->size());
+        } else if (type->isBuiltinType()) {
+            if (auto intType = type->tryIntoIntegerType()) {
+                uint32_t value =
+                    static_cast<const ConstantInt *>(var->data())->value;
+                if (intType->isI8()) {
+                    size = 1;
+                    body = sprintln("    .byte %d", value);
+                } else {
+                    assert(intType->isI32());
+                    align = 2;
+                    size  = 4;
+                    body  = sprintln("    .long %d", value);
+                }
+            } else if (type->isFloat()) {
+                size  = 4;
+                align = 2;
+                float value =
+                    static_cast<const ConstantFloat *>(var->data())->value;
+                body = sprintln(
+                    "    .long 0x%08x", *reinterpret_cast<uint32_t *>(&value));
+            } else if (type->isPointer()) {
+                //! TODO: pointer data
+                unreachable();
             }
         } else {
-            //! TODO: float global var
-            assert(!initData->isFloat());
-            if (initData->isInteger()) {
-                globdefs += sprintln("%s:", globvar->name().data());
-                globdefs += sprintln(
-                    "   .long   %d",
-                    static_cast<const ConstantInt *>(globvar->data())->value);
-                globdefs +=
-                    sprintln("   .size %s, 4\n", globvar->name().data());
-            }
+            //! TODO: handle pointer type
+            unreachable();
         }
+
+        globdefs += sprintln("    .type %s, %%object", var->name().data());
+        globdefs += sprintln("    .data");
+        if (align != -1) { globdefs += sprintln("    .p2align %d", align); }
+        globdefs += sprintln("%s:", var->name().data());
+        globdefs += body;
+        // globdefs += sprintln("    .size %d", size);
+        globdefs += sprintln("");
+        return globdefs;
     }
-    return globdefs;
+
+    unreachable();
 }
 
 std::string Generator::genUsedGlobVars() {
     std::string globvars;
     for (auto e : *generator_.usedGlobalVars) {
         globvars += sprintln("%s:", e.second.data());
-        globvars += sprintln("   .long %s", e.first->val->name().data());
+        globvars += sprintln("    .long %s", e.first->val->name().data());
     }
     globvars += sprintln("");
     return globvars;
@@ -210,8 +293,10 @@ Variable *Generator::findVariable(Value *val) {
     auto blockVarTable = generator_.allocator->blockVarTable;
     auto valVarTable   = blockVarTable->find(generator_.cur_block)->second;
     auto it            = valVarTable->find(val);
-    if (it == valVarTable->end()) { assert(0 && "unexpected error"); }
-    return it->second;
+    if (it != valVarTable->end()) { return it->second; }
+    //! use of a anonymous variable (like string literal)
+    assert(val->isReadOnly());
+    return generator_.allocator->createVariable(val);
 }
 
 bool Generator::isImmediateValid(uint32_t imm) {
