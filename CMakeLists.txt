@@ -19,6 +19,13 @@ endif()
 
 option(BUILD_TEST "build test unit" OFF)
 option(ENABLE_PROFILE "generate profile information" OFF)
+option(USE_LIBSLIME "use libslime as standard library instead of libsysy" ON)
+
+if(USE_LIBSLIME)
+	set(STDLIB "libslime")
+else()
+	set(STDLIB "libsysy")
+endif()
 
 set(PROFILE_OPTIONS -fprofile-instr-generate -fcoverage-mapping)
 
