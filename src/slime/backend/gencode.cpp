@@ -146,13 +146,13 @@ std::string Generator::genGlobalDef(GlobalObject *obj) {
                 e         = e->tryGetElementType();
             }
 
-            globdefs      += sprintln("%s:", globvar->name().data());
             auto initVals  = static_cast<ConstantArray *>(
                 const_cast<ConstantData *>(globvar->data()));
             if (initVals->size() == 0) {
                 globdefs += sprintln(
                     "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
             } else {
+                globdefs      += sprintln("%s:", globvar->name().data());
                 globdefs += genGlobalArrayInitData(initVals, baseSize);
                 globdefs += sprintln(
                     "   .size %s, %d\n", globvar->name().data(), size * 4);
@@ -749,9 +749,16 @@ InstCode *Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
     if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
-        getelemcode->code += cgMov(dest, ARMGeneralRegs::SP);
-        getelemcode->code +=
-            cgAdd(dest, dest, generator_.stack->stackSize - var->stackpos);
+        int offset = generator_.stack->stackSize - var->stackpos;
+        if (!isImmediateValid(offset)) {
+            getelemcode->code += cgLdr(dest, offset);
+            getelemcode->code += cgAdd(dest, ARMGeneralRegs::SP, dest);
+        } else {
+            getelemcode->code += cgAdd(
+                dest,
+                ARMGeneralRegs::SP,
+                generator_.stack->stackSize - var->stackpos);
+        }
     } else if (var->is_global) {
         addUsedGlobalVar(var);
         getelemcode->code += cgLdr(dest, var);
@@ -864,8 +871,13 @@ InstCode *Generator::genAddInst(AddInst *inst) {
         ARMGeneralRegs op2reg  = findVariable(op2)->reg;
         addcode->code         += cgAdd(rd, rn, op2reg);
     } else {
+        assert(Allocator::isVariable(op1));
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        addcode->code += cgAdd(rd, rn, imm);
+        if (!isImmediateValid(imm)) {
+            addcode->code += cgLdr(rd, imm);
+            addcode->code += cgLdr(rd, rn, rd);
+        } else
+            addcode->code += cgAdd(rd, rn, imm);
     }
     return addcode;
 }
