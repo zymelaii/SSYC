@@ -668,7 +668,7 @@ const char* pretty_tok2str(Token token, char* buffer, size_t len) {
             snprintf(buffer, len, "%s %s", id, token.detail.data());
         } break;
         case TOKEN::TK_STRING: {
-            snprintf(buffer, len, "<string> length: %llu", token.detail.size());
+            snprintf(buffer, len, "<string> length: %zu", token.detail.size());
         } break;
         case TOKEN::TK_EOF: {
             strcpy_s(buffer, len, "<eof>");

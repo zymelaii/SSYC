@@ -175,7 +175,7 @@ void Driver::execute(int argc, char** argv) {
             transformer.reset(stream, currentSource_);
             while (true) {
                 char ch = transformer.get();
-                if (ch == EOF) { break; }
+                if (ch == static_cast<char>(EOF)) { break; }
                 ostream->put(ch);
             }
             goto nextStep;

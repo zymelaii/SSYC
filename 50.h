@@ -184,7 +184,7 @@ public:
                 std::initializer_list<Type *> paramTypes{
                     std::forward<Args>(args)...};
                 paramsTypes_.assign(paramTypes.begin(), paramTypes.end());
-            } else if constexpr (utils::is_iterable_as<first_type, Type *>) {
+            } else if constexpr (is_iterable_as<first_type, Type *>) {
                 //! case2: create(returnType, iterableContainer)
                 auto &list = utils::firstValueOfTArguments(args...);
                 paramsTypes_.assign(list.begin(), list.end());
