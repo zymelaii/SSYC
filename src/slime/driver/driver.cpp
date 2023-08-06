@@ -24,7 +24,10 @@ Driver* Driver::create() {
 
 Driver* Driver::withSourceFile(const char* path) {
     std::ifstream ifs(path);
-    if (ifs.is_open()) { resetInput(ifs); }
+    if (ifs.is_open()) {
+        currentSource_ = path;
+        resetInput(ifs);
+    }
     return this;
 }
 
@@ -33,6 +36,7 @@ Driver* Driver::withStdin() {
     std::stringstream ss;
     std::getline(std::cin, input, '\0');
     ss << input;
+    currentSource_.clear();
     resetInput(ss);
     return this;
 }
@@ -72,7 +76,8 @@ void Driver::execute() {
         visitor->visit(unit);
     }
 
-    auto module = visitor::ASTToIRTranslator::translate("default", unit);
+    auto module = visitor::ASTToIRTranslator::translate(
+        currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
     pass::ControlFlowSimplificationPass{}.run(module);
     pass::MemoryToRegisterPass{}.run(module);
 

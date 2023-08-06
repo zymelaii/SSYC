@@ -23,8 +23,8 @@ public:
     }
 
     template <typename T>
-    void reset(T& stream) {
-        lexer_.reset(stream);
+    void reset(T& stream, std::string_view source) {
+        lexer_.reset(stream, source);
     }
 
     inline const Token&         token() const;

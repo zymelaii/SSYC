@@ -1,4 +1,5 @@
 #include "lex.h"
+#include "preproc.h"
 
 #include <string.h>
 #include <set>
@@ -26,7 +27,7 @@ struct Buffer {
 };
 
 struct LexStatePrivate {
-    std::unique_ptr<std::istream>          stream;   //<! input stream
+    InputStreamTransformer                 stream;   //<! input stream
     std::shared_ptr<std::set<const char*>> strtable; //<! buffered string table
     Buffer                                 buffer;   //<! raw input buffer
     bool                                   bufenabled; //<! save chars to buffer
@@ -256,7 +257,7 @@ TOKEN to_reserved(const char* s) {
 inline void next(LexState& ls) {
     if (ls.cur != '\0') { ls.d->linebuffer.push_back(ls.cur); }
     if (ls.d->bufenabled) { ls.d->bufsave(ls.cur); }
-    ls.cur = ls.d->stream->get();
+    ls.cur = ls.d->stream.get();
     ++ls.column;
 }
 
@@ -611,9 +612,9 @@ LexState& LexState::operator=(LexState&& other) {
     return *this;
 }
 
-void LexState::resetstream(std::istream* input) {
+void LexState::resetstream(std::istream* input, std::string_view source) {
     assert(!input->eof());
-    d->stream.reset(input);
+    d->stream.reset(input, source);
 }
 
 void LexState::next() {
