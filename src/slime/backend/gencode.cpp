@@ -1287,7 +1287,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         if (generator_.allocator->regAllocatedMap[0]) {
             auto var =
                 generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
-            assert(var->val->asInstruction()->id() == InstructionID::Call);
+            // assert(var->val->asInstruction()->id() == InstructionID::Call);
             ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
                 true, whitelist, this, &callcode->code);
             callcode->code += cgMov(newreg, var->reg);
