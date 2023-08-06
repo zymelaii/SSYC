@@ -1,4 +1,4 @@
-#include "slime/ir/user.h"
+#include <slime/ir/user.h>
 #include <slime/ir/type.h>
 #include <slime/ast/decl.h>
 #include <slime/ir/instruction.def>
