@@ -142,11 +142,11 @@ __attribute((constructor)) void __slime_main_ctor() {
     strcpy(strrchr(path, '.') + 1, "in");
 #elif defined(__linux__) || defined(__APPLE__)
     readlink("/proc/self/exe", path, PATH_MAX);
-    char* p = strrchr(path, '.') + 1;
+    char* p = strrchr(path, '.');
     if (p == NULL) {
         strcat(path, ".in");
     } else {
-        strcpy(p, "in");
+        strcpy(p + 1, "in");
     }
 #endif
     if (check_file_readable(path)) { __INSTREAM = fopen(path, "r"); }
