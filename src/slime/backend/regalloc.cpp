@@ -186,6 +186,7 @@ Variable *Allocator::getVarOfAllocatedReg(ARMGeneralRegs reg) {
         if (e->reg == reg) { return e; }
     }
     assert(false && "it must be an error here.");
+    unreachable();
 }
 
 Variable *Allocator::getMinIntervalRegVar(std::set<Variable *> whitelist) {
@@ -218,7 +219,6 @@ std::set<Variable *> *Allocator::getInstOperands(Instruction *inst) {
     }
     return &operands;
 }
-
 
 ARMGeneralRegs Allocator::allocateRegister(
     bool                  force,
