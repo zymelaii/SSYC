@@ -78,6 +78,7 @@ enum class TOKEN : int {
     TK_VOID = detail::FIRST_RESERVED, //<! `void`
     TK_INT,                           //<! `int`
     TK_FLOAT,                         //<! `float`
+    TK_CHAR,                          //<! `char`
     TK_CONST,                         //<! `const`
     TK_STATIC,                        //<! `static`
     TK_INLINE,                        //<! `inline`

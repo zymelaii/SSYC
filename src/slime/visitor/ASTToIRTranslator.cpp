@@ -22,7 +22,10 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
             auto buitin = type->asBuiltin();
             switch (buitin->type) {
                 case BuiltinTypeID::Int: {
-                    return ir::Type::getIntegerType();
+                    return ir::Type::getIntegerType(IntegerKind::i32);
+                } break;
+                case BuiltinTypeID::Char: {
+                    return ir::Type::getIntegerType(IntegerKind::i8);
                 } break;
                 case BuiltinTypeID::Float: {
                     return ir::Type::getFloatType();
@@ -106,6 +109,14 @@ Value *ASTToIRTranslator::getCompatibleIRValue(
                 case ConstantType::f32: {
                     return !module ? ConstantData::createF32(v->f32)
                                    : module->createF32(v->f32);
+                } break;
+                case ConstantType::str: {
+                    //! NOTE: string literal must be translated in
+                    //! translateConstantExpr
+                    unreachable();
+                } break;
+                default: {
+                    unreachable();
                 } break;
             }
         } else if (desired->isInteger()) {
@@ -201,6 +212,7 @@ Module *ASTToIRTranslator::translate(
             } break;
             default: {
                 assert(false && "illegal top-level declaration");
+                unreachable();
             } break;
         }
     }
@@ -686,6 +698,9 @@ Value *ASTToIRTranslator::translateConstantExpr(
         } break;
         case ast::ConstantType::f32: {
             state_.valueOfPrevExpr = module_->createF32(expr->f32);
+        } break;
+        case ast::ConstantType::str: {
+            state_.valueOfPrevExpr = module_->createString(expr->str);
         } break;
     }
     return state_.valueOfPrevExpr;

@@ -9,6 +9,7 @@
 #include <slime/utils/cast.def>
 #include <slime/utils/traits.h>
 #include <type_traits>
+#include <string_view>
 
 namespace slime::ast {
 
@@ -34,6 +35,7 @@ using ExprList = slime::utils::ListTrait<Expr *>;
 enum class ConstantType {
     i32,
     f32,
+    str,
 };
 
 struct Expr : public ExprStmt {
@@ -106,6 +108,10 @@ struct ConstantExpr
             type      = ConstantType::f32;
             f32       = data;
             valueType = BuiltinType::getFloatType();
+        } else if constexpr (std::is_same_v<T, std::string_view>) {
+            type      = ConstantType::str;
+            str       = data;
+            valueType = IncompleteArrayType::create(BuiltinType::getCharType());
         } else {
             assert(false && "unsupport constant type");
         }
@@ -113,6 +119,7 @@ struct ConstantExpr
 
     static inline ConstantExpr *createF32(float data);
     static inline ConstantExpr *createI32(int32_t data);
+    static inline ConstantExpr *createString(std::string_view data);
 
     bool operator==(int32_t value) const {
         return type == ConstantType::i32 && value == i32;
@@ -122,9 +129,14 @@ struct ConstantExpr
         return type == ConstantType::f32 && value == i32;
     }
 
+    bool operator==(std::string_view value) const {
+        return type == ConstantType::str && value == str;
+    }
+
     union {
-        int32_t i32;
-        float   f32;
+        int32_t          i32;
+        float            f32;
+        std::string_view str;
     };
 
     ConstantType type;
@@ -307,6 +319,10 @@ inline ConstantExpr *ConstantExpr::createF32(float data) {
 }
 
 inline ConstantExpr *ConstantExpr::createI32(int32_t data) {
+    return create(data);
+}
+
+inline ConstantExpr *ConstantExpr::createString(std::string_view data) {
     return create(data);
 }
 

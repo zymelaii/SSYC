@@ -291,6 +291,10 @@ ParamVarDeclList Parser::parseFunctionParams() {
                 spec->type = BuiltinType::getFloatType();
                 lexer_.next();
             } break;
+            case TOKEN::TK_CHAR: {
+                spec->type = BuiltinType::getCharType();
+                lexer_.next();
+            } break;
             default: {
                 Diagnosis::assertAlwaysFalse("unknown type name");
             } break;
@@ -551,8 +555,8 @@ Expr *Parser::parsePrimaryExpr() {
             lexer_.next();
         } break;
         case TOKEN::TK_STRING: {
-            //! TODO: #featrue(string)
-            Diagnosis::assertAlwaysFalse("string literal is not supported yet");
+            expr = ConstantExpr::createString(token().detail);
+            lexer_.next();
         } break;
         case TOKEN::TK_LPAREN: {
             lexer_.next();

@@ -132,6 +132,10 @@ void ASTDumpVisitor::visit(Expr* e) {
                 case ConstantType::f32: {
                     os() << "FloatingLiteral: " << c->f32 << std::endl;
                 } break;
+                case ConstantType::str: {
+                    //! FIXME: quote string literal
+                    os() << "StringLiteral: " << c->str << std::endl;
+                } break;
             }
         } break;
         case ExprID::Unary: {
@@ -198,7 +202,7 @@ void ASTDumpVisitor::visit(BinaryExpr* e) {
 }
 
 void ASTDumpVisitor::visit(Type* e) {
-    static const char* stypes[3]{"int", "float", "void"};
+    static const char* stypes[4]{"int", "char", "float", "void"};
     switch (e->typeId) {
         case TypeID::None: {
             os() << "NoneType" << std::endl;

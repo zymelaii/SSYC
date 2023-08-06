@@ -74,8 +74,10 @@ public:
 
     inline std::string_view name() const;
 
-    [[nodiscard]] ConstantInt*   createI32(int32_t value);
-    [[nodiscard]] ConstantFloat* createF32(float value);
+    [[nodiscard]] ConstantInt*    createI8(int8_t value);
+    [[nodiscard]] ConstantInt*    createI32(int32_t value);
+    [[nodiscard]] ConstantFloat*  createF32(float value);
+    [[nodiscard]] GlobalVariable* createString(std::string_view value);
 
     bool acceptFunction(Function* fn);
     bool acceptGlobalVariable(GlobalVariable* var);
@@ -95,8 +97,10 @@ protected:
 private:
     const char* moduleName_;
 
-    std::map<int32_t, ConstantInt*> i32DataMap_;
-    std::map<float, ConstantFloat*> f32DataMap_;
+    std::map<int32_t, ConstantInt*>        i32DataMap_;
+    std::map<int8_t, ConstantInt*>         i8DataMap_;
+    std::map<float, ConstantFloat*>        f32DataMap_;
+    std::map<const char*, GlobalVariable*> strDataMap_;
 
     std::map<std::string_view, Function*>       functions_;
     std::map<std::string_view, GlobalVariable*> globalVariables_;

@@ -2,6 +2,7 @@
 
 #include <slime/utils/cast.def>
 #include <slime/utils/traits.h>
+#include <slime/experimental/Utility.h>
 #include <vector>
 #include <type_traits>
 #include <assert.h>
@@ -25,8 +26,10 @@ enum class TypeKind : uint8_t {
 
     //! element types
     FirstBuiltin,
-    Integer = FirstBuiltin, //<! i32 and i1 only
-    Float,                  //<! f32 only
+    Integer =
+        FirstBuiltin, //<! i32, i8, i1 only
+                      //<! NOTE: i8 is only used for string literal currently
+    Float,            //<! f32 only
     LastBuiltin   = Float,
     LastPrimitive = LastBuiltin,
 
@@ -40,6 +43,7 @@ enum class TypeKind : uint8_t {
 
 enum class IntegerKind : uint8_t {
     i1,
+    i8,
     i32,
 };
 
@@ -106,6 +110,7 @@ public:
     inline IntegerKind kind() const;
 
     inline bool isI1() const;
+    inline bool isI8() const;
     inline bool isI32() const;
 
 private:
@@ -326,8 +331,22 @@ inline Type *Type::tryGetElementType() {
 
 inline IntegerType *IntegerType::get(IntegerKind kind) {
     static IntegerType i1Singleton(IntegerKind::i1);
+    static IntegerType i8Singleton(IntegerKind::i8);
     static IntegerType i32Singleton(IntegerKind::i32);
-    return kind == IntegerKind::i32 ? &i32Singleton : &i1Singleton;
+    switch (kind) {
+        case IntegerKind::i1: {
+            return &i1Singleton;
+        } break;
+        case IntegerKind::i8: {
+            return &i8Singleton;
+        } break;
+        case IntegerKind::i32: {
+            return &i32Singleton;
+        } break;
+        default: {
+            unreachable();
+        } break;
+    }
 }
 
 inline IntegerKind IntegerType::kind() const {
@@ -336,6 +355,10 @@ inline IntegerKind IntegerType::kind() const {
 
 inline bool IntegerType::isI1() const {
     return kind_ == IntegerKind::i1;
+}
+
+inline bool IntegerType::isI8() const {
+    return kind_ == IntegerKind::i8;
 }
 
 inline bool IntegerType::isI32() const {

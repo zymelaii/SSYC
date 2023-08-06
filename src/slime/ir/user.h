@@ -15,6 +15,7 @@ class Function;
 class ConstantData;
 class ConstantInt;
 class ConstantFloat;
+class ConstantArray;
 
 using BasicBlockList   = utils::ListTrait<BasicBlock*>;
 using ConstantDataList = utils::ListTrait<ConstantData*>;
@@ -31,6 +32,7 @@ public:
         : Constant(type, tag) {}
 
     static inline ConstantInt*   getBoolean(bool value);
+    static inline ConstantInt*   createI8(int8_t data);
     static inline ConstantInt*   createI32(int32_t data);
     static inline ConstantFloat* createF32(float data);
 };
@@ -188,6 +190,10 @@ inline ConstantInt* ConstantData::getBoolean(bool value) {
     static ConstantInt trueSingleton(true, Type::getBooleanType());
     static ConstantInt falseSingleton(false, Type::getBooleanType());
     return value ? &trueSingleton : &falseSingleton;
+}
+
+inline ConstantInt* ConstantData::createI8(int8_t data) {
+    return ConstantInt::create(data, IntegerType::get(IntegerKind::i8));
 }
 
 inline ConstantInt* ConstantData::createI32(int32_t data) {
