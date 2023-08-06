@@ -51,12 +51,14 @@ void Allocator::initVarInterval(Function *func) {
     for (int i = 0; i < func->totalParams(); i++) {
         Variable *var =
             Variable::create(const_cast<Parameter *>(func->paramAt(i)));
+        var->is_funcparam = true;
         if (i < 4) {
             var->reg           = static_cast<ARMGeneralRegs>(i);
             regAllocatedMap[i] = true;
         } else {
             var->is_alloca = true;
-            stack->pushVar(var, 4);
+            //! NOTE: stackpos here is related with caller's stack, not callee's
+            var->stackpos = 4 * (func->totalParams() - (i + 1));
         }
         funcparams.insert({const_cast<Parameter *>(func->paramAt(i)), var});
     }
@@ -100,6 +102,10 @@ void Allocator::initVarInterval(Function *func) {
         }
     }
 
+    // use R11 as frame point of stack when the num of function arguments is
+    // more than 4
+    if (max_funcargs > 4) regAllocatedMap[11] = true;
+
     // release register occupied by unused params
     for (auto it : funcparams) {
         if (it.second->reg != ARMGeneralRegs::None) {
@@ -118,7 +124,8 @@ void Allocator::checkLiveInterval(std::string *instcode) {
             auto tmp = it++;
             if (var->reg != ARMGeneralRegs::None)
                 releaseRegister(var);
-            else if (var->is_spilled || var->is_alloca) {
+            else if (
+                var->is_spilled || (var->is_alloca && !var->is_funcparam)) {
                 var->is_spilled  = false;
                 *instcode       += Generator::sprintln(
                     "# Release spiiled var %%%d", var->val->id());
@@ -226,7 +233,7 @@ ARMGeneralRegs Allocator::allocateRegister(
     bool                  force,
     std::set<Variable *> *whitelist,
     Generator            *gen,
-    std::string          *instcode) {
+    InstCode             *instcode) {
     ARMGeneralRegs retreg;
     if (!has_funccall) {
         for (int i = 0; i < 12; i++) {
@@ -239,7 +246,8 @@ ARMGeneralRegs Allocator::allocateRegister(
             }
         }
     } else {
-        for (int i = max_funcargs; i < 12; i++) {
+        int regAllocBase = max_funcargs > 4 ? 4 : max_funcargs;
+        for (int i = regAllocBase; i < 12; i++) {
             if (!regAllocatedMap[i]) {
                 retreg             = static_cast<ARMGeneralRegs>(i);
                 regAllocatedMap[i] = true;
@@ -248,13 +256,16 @@ ARMGeneralRegs Allocator::allocateRegister(
                 return retreg;
             }
         }
-        for (int i = max_funcargs - 1; i >= 0; i--) {
-            if (!regAllocatedMap[i]) {
-                retreg             = static_cast<ARMGeneralRegs>(i);
-                regAllocatedMap[i] = true;
-                if (usedRegs.find(retreg) == usedRegs.end())
-                    usedRegs.insert(retreg);
-                return retreg;
+        if (instcode && instcode->inst
+            && instcode->inst->id() != InstructionID::Call) {
+            for (int i = regAllocBase - 1; i >= 0; i--) {
+                if (!regAllocatedMap[i]) {
+                    retreg             = static_cast<ARMGeneralRegs>(i);
+                    regAllocatedMap[i] = true;
+                    if (usedRegs.find(retreg) == usedRegs.end())
+                        usedRegs.insert(retreg);
+                    return retreg;
+                }
             }
         }
     }
@@ -270,11 +281,11 @@ ARMGeneralRegs Allocator::allocateRegister(
     minlntvar->is_spilled = true;
     auto ret              = minlntvar->reg;
     minlntvar->reg        = ARMGeneralRegs::None;
-    *instcode +=
+    instcode->code +=
         Generator::sprintln("# Spill %%%d to stack", minlntvar->val->id());
     if (stack->spillVar(minlntvar, 4))
-        *instcode += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-    *instcode += gen->cgStr(
+        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+    instcode->code += gen->cgStr(
         ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
     return ret;
 }
@@ -299,10 +310,7 @@ void Allocator::freeAllRegister() {
 }
 
 void Allocator::updateAllocation(
-    Generator   *gen,
-    std::string *instcode,
-    BasicBlock  *block,
-    Instruction *inst) {
+    Generator *gen, InstCode *instcode, BasicBlock *block, Instruction *inst) {
     std::set<Variable *> *operands    = getInstOperands(inst);
     auto                  valVarTable = blockVarTable->find(block)->second;
 
@@ -355,11 +363,11 @@ void Allocator::updateAllocation(
                 if (!minlntvar->is_global) {
                     minlntvar->is_spilled = true;
                     if (stack->spillVar(minlntvar, 4))
-                        *instcode += gen->cgSub(
+                        instcode->code += gen->cgSub(
                             ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-                    *instcode += gen->sprintln(
+                    instcode->code += gen->sprintln(
                         "# Spill %%%d to stack", minlntvar->val->id());
-                    *instcode += gen->cgStr(
+                    instcode->code += gen->cgStr(
                         var->reg,
                         ARMGeneralRegs::SP,
                         stack->stackSize - minlntvar->stackpos);
@@ -370,14 +378,16 @@ void Allocator::updateAllocation(
     }
 
     // check if current instruction holds spiiled variable
+    // CallInst is an exception because it may holds params more than num of
+    // register
     for (auto var : *operands) {
-        if (var->is_spilled) {
+        if (var->is_spilled && inst->id() != InstructionID::Call) {
             int offset = stack->stackSize - var->stackpos;
             stack->releaseOnStackVar(var);
-            var->reg   = allocateRegister(true, operands, gen, instcode);
-            *instcode += Generator::sprintln(
+            var->reg        = allocateRegister(true, operands, gen, instcode);
+            instcode->code += Generator::sprintln(
                 "#Load spiiled var %%%d from stack", var->val->id());
-            *instcode       += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
+            instcode->code  += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
             var->is_spilled  = false;
         } else if (
             var->is_global && var->reg == ARMGeneralRegs::None
