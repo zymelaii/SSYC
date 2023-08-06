@@ -74,21 +74,25 @@ void Driver::execute() {
     if (!done && flags_.DumpAST) {
         auto visitor = visitor::ASTDumpVisitor::createWithOstream(&std::cout);
         visitor->visit(unit);
+        done = true;
     }
 
-    auto module = visitor::ASTToIRTranslator::translate(
-        currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
-    pass::ControlFlowSimplificationPass{}.run(module);
-    pass::MemoryToRegisterPass{}.run(module);
+    if (!done) {
+        auto module = visitor::ASTToIRTranslator::translate(
+            currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
+        pass::ControlFlowSimplificationPass{}.run(module);
+        pass::MemoryToRegisterPass{}.run(module);
 
-    if (!done && flags_.EmitIR) {
-        auto visitor = visitor::IRDumpVisitor::createWithOstream(&std::cout);
-        visitor->dump(module);
-    }
+        if (!done && flags_.EmitIR) {
+            auto visitor =
+                visitor::IRDumpVisitor::createWithOstream(&std::cout);
+            visitor->dump(module);
+        }
 
-    if (!done && flags_.DumpAssembly) {
-        auto armv7aGen = backend::Generator::generate();
-        std::cout << armv7aGen->genCode(module) << std::endl;
+        if (!done && flags_.DumpAssembly) {
+            auto armv7aGen = backend::Generator::generate();
+            std::cout << armv7aGen->genCode(module) << std::endl;
+        }
     }
 
     ready_ = false;
