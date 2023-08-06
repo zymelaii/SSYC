@@ -928,15 +928,20 @@ void Parser::addPresetSymbols() {
     ParamVarDeclList params{};
 
     auto specInt         = DeclSpecifier::create();
+    auto specChar        = DeclSpecifier::create();
     auto specFloat       = DeclSpecifier::create();
     specInt->type        = BuiltinType::getIntType();
+    specChar->type       = BuiltinType::getCharType();
     specFloat->type      = BuiltinType::getFloatType();
     auto specIntArray    = specInt->clone();
+    auto specCharArray   = specChar->clone();
     auto specFloatArray  = specFloat->clone();
     specIntArray->type   = IncompleteArrayType::create(specIntArray->type);
+    specCharArray->type  = IncompleteArrayType::create(specCharArray->type);
     specFloatArray->type = IncompleteArrayType::create(specFloatArray->type);
     auto paramInt        = ParamVarDecl::create(specInt);
     auto paramIntArray   = ParamVarDecl::create(specIntArray);
+    auto paramCharArray  = ParamVarDecl::create(specCharArray);
     auto paramFloat      = ParamVarDecl::create(specFloat);
     auto paramFloatArray = ParamVarDecl::create(specFloatArray);
 
@@ -991,7 +996,19 @@ void Parser::addPresetSymbols() {
     auto pFloat = params.insertToTail(paramFloat);
     addExternalFunction("putfloat", BuiltinType::getVoidType(), params);
 
-    //! TODO: void putf(char[], ...)
+    //! FIXME: handle var-args
+    //! void putf(char[], ...)
+    pFloat->removeFromList();
+    params.insertToHead(paramCharArray);
+    addExternalFunction("putf", BuiltinType::getVoidType(), params);
+
+    //! void __slime_starttime(const char*, int);
+    params.insertToTail(paramInt);
+    addExternalFunction(
+        "__slime_starttime", BuiltinType::getVoidType(), params);
+
+    //! void __slime_stoptime(const char*, int);
+    addExternalFunction("__slime_stoptime", BuiltinType::getVoidType(), params);
 }
 
 void Parser::dropUnusedExternalSymbols() {
