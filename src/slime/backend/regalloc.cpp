@@ -108,7 +108,7 @@ void Allocator::initVarInterval(Function *func) {
     }
 }
 
-void Allocator::checkLiveInterval() {
+void Allocator::checkLiveInterval(std::string *instcode) {
     auto it  = liveVars->node_begin();
     auto end = liveVars->node_end();
     while (it != end) {
@@ -119,7 +119,9 @@ void Allocator::checkLiveInterval() {
             if (var->reg != ARMGeneralRegs::None)
                 releaseRegister(var);
             else if (var->is_spilled || var->is_alloca) {
-                var->is_spilled = false;
+                var->is_spilled  = false;
+                *instcode       += Generator::sprintln(
+                    "# Release spiiled var %%%d", var->val->id());
                 stack->releaseOnStackVar(var);
             }
             tmp->removeFromList();
@@ -338,7 +340,7 @@ void Allocator::updateAllocation(
                     continue;
             }
 
-            if(var->reg != ARMGeneralRegs::None) continue;
+            if (var->reg != ARMGeneralRegs::None) continue;
 
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
@@ -370,9 +372,13 @@ void Allocator::updateAllocation(
     // check if current instruction holds spiiled variable
     for (auto var : *operands) {
         if (var->is_spilled) {
+            int offset = stack->stackSize - var->stackpos;
             stack->releaseOnStackVar(var);
-            var->reg        = allocateRegister(true, operands, gen, instcode);
-            var->is_spilled = false;
+            var->reg   = allocateRegister(true, operands, gen, instcode);
+            *instcode += Generator::sprintln(
+                "#Load spiiled var %%%d from stack", var->val->id());
+            *instcode       += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
+            var->is_spilled  = false;
         } else if (
             var->is_global && var->reg == ARMGeneralRegs::None
             && inst->id() != InstructionID::Load) {

@@ -117,14 +117,15 @@ struct Stack {
             // merge fragments
             if (stackvar->var == nullptr) {
                 auto tmp = it++;
-                auto it2 = tmp;
+                auto it2 = it;
                 it       = tmp;
                 while (it2 != end) {
-                    auto tmpvar = it->value();
+                    auto tmpvar = it2->value();
                     if (tmpvar->var != nullptr)
                         break;
                     else {
-                        auto tmp = *it2++;
+                        auto tmp = *it2;
+                        it2++;
                         tmp.removeFromList();
                         stackvar->size += tmpvar->size;
                         sizecnt        += stackvar->size;
@@ -135,7 +136,8 @@ struct Stack {
                     var->stackpos = sizecnt;
                     return false;
                 } else if (stackvar->size > size) {
-                    it->emplaceAfter(
+                    assert(it->value() == stackvar);
+                    it->emplaceAfterThis(
                         new OnStackVar(nullptr, stackvar->size - size));
                     sizecnt        = sizecnt - (stackvar->size - size);
                     stackvar->var  = var;
@@ -214,7 +216,7 @@ public:
 
     void initVarInterval(Function *func);
     void computeInterval(Function *func);
-    void checkLiveInterval();
+    void checkLiveInterval(std::string *instcode);
     void updateAllocation(
         Generator   *gen,
         std::string *instcode,

@@ -5,8 +5,10 @@
 #include <slime/visitor/IRDumpVisitor.h>
 #include <slime/backend/gencode.h>
 #include <slime/pass/ControlFlowSimplification.h>
+#include <slime/pass/Resort.h>
 #include <slime/pass/MemoryToRegister.h>
 #include <iostream>
+#include <ostream>
 #include <sstream>
 #include <fstream>
 #include <string>
@@ -81,11 +83,11 @@ void Driver::execute() {
         auto module = visitor::ASTToIRTranslator::translate(
             currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
         pass::ControlFlowSimplificationPass{}.run(module);
+        pass::ResortPass{}.run(module);
         pass::MemoryToRegisterPass{}.run(module);
 
         if (!done && flags_.EmitIR) {
-            auto visitor =
-                visitor::IRDumpVisitor::createWithOstream(&std::cout);
+            auto visitor = visitor::IRDumpVisitor::createWithOstream(&std::cout);
             visitor->dump(module);
         }
 
