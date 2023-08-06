@@ -3,8 +3,13 @@
 #include <string>
 #include <string.h>
 
-#ifdef WIN32
+#ifdef __WIN32__
+#include <io.h>
+#include <windows.h>
 #define realpath(rel, abs) _fullpath((abs), (rel), PATH_MAX)
+#elif defined(__linux__) || defined(__APPLE__)
+#include <unistd.h>
+#include <linux/limits.h>
 #endif
 
 namespace slime {

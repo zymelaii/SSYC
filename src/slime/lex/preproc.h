@@ -4,13 +4,10 @@
 #include <memory>
 #include <string_view>
 #include <assert.h>
+#include <limits.h>
 
-#ifdef __WIN32__
-#include <io.h>
-#include <windows.h>
-#elif defined(__linux__) || defined(__APPLE__)
-#include <unistd.h>
-#include <linux/limits.h>
+#ifndef PATH_MAX
+#define PATH_MAX 260
 #endif
 
 namespace slime {
