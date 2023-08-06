@@ -146,13 +146,13 @@ std::string Generator::genGlobalDef(GlobalObject *obj) {
                 e         = e->tryGetElementType();
             }
 
-            auto initVals  = static_cast<ConstantArray *>(
+            auto initVals = static_cast<ConstantArray *>(
                 const_cast<ConstantData *>(globvar->data()));
             if (initVals->size() == 0) {
                 globdefs += sprintln(
                     "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
             } else {
-                globdefs      += sprintln("%s:", globvar->name().data());
+                globdefs += sprintln("%s:", globvar->name().data());
                 globdefs += genGlobalArrayInitData(initVals, baseSize);
                 globdefs += sprintln(
                     "   .size %s, %d\n", globvar->name().data(), size * 4);
@@ -943,6 +943,7 @@ InstCode *Generator::genSDivInst(SDivInst *inst) {
     InstCode *sdivcode  = new InstCode(inst);
     sdivcode->code     += sprintln("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalOperands(); i++) {
+        generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
         if (inst->useAt(i)->isConstant()) {
             sdivcode->code += cgLdr(
                 static_cast<ARMGeneralRegs>(i),
@@ -970,6 +971,7 @@ InstCode *Generator::genSRemInst(SRemInst *inst) {
     InstCode *sremcode   = new InstCode(inst);
     sremcode->code      += sprintln("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalOperands(); i++) {
+        generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
         if (inst->useAt(i)->isConstant()) {
             sremcode->code += cgLdr(
                 static_cast<ARMGeneralRegs>(i),
@@ -1216,6 +1218,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     for (int i = 0; i < inst->totalParams(); i++) {
         if (i < 4) {
             // param register has already been allocated
+            generator_.allocator->usedRegs.insert(
+                static_cast<ARMGeneralRegs>(i));
             if (generator_.allocator->regAllocatedMap[i]) {
                 // allocate a new one
                 ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
