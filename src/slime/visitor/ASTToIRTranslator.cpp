@@ -700,7 +700,11 @@ Value *ASTToIRTranslator::translateConstantExpr(
             state_.valueOfPrevExpr = module_->createF32(expr->f32);
         } break;
         case ast::ConstantType::str: {
-            state_.valueOfPrevExpr = module_->createString(expr->str);
+            state_.addressOfPrevExpr = module_->createString(expr->str);
+            auto load                = GetElementPtrInst::create(
+                state_.addressOfPrevExpr, module_->createI32(0));
+            load->insertToTail(block);
+            state_.valueOfPrevExpr = load;
         } break;
     }
     return state_.valueOfPrevExpr;
