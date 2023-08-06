@@ -515,7 +515,7 @@ InstCode *Generator::genInst(Instruction *inst) {
     }
     generator_.allocator->checkLiveInterval();
     if (!tmpcode.empty()) instcode->code = tmpcode + instcode->code;
-    std::cout << instcode->code;
+    // std::cout << instcode->code;
     return instcode;
 }
 

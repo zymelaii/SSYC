@@ -338,6 +338,8 @@ void Allocator::updateAllocation(
                     continue;
             }
 
+            if(var->reg != ARMGeneralRegs::None) continue;
+
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
