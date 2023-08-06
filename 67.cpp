@@ -1,198 +1,103 @@
-#if 0
 #include "68.h"
 
 #include <stack>
-#include <set>
-#include <vector>
+#include <assert.h>
 
 namespace slime::pass {
 
 using namespace ir;
 
-void ConstantPropagation::run(Module* target) {
-    collectReadOnlyGlobalVariables(target);
-    for (auto obj : target->globalObjects()) {
-        if (obj->isFunction()) {
-            auto fn = obj->asFunction();
-            if (fn->basicBlocks().size() > 0) { runOnFunction(fn); }
-        }
-    }
-}
+void ControlFlowSimplificationPass::runOnFunction(ir::Function* target) {
+    auto& blocks    = target->basicBlocks();
+    auto  blockIter = blocks.begin();
+    while (blockIter != blocks.end()) {
+        auto thisBlockIter = blockIter;
+        auto block         = *blockIter++;
 
-void ConstantPropagation::runOnFunction(Function* target) {
-    std::stack<BasicBlock*>  blocks;
-    std::stack<Instruction*> stack;
-    std::set<BasicBlock*>    visited;
-
-    blocks.push(target->front());
-    while (!blocks.empty()) {
-        auto block = blocks.top();
-        blocks.pop();
-
-        for (auto inst : block->instructions()) { stack.push(inst); }
-
-        while (!stack.empty()) {
-            auto inst = stack.top();
-            stack.pop();
-            if (!inst->parent()) { continue; }
-
-            bool   folded = false;
-            Value* value  = nullptr;
-
-            switch (inst->id()) {
-                case InstructionID::Load: {
-                } break;
-                case InstructionID::Br: {
-                } break;
-                case InstructionID::Add:
-                case InstructionID::Sub:
-                case InstructionID::Mul:
-                case InstructionID::UDiv:
-                case InstructionID::SDiv:
-                case InstructionID::URem:
-                case InstructionID::SRem:
-                case InstructionID::Shl:
-                case InstructionID::LShr:
-                case InstructionID::AShr:
-                case InstructionID::And:
-                case InstructionID::Or:
-                case InstructionID::Xor: {
-                } break;
-                case InstructionID::FNeg:
-                case InstructionID::FAdd:
-                case InstructionID::FSub:
-                case InstructionID::FMul:
-                case InstructionID::FDiv:
-                case InstructionID::FRem: {
-                    tryFoldFloatInst(inst);
-                } break;
-                case InstructionID::FPToUI:
-                case InstructionID::FPToSI:
-                case InstructionID::UIToFP:
-                case InstructionID::SIToFP:
-                case InstructionID::ZExt: {
-                } break;
-                case InstructionID::ICmp:
-                case InstructionID::FCmp: {
-                } break;
-                default: {
-                } break;
-            }
-        }
-
-        visited.insert(block);
+        //! 1. fold constant branch
         if (block->isBranched()) {
-            if (!visited.count(block->branch())) {
-                blocks.push(block->branch());
-            }
-            if (!visited.count(block->branch())) {
-                blocks.push(block->branchElse());
-            }
-        } else if (block->isLinear() && !block->isTerminal()) {
-            if (!visited.count(block->branch())) {
-                blocks.push(block->branch());
+            if (block->branch() == block->branchElse()) {
+                block->reset(block->branch());
+            } else {
+                if (!block->control()->isImmediate()) { continue; }
+                auto imm = static_cast<ConstantInt*>(block->control())->value;
+                if (imm) {
+                    block->reset(block->branch());
+                } else {
+                    block->reset(block->branchElse());
+                }
             }
         }
-    }
-}
 
-void ConstantPropagation::collectReadOnlyGlobalVariables(Module* target) {
-    for (auto obj : target->globalObjects()) {
-        if (obj->isFunction()) { continue; }
-        auto var = obj->asGlobalVariable();
-        if (var->isConst()) {
-            readOnlyAddrSet_.insert(var);
+        //! 2. remove unreachable incoming blocks
+        std::vector<BasicBlock*> inblocks;
+        for (auto inblock : block->inBlocks()) {
+            if (inblock->totalInBlocks() == 0) { inblocks.push_back(inblock); }
+        }
+        for (auto inblock : inblocks) {
+            if (inblock != target->front()) {
+                auto ok = inblock->remove();
+                assert(ok);
+            }
+        }
+        auto it   = thisBlockIter;
+        blockIter = ++it;
+
+        //! 3. remove unreachable block
+        bool isEntry = block == target->front();
+        if (!isEntry && block->totalInBlocks() == 0) {
+            auto ok = block->remove();
+            assert(ok);
             continue;
         }
-        bool               maybeWrite = false;
-        std::stack<Value*> stack;
-        std::set<Value*>   source;
-        for (auto use : var->uses()) { stack.push(use->owner()); }
-        source.insert(var);
-        //! FIXME: side-effect of values across procedure is unevaluatable
-        while (!stack.empty()) {
-            auto value = stack.top();
-            stack.pop();
-            if (!value->isInstruction()) { continue; }
-            auto inst = value->asInstruction();
-            if (inst->id() == InstructionID::Store) {
-                auto store = inst->asStore();
-                if (source.count(store->lhs())) {
-                    maybeWrite = true;
-                    break;
-                } else if (source.count(store->rhs())) {
-                    auto addr = store->lhs();
-                    if (!addr->isFunction() && addr->isGlobal()) {
-                        maybeWrite = true;
-                        break;
-                    }
-                    for (auto use : addr->uses()) {
-                        auto user = use->owner();
-                        if (user->isInstruction()
-                            && user->asInstruction()->id()
-                                   == InstructionID::Load) {
-                            auto load = user->asInstruction()->asLoad();
-                            for (auto use : load->uses()) {
-                                stack.push(use->owner());
-                            }
-                            source.insert(load);
-                        }
-                    }
-                }
-            } else if (inst->id() == InstructionID::GetElementPtr) {
-                auto gep = inst->asGetElementPtr();
-                if (source.count(gep->op()[0])) {
-                    for (auto use : gep->uses()) { stack.push(use->owner()); }
-                    source.insert(value);
-                }
-            } else if (inst->id() == InstructionID::Ret) {
-                auto ret = inst->asRet();
-                assert(!ret->type()->isVoid());
-                assert(source.count(ret->operand()));
-                maybeWrite = true;
+        if (!block->isLinear() || block->isTerminal()) { continue; }
+        auto nextBlock = block->branch();
+        if (nextBlock == block) {
+            if (!isEntry && block->totalInBlocks() == 1) {
+                block->reset();
+                auto ok = block->remove();
+                assert(ok);
+            }
+            continue;
+        }
+
+        //! 4 check simplifiable
+        bool simplifiable = true;
+        for (auto use : block->uses()) {
+            if (use->owner()->asInstruction()->id() != InstructionID::Br) {
+                simplifiable = false;
                 break;
             }
         }
-        if (!maybeWrite) {
-            for (auto value : source) {
-                if (!value->isFunction() && value->isGlobal()) {
-                    readOnlyAddrSet_.insert(value);
-                } else if (
-                    value->isInstruction()
-                    && value->asInstruction()->id()
-                           == InstructionID::GetElementPtr) {
-                    readOnlyAddrSet_.insert(value);
-                }
+        if (!simplifiable) { continue; }
+
+        //! 5. remove useless branch
+        if (block->size() == 1) {
+            std::vector<Use*> uses(block->uses().begin(), block->uses().end());
+            for (auto use : uses) {
+                use->reset(nextBlock);
+                use->owner()
+                    ->asInstruction()
+                    ->parent()
+                    ->syncFlowWithInstUnsafe();
             }
+            auto ok = block->remove();
+            assert(ok);
+            continue;
+        }
+
+        //! 6. combine linear branch
+        if (nextBlock->totalInBlocks() == 1) {
+            block->reset();
+            std::vector<Instruction*> instrs(
+                nextBlock->begin(), nextBlock->end());
+            for (auto inst : instrs) { inst->insertToTail(block); }
+            block->syncFlowWithInstUnsafe();
+            auto ok = nextBlock->remove();
+            assert(ok);
+            blockIter = thisBlockIter;
         }
     }
 }
 
-Value* ConstantPropagation::tryFoldLoadInst(LoadInst* inst) {
-    if (!readOnlyAddrSet_.count(inst->operand())) { return nullptr; }
-    auto addr = inst->operand();
-    if (!addr->isFunction() && addr->isGlobal()) {
-        return const_cast<ConstantData*>(addr->asGlobalVariable()->data());
-    }
-
-    std::vector<int> indices;
-    auto             gep = addr->asInstruction()->asGetElementPtr();
-
-    while (true) {
-
-    }
-
-}
-
-Value* ConstantPropagation::tryFoldIntInst(Instruction* inst) {}
-
-Value* ConstantPropagation::tryFoldFloatInst(Instruction* inst) {}
-
-Value* ConstantPropagation::tryFoldCmpInst(Instruction* inst) {}
-
-Value* ConstantPropagation::tryFoldCastInst(Instruction* inst) {}
-
-Value* ConstantPropagation::tryFoldBranchInst(BrInst* inst) {}
-
 } // namespace slime::pass
-#endif

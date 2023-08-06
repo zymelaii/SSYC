@@ -1,6 +1,8 @@
 #pragma once
 
 #include <map>
+#include <vector>
+#include <array>
 #include <string>
 #include <string_view>
 

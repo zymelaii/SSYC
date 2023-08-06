@@ -1,6 +1,6 @@
 #pragma once
 
-#include "6.h"
+#include "6.def"
 #include <array>
 #include <stddef.h>
 #include <assert.h>

@@ -1,243 +1,468 @@
 #include "94.h"
 
-#include "2.h"
-#include "10.h"
-#include "5.h"
+#include "21.h"
+#include "88.h"
+#include <vector>
 
 namespace slime::visitor {
 
 using namespace ast;
 
-void ASTDumpVisitor::visit(TranslationUnit* e) {
-    for (auto decl : *e) {
-        switch (decl->declId) {
-            case DeclID::Var: {
-                visit(decl->asVarDecl());
-            } break;
-            case DeclID::Function: {
-                visit(decl->asFunctionDecl());
+Expr* ASTExprSimplifier::trySimplify(Expr* expr) {
+    //! TODO: algebra simplification
+    auto e = tryEvaluateCompileTimeExpr(expr);
+    return !e ? expr : e;
+}
+
+bool ASTExprSimplifier::trySmallLoopUnroll(LoopStmt* stmt) {
+    if (auto whileStmt = stmt->tryIntoWhileStmt()) {
+        auto cond = whileStmt->condition->tryIntoExprStmt();
+        if (cond == nullptr) { return false; }
+        auto op = cond->unwrap()->tryIntoBinary();
+        if (op == nullptr) { return false; }
+        switch (op->op) {
+            case BinaryOperator::LT:
+            case BinaryOperator::LE:
+            case BinaryOperator::GT:
+            case BinaryOperator::GE:
+            case BinaryOperator::EQ:
+            case BinaryOperator::NE: {
             } break;
             default: {
-                assert(false && "unexpected ParamVarDecl at the top level");
+                return false;
             } break;
         }
+    } else if (auto doStmt = stmt->tryIntoDoStmt()) {
+        //! TODO: detect small do loop
+        return false;
+    } else if (auto forStmt = stmt->tryIntoForStmt()) {
+        //! TODO: implement small for-loop unroll
+        return false;
     }
+    return false;
 }
 
-void ASTDumpVisitor::visit(VarDecl* e) {
-    os() << "Var: " << e->name << std::endl;
-    DepthGuard guard(depth_);
-    visit(e->type());
-    assert(e->initValue != nullptr);
-    visit(e->initValue);
+IfStmt* ASTExprSimplifier::transformIntoDoWhileLoop(WhileStmt* stmt) {
+    auto cond    = stmt->condition->asExprStmt()->unwrap();
+    auto doStmt  = new (stmt) DoStmt(cond, stmt->loopBody);
+    auto wrapper = IfStmt::create(cond, doStmt);
+    return wrapper;
 }
 
-void ASTDumpVisitor::visit(ParamVarDecl* e) {
-    if (e->name.empty()) {
-        os() << "ParamVar" << std::endl;
-    } else {
-        os() << "ParamVar: " << e->name << std::endl;
-    }
-    visit(e->asParamVarDecl()->type());
-}
-
-void ASTDumpVisitor::visit(FunctionDecl* e) {
-    os() << "Function: " << e->name << std::endl;
-    DepthGuard guard(depth_);
-    visit(e->proto());
-    if (e->body != nullptr && !e->specifier->isExtern()) { visit(e->body); }
-}
-
-void ASTDumpVisitor::visit(Stmt* e) {
-    switch (e->stmtId) {
-        case StmtID::Null: {
-            os() << "NullStmt" << std::endl;
-        } break;
-        case StmtID::Decl: {
-            os() << "DeclStmt" << std::endl;
-            DepthGuard guard(depth_);
-            for (auto decl : *e->asDeclStmt()) { visit(decl); }
-        } break;
-        case StmtID::Expr: {
-            visit(e->asExprStmt()->unwrap());
-        } break;
-        case StmtID::Compound: {
-            os() << "CompoundStmt" << std::endl;
-            DepthGuard guard(depth_);
-            for (auto stmt : *e->asCompoundStmt()) { visit(stmt); }
-        } break;
-        case StmtID::If: {
-            os() << "IfStmt" << std::endl;
-            auto       stmt = e->asIfStmt();
-            DepthGuard guard(depth_);
-            visit(stmt->condition);
-            visit(stmt->branchIf);
-            if (stmt->branchElse != nullptr
-                && stmt->branchElse->stmtId != StmtID::Null) {
-                visit(stmt->branchElse);
-            }
-        } break;
-        case StmtID::Do: {
-            os() << "DoStmt" << std::endl;
-            auto       stmt = e->asDoStmt();
-            DepthGuard guard(depth_);
-            visit(stmt->condition);
-            visit(stmt->loopBody);
-        } break;
-        case StmtID::While: {
-            os() << "WhileStmt" << std::endl;
-            auto       stmt = e->asWhileStmt();
-            DepthGuard guard(depth_);
-            visit(stmt->condition);
-            visit(stmt->loopBody);
-        } break;
-        case StmtID::For: {
-            os() << "ForStmt" << std::endl;
-            auto       stmt = e->asForStmt();
-            DepthGuard guard(depth_);
-            visit(stmt->init);
-            visit(stmt->condition);
-            visit(stmt->increment);
-            visit(stmt->loopBody);
-        } break;
-        case StmtID::Break: {
-            os() << "BreakStmt" << std::endl;
-        } break;
-        case StmtID::Continue: {
-            os() << "ContinueStmt" << std::endl;
-        } break;
-        case StmtID::Return: {
-            os() << "ReturnStmt" << std::endl;
-            auto stmt = e->asReturnStmt();
-            assert(stmt->returnValue != nullptr);
-            if (stmt->returnValue->stmtId != StmtID::Null) {
-                DepthGuard guard(depth_);
-                visit(stmt->returnValue);
-            }
-        } break;
-    }
-}
-
-void ASTDumpVisitor::visit(Expr* e) {
-    switch (e->exprId) {
+Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
+    switch (expr->exprId) {
         case ExprID::DeclRef: {
-            os() << "DeclRef: " << e->asDeclRef()->source->name << std::endl;
+            auto e = expr->asDeclRef();
+            if (!e->source->specifier->isConst()) { return nullptr; }
+            switch (e->source->declId) {
+                case DeclID::Var: {
+                    auto var = e->source->asVarDecl();
+                    if (auto array = var->type()->tryIntoArray()) {
+                        return expr;
+                    } else if (auto builtin = var->type()->tryIntoBuiltin()) {
+                        return tryEvaluateCompileTimeExpr(var->initValue);
+                    } else {
+                        return nullptr;
+                    }
+                } break;
+                case DeclID::ParamVar: {
+                    return nullptr;
+                } break;
+                case DeclID::Function: {
+                    return expr;
+                }
+                default: {
+                    unreachable();
+                } break;
+            }
         } break;
         case ExprID::Constant: {
-            auto c = e->asConstant();
-            switch (c->type) {
-                case ConstantType::i32: {
-                    os() << "IntegerLiteral: " << c->i32 << std::endl;
-                } break;
-                case ConstantType::f32: {
-                    os() << "FloatingLiteral: " << c->f32 << std::endl;
-                } break;
-                case ConstantType::str: {
-                    //! FIXME: quote string literal
-                    os() << "StringLiteral: " << c->str << std::endl;
-                } break;
-            }
+            return expr;
         } break;
         case ExprID::Unary: {
-            visit(e->asUnary());
+            return tryEvaluateCompileTimeUnaryExpr(expr->asUnary());
         } break;
         case ExprID::Binary: {
-            visit(e->asBinary());
+            return tryEvaluateCompileTimeBinaryExpr(expr->asBinary());
         } break;
         case ExprID::Comma: {
-            os() << "CommaExpr" << std::endl;
-            DepthGuard guard(depth_);
-            for (auto expr : *e->asComma()) { visit(expr); }
+            //! FIXME: only no-effect expr can be ignored
+            return tryEvaluateCompileTimeExpr(expr->asComma()->tail()->value());
         } break;
         case ExprID::Paren: {
-            os() << "ParenExpr" << std::endl;
-            DepthGuard guard(depth_);
-            visit(e->asParen()->inner);
+            return tryEvaluateCompileTimeExpr(expr->asParen()->inner);
         } break;
         case ExprID::Stmt: {
             assert(false && "unsupported StmtExpr");
+            return nullptr;
         } break;
         case ExprID::Call: {
-            os() << "CallExpr" << std::endl;
-            DepthGuard guard(depth_);
-            visit(e->asCall()->callable);
-            for (auto arg : e->asCall()->argList) { visit(arg); }
+            return tryEvaluateFunctionCall(expr->asCall());
         } break;
         case ExprID::Subscript: {
-            os() << "SubscriptExpr" << std::endl;
-            DepthGuard guard(depth_);
-            visit(e->asSubscript()->lhs);
-            visit(e->asSubscript()->rhs);
+            //! lookup array decl & init list and make indices
+            auto                            subscript = expr->asSubscript();
+            DeclRefExpr*                    seqlike   = nullptr;
+            utils::ListTrait<ConstantExpr*> indices;
+            while (subscript != nullptr) {
+                if (auto index = tryEvaluateCompileTimeExpr(subscript->rhs)) {
+                    indices.insertToHead(index->asConstant());
+                } else {
+                    return nullptr;
+                }
+                seqlike   = subscript->lhs->tryIntoDeclRef();
+                subscript = subscript->lhs->tryIntoSubscript();
+            }
+            if (seqlike == nullptr
+                || seqlike->valueType->typeId != TypeID::Array
+                || !seqlike->source->specifier->isConst()) {
+                return nullptr;
+            }
+            auto initval = trySimplify(seqlike->source->asVarDecl()->initValue)
+                               ->asInitList();
+            if (initval == nullptr) { return nullptr; }
+            //! decide zero value
+            ConstantExpr* zeroValue = nullptr;
+            auto builtin = seqlike->valueType->asArray()->type->asBuiltin();
+            if (builtin->isInt()) {
+                zeroValue = ConstantExpr::createI32(0);
+            } else if (builtin->isFloat()) {
+                zeroValue = ConstantExpr::createF32(0.f);
+            }
+            //! evaluate subscript expr
+            if (initval->size() == 0) { return zeroValue; }
+            int n = 0;
+            for (auto index : indices) {
+                if (index->i32 >= initval->size()) { return zeroValue; }
+                Expr* expr = nullptr;
+                int   i    = 0;
+                for (auto e : *initval) {
+                    if (i++ == index->i32) {
+                        expr = e;
+                        break;
+                    }
+                }
+                if (++n < indices.size()) {
+                    initval = expr->asInitList();
+                } else {
+                    return trySimplify(expr);
+                }
+            }
+            return nullptr;
         } break;
-        case ExprID::InitList: {
-            os() << "InitList" << std::endl;
-            DepthGuard guard(depth_);
-            for (auto expr : *e->asInitList()) { visit(expr); }
-        } break;
+        case ExprID::InitList:
         case ExprID::NoInit: {
-            os() << "NoInitExpr" << std::endl;
+            return nullptr;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
 
-void ASTDumpVisitor::visit(UnaryExpr* e) {
-    static const char* sops[5]{"+", "-", "!", "~", "()"};
-    assert(e->op != UnaryOperator::Paren);
-    os() << "UnaryOperator: " << sops[static_cast<int>(e->op)] << std::endl;
-    DepthGuard guard(depth_);
-    visit(e->operand);
-}
-
-void ASTDumpVisitor::visit(BinaryExpr* e) {
-    static const char* sops[21]{
-        "=", "+",  "-", "*",  "/",  "%",  "&",  "|",  "^", "&&", "||",
-        "<", "<=", ">", ">=", "==", "!=", "<<", ">>", ",", "[]",
-    };
-    assert(e->op != BinaryOperator::Subscript);
-    assert(e->op != BinaryOperator::Comma);
-    os() << "BinaryOperator: " << sops[static_cast<int>(e->op)] << std::endl;
-    DepthGuard guard(depth_);
-    visit(e->lhs);
-    visit(e->rhs);
-}
-
-void ASTDumpVisitor::visit(Type* e) {
-    static const char* stypes[4]{"int", "char", "float", "void"};
-    switch (e->typeId) {
-        case TypeID::None: {
-            os() << "NoneType" << std::endl;
+ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
+    auto e = expr->tryIntoUnary();
+    if (!e) { return nullptr; }
+    auto value = tryEvaluateCompileTimeExpr(e->operand);
+    if (!value) { return nullptr; }
+    switch (e->op) {
+        case UnaryOperator::Pos: {
+            return value->asConstant();
         } break;
-        case TypeID::Unresolved: {
-            os() << "UnresolvedType" << std::endl;
+        case UnaryOperator::Neg: {
+            if (auto builtin = value->valueType->tryIntoBuiltin()) {
+                auto c = value->asConstant();
+                if (builtin->isInt()) {
+                    c->setData(-c->i32);
+                } else if (builtin->isFloat()) {
+                    c->setData(-c->f32);
+                } else {
+                    return nullptr;
+                }
+                return c;
+            } else {
+                return nullptr;
+            }
+        }
+        case UnaryOperator::Not: {
+            if (auto builtin = value->valueType->tryIntoBuiltin()) {
+                auto c = value->asConstant();
+                if (builtin->isInt()) {
+                    c->setData(!c->i32);
+                } else if (builtin->isFloat()) {
+                    c->setData(!c->f32);
+                } else {
+                    return nullptr;
+                }
+                return value->asConstant();
+            } else {
+                return nullptr;
+            }
         } break;
-        case TypeID::Builtin: {
-            os() << "BuiltinType: "
-                 << stypes[static_cast<int>(e->asBuiltin()->type)] << std::endl;
+        case UnaryOperator::Inv: {
+            if (auto builtin = value->valueType->tryIntoBuiltin();
+                builtin->isInt()) {
+                value->asConstant()->setData(~value->asConstant()->i32);
+                return value->asConstant();
+            } else {
+                return nullptr;
+            }
         } break;
-        case TypeID::Array: {
-            os() << "ArrayType: "
-                 << stypes[static_cast<int>(
-                        e->asArray()->type->asBuiltin()->type)]
-                 << std::endl;
-            DepthGuard guard(depth_);
-            for (auto dim : *e->asArray()) { visit(dim); }
+        case UnaryOperator::Paren: {
+            assert(false && "ParenExpr is unreachable in UnaryExpr");
+            return nullptr;
         } break;
-        case TypeID::IncompleteArray: {
-            os() << "IncompleteArrayType: "
-                 << stypes[static_cast<int>(
-                        e->asIncompleteArray()->type->asBuiltin()->type)]
-                 << std::endl;
-            DepthGuard guard(depth_);
-            for (auto dim : *e->asIncompleteArray()) { visit(dim); }
-        } break;
-        case TypeID::FunctionProto: {
-            os() << "FunctionProtoType" << std::endl;
-            DepthGuard guard(depth_);
-            auto       fn = e->asFunctionProto();
-            visit(fn->returnType);
-            for (auto param : *fn) { visit(param); }
+        default: {
+            unreachable();
         } break;
     }
+}
+
+ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
+    auto e = expr->tryIntoBinary();
+    if (!e) { return nullptr; }
+    auto lhs = tryEvaluateCompileTimeExpr(e->lhs);
+    auto rhs = tryEvaluateCompileTimeExpr(e->rhs);
+    if (!lhs || !rhs) { return nullptr; }
+    switch (e->op) {
+        case BinaryOperator::Assign: {
+            return nullptr;
+        } break;
+        case BinaryOperator::Add:
+        case BinaryOperator::Sub:
+        case BinaryOperator::Mul:
+        case BinaryOperator::Div:
+        case BinaryOperator::LT:
+        case BinaryOperator::LE:
+        case BinaryOperator::GT:
+        case BinaryOperator::GE:
+        case BinaryOperator::EQ:
+        case BinaryOperator::NE: {
+            auto lbuiltin = lhs->valueType->tryIntoBuiltin();
+            if (lbuiltin == nullptr || lbuiltin->isVoid()) { return nullptr; }
+            auto rbuiltin = rhs->valueType->tryIntoBuiltin();
+            if (rbuiltin == nullptr || rbuiltin->isVoid()) { return nullptr; }
+            if (lbuiltin->isFloat() || rbuiltin->isFloat()) {
+                auto lval = lbuiltin->isFloat()
+                              ? lhs->asConstant()->f32
+                              : static_cast<float>(lhs->asConstant()->i32);
+                auto rval = rbuiltin->isFloat()
+                              ? rhs->asConstant()->f32
+                              : static_cast<float>(rhs->asConstant()->i32);
+                switch (e->op) {
+                    case BinaryOperator::Add: {
+                        return ConstantExpr::createF32(lval + rval);
+                    } break;
+                    case BinaryOperator::Sub: {
+                        return ConstantExpr::createF32(lval - rval);
+                    } break;
+                    case BinaryOperator::Mul: {
+                        return ConstantExpr::createF32(lval * rval);
+                    } break;
+                    case BinaryOperator::Div: {
+                        return ConstantExpr::createF32(lval / rval);
+                    } break;
+                    case BinaryOperator::LT: {
+                        return ConstantExpr::createI32(lval < rval);
+                    } break;
+                    case BinaryOperator::LE: {
+                        return ConstantExpr::createI32(lval <= rval);
+                    } break;
+                    case BinaryOperator::GT: {
+                        return ConstantExpr::createI32(lval > rval);
+                    } break;
+                    case BinaryOperator::GE: {
+                        return ConstantExpr::createI32(lval >= rval);
+                    } break;
+                    case BinaryOperator::EQ: {
+                        return ConstantExpr::createI32(lval == rval);
+                    } break;
+                    case BinaryOperator::NE: {
+                        return ConstantExpr::createI32(lval != rval);
+                    } break;
+                    default: {
+                        return nullptr;
+                    } break;
+                }
+            } else {
+                auto lval = lhs->asConstant()->i32;
+                auto rval = rhs->asConstant()->i32;
+                switch (e->op) {
+                    case BinaryOperator::Add: {
+                        return ConstantExpr::createI32(lval + rval);
+                    } break;
+                    case BinaryOperator::Sub: {
+                        return ConstantExpr::createI32(lval - rval);
+                    } break;
+                    case BinaryOperator::Mul: {
+                        return ConstantExpr::createI32(lval * rval);
+                    } break;
+                    case BinaryOperator::Div: {
+                        return ConstantExpr::createI32(lval / rval);
+                    } break;
+                    case BinaryOperator::LT: {
+                        return ConstantExpr::createI32(lval < rval);
+                    } break;
+                    case BinaryOperator::LE: {
+                        return ConstantExpr::createI32(lval <= rval);
+                    } break;
+                    case BinaryOperator::GT: {
+                        return ConstantExpr::createI32(lval > rval);
+                    } break;
+                    case BinaryOperator::GE: {
+                        return ConstantExpr::createI32(lval >= rval);
+                    } break;
+                    case BinaryOperator::EQ: {
+                        return ConstantExpr::createI32(lval == rval);
+                    } break;
+                    case BinaryOperator::NE: {
+                        return ConstantExpr::createI32(lval != rval);
+                    } break;
+                    default: {
+                        return nullptr;
+                    } break;
+                }
+            }
+        } break;
+        case BinaryOperator::Mod:
+        case BinaryOperator::And:
+        case BinaryOperator::Or:
+        case BinaryOperator::Xor:
+        case BinaryOperator::Shl:
+        case BinaryOperator::Shr: {
+            auto builtin = lhs->valueType->tryIntoBuiltin();
+            if (builtin == nullptr || !builtin->isInt()) { return nullptr; }
+            builtin = rhs->valueType->tryIntoBuiltin();
+            if (builtin == nullptr || !builtin->isInt()) { return nullptr; }
+            auto lval = lhs->asConstant()->i32;
+            auto rval = rhs->asConstant()->i32;
+            switch (e->op) {
+                case BinaryOperator::Mod: {
+                    return ConstantExpr::createI32(lval % rval);
+                } break;
+                case BinaryOperator::And: {
+                    return ConstantExpr::createI32(lval & rval);
+                } break;
+                case BinaryOperator::Or: {
+                    return ConstantExpr::createI32(lval | rval);
+                } break;
+                case BinaryOperator::Xor: {
+                    return ConstantExpr::createI32(lval ^ rval);
+                } break;
+                case BinaryOperator::Shl: {
+                    return ConstantExpr::createI32(lval << rval);
+                } break;
+                case BinaryOperator::Shr: {
+                    return ConstantExpr::createI32(lval >> rval);
+                } break;
+                default: {
+                    return nullptr;
+                } break;
+            }
+        } break;
+        case BinaryOperator::LAnd:
+        case BinaryOperator::LOr: {
+            UnaryExpr l(UnaryOperator::Not, lhs);
+            UnaryExpr r(UnaryOperator::Not, rhs);
+            auto lval = tryEvaluateCompileTimeUnaryExpr(&l)->tryIntoConstant();
+            auto rval = tryEvaluateCompileTimeUnaryExpr(&r)->tryIntoConstant();
+            if (!lval || !rval) { return nullptr; }
+            switch (e->op) {
+                case BinaryOperator::LAnd: {
+                    return ConstantExpr::createI32(!lval->i32 && !lval->i32);
+                } break;
+                case BinaryOperator::LOr: {
+                    return ConstantExpr::createI32(!lval->i32 || !lval->i32);
+                } break;
+                default: {
+                    return nullptr;
+                } break;
+            }
+        } break;
+        case BinaryOperator::Unreachable: {
+            assert(false && "unreachable binary expression");
+            return nullptr;
+        } break;
+        default: {
+            unreachable();
+        } break;
+    }
+}
+
+bool ASTExprSimplifier::isFunctionCallCompileTimeEvaluable(
+    FunctionDecl* function, size_t maxStmtAllowed) {
+    //! TODO: exclude non-const variable and extern function
+    return false;
+}
+
+ConstantExpr* ASTExprSimplifier::tryEvaluateFunctionCall(CallExpr* call) {
+    auto decl = call->callable->tryIntoDeclRef();
+    if (!decl) { return nullptr; }
+    auto fn = decl->source->tryIntoFunctionDecl();
+    if (!fn || !fn->canBeConstExpr) { return nullptr; }
+    //! TODO: execute AST evaluation machine
+    return nullptr;
+}
+
+static InitListExpr* consumeArrayInitBlock(
+    BuiltinTypeID                elementType,
+    const std::vector<int>&      array,
+    int                          currentDim,
+    InitListExpr::iterator&      it,
+    const InitListExpr::iterator end) {
+    assert(elementType != BuiltinTypeID::Void);
+    assert(currentDim > 0);
+    auto result = InitListExpr::create();
+    if (currentDim == array.size()) {
+        int n = array[currentDim - 1];
+        while (it != end && n-- > 0) {
+            auto e = ASTExprSimplifier::trySimplify(*it);
+            if (e->exprId == ExprID::InitList) {
+                assert(e->asInitList()->size() == 0);
+                e = elementType == BuiltinTypeID::Int
+                      ? ConstantExpr::createI32(0)
+                      : ConstantExpr::createF32(0.f);
+            }
+            result->insertToTail(e);
+            ++it;
+        }
+    } else {
+        for (int i = 0; i < array[currentDim - 1] && it != end; ++i) {
+            if ((*it)->exprId == ExprID::InitList) {
+                auto innerList = (*it)->asInitList();
+                auto innerIt   = innerList->begin();
+                result->insertToTail(consumeArrayInitBlock(
+                    elementType,
+                    array,
+                    currentDim + 1,
+                    innerIt,
+                    innerList->end()));
+                ++it;
+            } else {
+                result->insertToTail(consumeArrayInitBlock(
+                    elementType, array, currentDim + 1, it, end));
+            }
+        }
+    }
+    return result;
+}
+
+InitListExpr* ASTExprSimplifier::regulateInitListForArray(
+    ArrayType* array, InitListExpr* list) {
+    //! 1. empty brace zeros corresponding dimension
+    //! 2. rest of given values are reset to zero
+    //! 3. plain values must fit the length before next brace
+    std::vector<int> arrayLength;
+    for (auto e : *array) {
+        auto n = tryEvaluateCompileTimeExpr(e);
+        assert(n != nullptr);
+        assert(n->tryIntoConstant() != nullptr);
+        assert(n->asConstant()->type == ConstantType::i32);
+        arrayLength.push_back(n->asConstant()->i32);
+    }
+    auto it = list->begin();
+    return consumeArrayInitBlock(
+        array->type->asBuiltin()->type, arrayLength, 1, it, list->end());
 }
 
 } // namespace slime::visitor

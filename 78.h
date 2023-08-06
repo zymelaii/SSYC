@@ -1,23 +1,20 @@
 #pragma once
 
-#include "87.h"
+#include "85.h"
 
 #include "47.h"
-#include <set>
-#include <map>
-#include <vector>
 
 namespace slime::pass {
 
-class MemoryToRegisterPass : public UniversalIRPass {
+class PeekholePass : public UniversalIRPass {
 public:
     void runOnFunction(ir::Function *target) override;
 
 protected:
-    using BlockSetMap = std::map<ir::BasicBlock *, std::set<ir::BasicBlock *>>;
-    using BlockMap    = std::map<ir::BasicBlock *, ir::BasicBlock *>;
-    void computeDomFrontier(
-        BlockMap &idom, BlockSetMap &domfr, ir::Function *target);
+    void foldConstant(ir::Instruction *inst);
+    void foldUnaryConstant(ir::User<1> *inst);
+    void foldBinaryConstant(ir::User<2> *inst);
+    void binUserPeekholeOptimize(ir::User<2> *inst);
 };
 
 } // namespace slime::pass

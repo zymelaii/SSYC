@@ -1,386 +1,520 @@
 #include "76.h"
+#include "84.h"
 
-#include "47.h"
+#include <assert.h>
+#include <algorithm>
+#include <sstream>
+#include <stack>
+#include <functional>
 
 namespace slime::pass {
 
-using namespace slime::ir;
+using namespace ir;
 
-void FunctionInliningPass::run(Module *module) {
-    for (auto function : module->globalObjects()) {
-        if (function->isFunction()) {
-            testAndSetRecursionFlag(function->asFunction());
+void MemoryToRegisterPass::runOnFunction(Function *target) {
+    std::set<Value *>       promotableVarSet;
+    std::set<Instruction *> deleteLater;
+
+    auto &blocks = target->basicBlocks();
+
+    //! compute deep first order
+    std::map<BasicBlock *, int> dfn;
+    int                         dfOrder = -1;
+    for (auto block : blocks) { dfn[block] = dfOrder; }
+    std::stack<BasicBlock *> dfStack;
+    dfStack.push(target->front());
+    while (!dfStack.empty()) {
+        auto block = dfStack.top();
+        dfStack.pop();
+        if (dfn[block] != -1) { continue; }
+        dfn[block] = ++dfOrder;
+        if (block->isBranched()) {
+            dfStack.push(block->branch());
+            dfStack.push(block->branchElse());
+        } else if (block->isLinear() && !block->isTerminal()) {
+            dfStack.push(block->branch());
         }
     }
-    UniversalIRPass::run(module);
-}
+    std::vector<BasicBlock *> sortedBlocks(blocks.begin(), blocks.end());
+    std::sort(
+        sortedBlocks.begin(),
+        sortedBlocks.end(),
+        [&dfn](const auto &lhs, const auto &rhs) {
+            return dfn[lhs] < dfn[rhs];
+        });
 
-void FunctionInliningPass::runOnFunction(Function *target) {
-    auto blockIter = target->basicBlocks().begin();
-    while (blockIter != target->basicBlocks().end()) {
-        auto block    = *blockIter;
-        auto instIter = block->instructions().begin();
-        while (instIter != block->instructions().end()) {
+    //! simplify inblock memory operations
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
+
+        auto &instrs   = block->instructions();
+        auto  instIter = instrs.begin();
+
+        std::map<Value *, StoreInst *> def;
+        while (instIter != instrs.end()) {
             auto inst = *instIter++;
-            if (inst->id() != InstructionID::Call) { continue; }
-            auto instAfterCall = *instIter;
-            bool done = tryExecuteFunctionInlining(block, inst->asCall());
-            if (done) { break; }
+
+            //! get promotable alloca
+            if (inst->id() == InstructionID::Alloca) {
+                auto alloca     = inst->asAlloca();
+                bool promotable = true;
+                for (auto use : alloca->uses()) {
+                    const auto id = use->owner()->asInstruction()->id();
+                    if (id != InstructionID::Load
+                        && id != InstructionID::Store) {
+                        promotable = false;
+                        break;
+                    }
+                }
+                if (promotable) { promotableVarSet.insert(alloca); }
+                continue;
+            }
+
+            //! update most recent store
+            if (inst->id() == InstructionID::Store) {
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                auto &lastStore = def[target];
+                if (lastStore != nullptr) {
+                    auto ok = lastStore->removeFromBlock();
+                    assert(ok);
+                }
+                lastStore = store;
+                continue;
+            }
+
+            //! forward use-def
+            if (inst->id() == InstructionID::Load) {
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!promotableVarSet.count(target)) { continue; }
+                if (load->uses().size() == 0) {
+                    auto ok = load->removeFromBlock();
+                    assert(ok);
+                    continue;
+                }
+                auto &lastStore = def[target];
+                if (lastStore == nullptr) {
+                    //! value is from preds or is a non-def
+                    continue;
+                }
+                std::vector<Use *> uses(
+                    load->uses().begin(), load->uses().end());
+                for (auto use : uses) { use->reset(lastStore->rhs()); }
+                auto ok = load->removeFromBlock();
+                assert(ok);
+                continue;
+            }
         }
-        //! WARNING: delay the iter increment due to iterBlock invliadation
-        //! caused by function inlining
-        ++blockIter;
+    }
+
+    //! remove unused alloca
+    for (auto var : promotableVarSet) {
+        auto alloca  = var->asInstruction()->asAlloca();
+        bool hasUser = false;
+        for (auto use : alloca->uses()) {
+            auto inst = use->owner()->asInstruction();
+            if (inst->id() == InstructionID::Load) {
+                auto load = inst->asLoad();
+                if (load->uses().size() > 0) {
+                    hasUser = true;
+                    break;
+                }
+            }
+        }
+        if (!hasUser) {
+            std::vector<Use *> uses(
+                alloca->uses().begin(), alloca->uses().end());
+            for (auto use : uses) {
+                auto ok = use->owner()->asInstruction()->removeFromBlock();
+                assert(ok);
+            }
+            deleteLater.insert(alloca);
+        }
+    }
+    for (auto var : deleteLater) {
+        auto ok = var->removeFromBlock();
+        assert(ok);
+        promotableVarSet.erase(var->unwrap());
+    }
+    deleteLater.clear();
+
+    //! compute dom tree and frontiers
+    BlockMap    idom;
+    BlockSetMap domfr;
+    BlockSetMap idomSuccs;
+    computeDomFrontier(idom, domfr, target);
+    for (auto &[succ, dominator] : idom) { idomSuccs[dominator].insert(succ); }
+
+    //! place phi node
+    std::map<PhiInst *, AllocaInst *> phiSource;
+    std::set<PhiInst *>               phiSet;
+    for (auto var : promotableVarSet) {
+        std::set<BasicBlock *>   visted;
+        std::stack<BasicBlock *> worklist;
+
+        auto alloca = var->asInstruction()->asAlloca();
+        for (auto use : alloca->uses()) {
+            auto user = use->owner()->asInstruction();
+            if (user->id() != InstructionID::Store) { continue; }
+            auto store = user->asStore();
+            worklist.push(store->parent());
+        }
+
+        while (!worklist.empty()) {
+            auto df = worklist.top();
+            worklist.pop();
+            for (auto frontier : domfr[df]) {
+                if (visted.count(frontier)) { continue; }
+                auto phi = PhiInst::create(alloca->type()->tryGetElementType());
+                phi->insertToHead(frontier);
+                phiSource[phi] = alloca;
+                phiSet.insert(phi);
+                visted.insert(frontier);
+                worklist.push(frontier);
+            }
+        }
+    }
+
+    //! place non-def load
+    std::set<LoadInst *> nondefSet;
+    for (auto var : promotableVarSet) {
+        auto nondef = LoadInst::create(var);
+        nondefSet.insert(nondef);
+        nondef->insertAfter(var->asInstruction());
+    }
+
+    //! compute reach defines
+    using DefineListTable = std::map<Value *, std::set<Instruction *>>;
+    std::map<BasicBlock *, DefineListTable> reachDefines;
+    std::set<StoreInst *>                   storeSet;
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
+        std::map<Value *, Instruction *> defineTable;
+
+        auto &incomingValues = reachDefines[block];
+        auto &instrs         = block->instructions();
+        auto  instIter       = instrs.begin();
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+            //! define from phi
+            if (inst->id() == InstructionID::Phi) {
+                auto phi    = inst->asPhi();
+                auto target = phiSource[phi];
+                assert(promotableVarSet.count(target));
+                defineTable[target] = phi;
+                continue;
+            }
+            //! define from store
+            if (inst->id() == InstructionID::Store) {
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                defineTable[target] = store;
+                storeSet.insert(store);
+                continue;
+            }
+            //! nondef from load
+            if (inst->id() == InstructionID::Load) {
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!nondefSet.count(load)) { continue; }
+                defineTable[target] = load;
+                continue;
+            }
+        }
+
+        std::vector<BasicBlock *> succs;
+        if (block->isBranched()) {
+            succs.push_back(block->branch());
+            succs.push_back(block->branchElse());
+        } else if (block->isLinear() && !block->isTerminal()) {
+            succs.push_back(block->branch());
+        }
+        for (auto succ : succs) {
+            auto &incomings = reachDefines[succ];
+            for (auto &[var, def] : defineTable) { incomings[var].insert(def); }
+            for (auto &[var, defs] : incomingValues) {
+                if (!defineTable.count(var)) {
+                    auto &incomings = reachDefines[succ];
+                    incomings[var].insert(defs.begin(), defs.end());
+                }
+            }
+        }
+    }
+
+    //! apply reach defines
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
+        std::map<Value *, Instruction *> defineTable;
+
+        auto &incomingValues = reachDefines[block];
+        auto &instrs         = block->instructions();
+        auto  instIter       = instrs.begin();
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+
+            if (inst->id() == InstructionID::Phi) {
+                auto phi    = inst->asPhi();
+                auto target = phiSource[phi];
+                for (auto value : incomingValues[target]) {
+                    auto source = value->parent();
+                    auto define = value->unwrap();
+                    if (value->id() == InstructionID::Store) {
+                        define = value->asStore()->rhs();
+                    }
+                    phi->addIncomingValue(define, source);
+                }
+                defineTable[target] = phi;
+                continue;
+            }
+
+            if (inst->id() == InstructionID::Store) {
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                defineTable[target] = store;
+                continue;
+            }
+
+            if (inst->id() == InstructionID::Load) {
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!promotableVarSet.count(target)) { continue; }
+                if (nondefSet.count(load)) {
+                    defineTable[target] = load;
+                    continue;
+                }
+
+                Value *value = nullptr;
+                if (defineTable.count(target)) {
+                    value = defineTable[target]->unwrap();
+                } else if (
+                    incomingValues.count(target)
+                    && incomingValues[target].size() == 1) {
+                    value = (*incomingValues[target].begin())->unwrap();
+                }
+                if (value->asInstruction()->id() == InstructionID::Store) {
+                    value = value->asInstruction()->asStore()->rhs();
+                }
+                assert(value != nullptr);
+
+                std::vector<Use *> uses(
+                    load->uses().begin(), load->uses().end());
+                for (auto use : uses) { use->reset(value); }
+
+                auto ok = load->removeFromBlock();
+                assert(ok);
+
+                continue;
+            }
+        }
+    }
+
+    //! clean up insts
+    for (auto phi : phiSet) {
+        bool shouldRemove = phi->uses().size() == 0;
+        if (auto singleIncoming = phi->totalOperands() == 2) {
+            auto source = static_cast<BasicBlock *>(phi->op()[1].value());
+            auto value  = phi->op()[0];
+            std::vector<Use *> uses(phi->uses().begin(), phi->uses().end());
+            for (auto use : uses) {
+                auto owner = use->owner()->asInstruction();
+                use->reset(value);
+                if (owner->id() == InstructionID::Phi) {
+                    (use + 1)->reset(source);
+                }
+            }
+            shouldRemove = true;
+        }
+        if (shouldRemove) {
+            auto ok = phi->removeFromBlock();
+            assert(ok);
+        }
+    }
+
+    for (auto load : nondefSet) {
+        if (load->uses().size() == 0) {
+            auto ok = load->removeFromBlock();
+            assert(ok);
+            deleteLater.insert(load);
+        }
+    }
+    for (auto load : deleteLater) { nondefSet.erase(load->asLoad()); }
+    deleteLater.clear();
+
+    for (auto store : storeSet) {
+        auto ok = store->removeFromBlock();
+        assert(ok);
+    }
+
+    for (auto alloca : promotableVarSet) {
+        assert(alloca->uses().size() <= 1);
+        if (alloca->uses().size() == 0) {
+            auto ok = alloca->asInstruction()->asAlloca()->removeFromBlock();
+            assert(ok);
+        }
     }
 }
 
-bool FunctionInliningPass::tryExecuteFunctionInlining(
-    BasicBlock *block, CallInst *call) {
-    auto target = block->parent();
-    auto fn     = call->callee()->asFunction();
-    if (isRecursiveFunction(fn)) { return false; }
+void MemoryToRegisterPass::computeDomFrontier(
+    BlockMap &idom, BlockSetMap &domfr, Function *target) {
+    const auto n = target->size();
 
-    //! FIXME: function with no blocks can be either external or
-    //! empty
-    //! here assume a 0-block function is an external one
-    if (fn->size() == 0) { return false; }
-
-    //! ================
-    //! block:
-    //!     ...
-    //!     %ret = call ...
-    //!     ...rest
-    //! ================
-    //! block:
-    //!     ...
-    //!     %ret = call ...
-    //!     br %inline.entry
-    //! inline.entry:
-    //!     %retptr = alloca ...
-    //!     br %inline.blocks..., %inline.exit
-    //! inline.blocks...:
-    //!     ...
-    //! inline.exit:
-    //!     %retval = load retptr
-    //!     ...rest
-    //! ================
-
-    auto inlineEntry = BasicBlock::create(target);
-    auto inlineExit  = insertNewBlockAfter(call);
-    inlineEntry->insertOrMoveAfter(block);
-    block->reset(inlineEntry);
-
-    //! block mapping table for inlining
-    std::map<ir::BasicBlock *, ir::BasicBlock *> blockMappings;
-
-    //! value mapping table for inlining
-    std::map<ir::Value *, ir::Value *> instValueMappings;
-
-    //! prepare retval store
-    AllocaInst *retvalAddress = nullptr;
-    Value      *retval        = nullptr;
-    if (!fn->proto()->returnType()->isVoid()) {
-        retvalAddress = Instruction::createAlloca(call->type());
-        retvalAddress->insertToHead(inlineEntry);
-        auto load = Instruction::createLoad(retvalAddress);
-        load->insertToHead(inlineExit);
-        retval = load->unwrap();
-    }
-    instValueMappings[call] = retval;
-
-    auto mapping = [&](Value *value) {
-        if (value->isLabel()) {
-            value = blockMappings[static_cast<BasicBlock *>(value)];
-        } else if (value->isInstruction()) {
-            assert(instValueMappings.count(value));
-            value = instValueMappings[value];
-        } else if (value->isParameter()) {
-            value = call->paramAt(static_cast<Parameter *>(value)->index());
-        }
-        assert(value != nullptr);
-        return value;
+    //! NOTE: using linked list to represent graph
+    using edge_t = struct {
+        int succ;
+        int nextEdge;
     };
 
-    auto currentBlock = inlineEntry;
-    for (auto block : fn->basicBlocks()) {
-        auto thisBlock = BasicBlock::create(target);
-        thisBlock->insertOrMoveAfter(currentBlock);
-        currentBlock         = thisBlock;
-        blockMappings[block] = thisBlock;
-    }
-    inlineEntry->reset(static_cast<BasicBlock *>(mapping(fn->front())));
+    std::vector<edge_t> edges;
+    std::vector<int>    graph(n, -1);
+    std::vector<int>    graphInv(n, -1);
+    std::vector<int>    semiTree(n, -1);
 
-    auto inlineBlockIter = fn->basicBlocks().begin();
-    while (inlineBlockIter != fn->basicBlocks().end()) {
-        auto inlineBlock = *inlineBlockIter++;
-        currentBlock     = blockMappings[inlineBlock];
-        auto instIter    = inlineBlock->instructions().begin();
-        while (instIter != inlineBlock->instructions().end()) {
-            auto inst   = *instIter++;
-            auto cloned = cloneInstruction(inst, mapping);
-            if (inst->id() == InstructionID::Br) {
-                assert(instIter == inlineBlock->instructions().end());
-                if (inlineBlock->isBranched()) {
-                    currentBlock->reset(
-                        mapping(inlineBlock->control()),
-                        static_cast<BasicBlock *>(
-                            mapping(inlineBlock->branch())),
-                        static_cast<BasicBlock *>(
-                            mapping(inlineBlock->branchElse())));
-                } else {
-                    assert(!inlineBlock->isTerminal());
-                    currentBlock->reset(static_cast<BasicBlock *>(
-                        mapping(inlineBlock->branch())));
-                }
-            } else if (inst->id() == InstructionID::Ret) {
-                assert(instIter == inlineBlock->instructions().end());
-                if (retvalAddress != nullptr) {
-                    Instruction::createStore(
-                        retvalAddress, mapping(inst->asRet()->operand()))
-                        ->insertToTail(currentBlock);
-                }
-                currentBlock->reset(inlineExit);
-            } else {
-                assert(cloned != nullptr);
-                instValueMappings[inst->unwrap()] = cloned->unwrap();
-                cloned->insertToTail(currentBlock);
-            }
-        }
-        assert(!currentBlock->isIncomplete() && currentBlock->size() > 0);
+    //! encode BasicBlock* into int
+    std::map<BasicBlock *, int> index;
+    std::vector<BasicBlock *>   revIndex(n);
+    int                         i = 0;
+    for (auto block : target->basicBlocks()) {
+        index[block]  = i;
+        revIndex[i++] = block;
     }
 
-    //! replace retval
-    if (retvalAddress != nullptr) {
-        std::vector uses(call->uses().begin(), call->uses().end());
-        for (auto &use : uses) { use->reset(retval); }
-        assert(call->uses().size() == 0);
-    }
-    call->removeFromBlock();
-
-    return true;
-}
-
-BasicBlock *FunctionInliningPass::insertNewBlockAfter(Instruction *inst) {
-    assert(inst->id() != InstructionID::Br);
-    assert(inst->id() != InstructionID::Ret);
-
-    auto thisBlock = inst->parent();
-    auto fn        = thisBlock->parent();
-    auto block     = BasicBlock::create(fn);
-    block->insertOrMoveAfter(thisBlock);
-
-    auto iter = inst->intoIter();
-    ++iter;
-    while (iter != thisBlock->instructions().end()) {
-        auto inst = *iter++;
-        inst->insertToTail(block);
-    }
-
-    block->syncFlowWithInstUnsafe();
-    thisBlock->reset(block);
-
-    return block;
-}
-
-void FunctionInliningPass::testAndSetRecursionFlag(Function *function) {
-    if (depsMap.count(function)) { return; }
-    auto &deps = depsMap[function];
-    for (auto block : function->basicBlocks()) {
-        for (auto inst : block->instructions()) {
-            if (inst->id() == InstructionID::Call) {
-                deps.insert(inst->asCall()->callee()->asFunction());
-            }
+    //! build graph
+    for (auto block : target->basicBlocks()) {
+        for (auto pred : block->inBlocks()) {
+            auto from = index[pred];
+            auto to   = index[block];
+            edges.push_back({to, graph[from]});
+            graph[from] = edges.size() - 1;
+            edges.push_back({from, graphInv[to]});
+            graphInv[to] = edges.size() - 1;
         }
     }
-}
 
-Instruction *FunctionInliningPass::cloneInstruction(
-    Instruction                            *instruction,
-    std::function<ir::Value *(ir::Value *)> mappingStrategy) {
-    Instruction *value = nullptr;
-    switch (instruction->id()) {
-        case InstructionID::Alloca: {
-            value = Instruction::createAlloca(
-                instruction->asAlloca()->type()->tryGetElementType());
-        } break;
-        case InstructionID::Load: {
-            auto load = instruction->asLoad();
-            value = Instruction::createLoad(mappingStrategy(load->operand()));
-        } break;
-        case InstructionID::Store: {
-            auto store = instruction->asStore();
-            value      = Instruction::createStore(
-                mappingStrategy(store->lhs()), mappingStrategy(store->rhs()));
-        } break;
-        case InstructionID::GetElementPtr: {
-            auto getelementptr = instruction->asGetElementPtr();
-            if (getelementptr->op<2>() == nullptr) {
-                value = Instruction::createGetElementPtr(
-                    mappingStrategy(getelementptr->op<0>()),
-                    mappingStrategy(getelementptr->op<1>()));
-            } else {
-                value = Instruction::createGetElementPtr(
-                    mappingStrategy(getelementptr->op<0>()),
-                    mappingStrategy(getelementptr->op<1>()),
-                    mappingStrategy(getelementptr->op<2>()));
+    std::vector<int> idom_(n);
+
+    //! Lengauer-Tarjan algorithm
+    //! 1. compute deep-first order
+    //! 2. compute semi-dom
+    //! 3. compute idom
+
+    //! dfn[k] := deep-first order of node k
+
+    //! semi[k] := x with min dfn[x],
+    //!     where x->xi...->k, dfn[xi] > dfn[k], i >= 1
+
+    //! if dfn[x] < dfn[k] then semi[k] may be x
+    //! if dfn[x] > dfn[k] then semi[k] may be semi[u],
+    //!     where u is ancestor of k, dfn[u] > dfn[k],
+    //!     where x->k
+
+    //! if x = v then idom[k] = x
+    //! if dfn[x] > dfn[v] then idom[k] = idom[u],
+    //!     where x = semi[k], k->...->x, v = semi[u],
+    //!     where u with min dfn[u], u belongs k->...
+
+    std::vector<int> dfn(n, -1);
+    std::vector<int> father(n);
+    std::vector<int> unionSet(n);
+    std::vector<int> semi(n);
+    std::vector<int> minNode(n);
+    std::vector<int> nodeAt;
+
+    std::function<void(int)> tarjan = [&](int k) {
+        dfn[k] = nodeAt.size();
+        nodeAt.push_back(k);
+        for (int i = graph[k]; i != -1; i = edges[i].nextEdge) {
+            if (dfn[edges[i].succ] == -1) {
+                father[edges[i].succ] = k;
+                tarjan(edges[i].succ);
             }
-        } break;
-        case InstructionID::Add: {
-            auto add = instruction->asAdd();
-            value    = Instruction::createAdd(
-                mappingStrategy(add->lhs()), mappingStrategy(add->rhs()));
-        } break;
-        case InstructionID::Sub: {
-            auto sub = instruction->asSub();
-            value    = Instruction::createSub(
-                mappingStrategy(sub->lhs()), mappingStrategy(sub->rhs()));
-        } break;
-        case InstructionID::Mul: {
-            auto mul = instruction->asMul();
-            value    = Instruction::createMul(
-                mappingStrategy(mul->lhs()), mappingStrategy(mul->rhs()));
-        } break;
-        case InstructionID::UDiv: {
-            auto udiv = instruction->asUDiv();
-            value     = Instruction::createUDiv(
-                mappingStrategy(udiv->lhs()), mappingStrategy(udiv->rhs()));
-        } break;
-        case InstructionID::SDiv: {
-            auto sdiv = instruction->asSDiv();
-            value     = Instruction::createSDiv(
-                mappingStrategy(sdiv->lhs()), mappingStrategy(sdiv->rhs()));
-        } break;
-        case InstructionID::URem: {
-            auto urem = instruction->asURem();
-            value     = Instruction::createURem(
-                mappingStrategy(urem->lhs()), mappingStrategy(urem->rhs()));
-        } break;
-        case InstructionID::SRem: {
-            auto srem = instruction->asSRem();
-            value     = Instruction::createSRem(
-                mappingStrategy(srem->lhs()), mappingStrategy(srem->rhs()));
-        } break;
-        case InstructionID::FNeg: {
-            auto fneg = instruction->asFNeg();
-            value = Instruction::createFNeg(mappingStrategy(fneg->operand()));
-        } break;
-        case InstructionID::FAdd: {
-            auto fadd = instruction->asFAdd();
-            value     = Instruction::createFAdd(
-                mappingStrategy(fadd->lhs()), mappingStrategy(fadd->rhs()));
-        } break;
-        case InstructionID::FSub: {
-            auto fsub = instruction->asFSub();
-            value     = Instruction::createFSub(
-                mappingStrategy(fsub->lhs()), mappingStrategy(fsub->rhs()));
-        } break;
-        case InstructionID::FMul: {
-            auto fmul = instruction->asFMul();
-            value     = Instruction::createFMul(
-                mappingStrategy(fmul->lhs()), mappingStrategy(fmul->rhs()));
-        } break;
-        case InstructionID::FDiv: {
-            auto fdiv = instruction->asFDiv();
-            value     = Instruction::createFDiv(
-                mappingStrategy(fdiv->lhs()), mappingStrategy(fdiv->rhs()));
-        } break;
-        case InstructionID::FRem: {
-            auto frem = instruction->asFRem();
-            value     = Instruction::createFRem(
-                mappingStrategy(frem->lhs()), mappingStrategy(frem->rhs()));
-        } break;
-        case InstructionID::Shl: {
-            auto shl = instruction->asShl();
-            value    = Instruction::createShl(
-                mappingStrategy(shl->lhs()), mappingStrategy(shl->rhs()));
-        } break;
-        case InstructionID::LShr: {
-            auto lshr = instruction->asLShr();
-            value     = Instruction::createLShr(
-                mappingStrategy(lshr->lhs()), mappingStrategy(lshr->rhs()));
-        } break;
-        case InstructionID::AShr: {
-            auto ashr = instruction->asAShr();
-            value     = Instruction::createAShr(
-                mappingStrategy(ashr->lhs()), mappingStrategy(ashr->rhs()));
-        } break;
-        case InstructionID::And: {
-            auto instAnd = instruction->asAnd();
-            value        = Instruction::createAnd(
-                mappingStrategy(instAnd->lhs()),
-                mappingStrategy(instAnd->rhs()));
-        } break;
-        case InstructionID::Or: {
-            auto instOr = instruction->asOr();
-            value       = Instruction::createOr(
-                mappingStrategy(instOr->lhs()), mappingStrategy(instOr->rhs()));
-        } break;
-        case InstructionID::Xor: {
-            auto instXor = instruction->asXor();
-            value        = Instruction::createXor(
-                mappingStrategy(instXor->lhs()),
-                mappingStrategy(instXor->rhs()));
-        } break;
-        case InstructionID::FPToUI: {
-            auto fptoui = instruction->asFPToUI();
-            value =
-                Instruction::createFPToUI(mappingStrategy(fptoui->operand()));
-        } break;
-        case InstructionID::FPToSI: {
-            auto fptosi = instruction->asFPToSI();
-            value =
-                Instruction::createFPToSI(mappingStrategy(fptosi->operand()));
-        } break;
-        case InstructionID::UIToFP: {
-            auto uitofp = instruction->asUIToFP();
-            value =
-                Instruction::createUIToFP(mappingStrategy(uitofp->operand()));
-        } break;
-        case InstructionID::SIToFP: {
-            auto sitofp = instruction->asSIToFP();
-            value =
-                Instruction::createSIToFP(mappingStrategy(sitofp->operand()));
-        } break;
-        case InstructionID::ZExt: {
-            auto zext = instruction->asZExt();
-            value = Instruction::createZExt(mappingStrategy(zext->operand()));
-        } break;
-        case InstructionID::ICmp: {
-            auto icmp = instruction->asICmp();
-            value     = Instruction::createICmp(
-                icmp->predicate(),
-                mappingStrategy(icmp->lhs()),
-                mappingStrategy(icmp->rhs()));
-        } break;
-        case InstructionID::FCmp: {
-            auto fcmp = instruction->asFCmp();
-            value     = Instruction::createFCmp(
-                fcmp->predicate(),
-                mappingStrategy(fcmp->lhs()),
-                mappingStrategy(fcmp->rhs()));
-        } break;
-        case InstructionID::Phi: {
-            auto phi = Instruction::createPhi(instruction->unwrap()->type());
-            for (int i = 0; i < instruction->totalOperands(); i += 2) {
-                if (instruction->useAt(i) == nullptr) { break; }
-                phi->addIncomingValue(
-                    mappingStrategy(instruction->useAt(i)),
-                    static_cast<BasicBlock *>(
-                        mappingStrategy(instruction->useAt(i + 1))));
-            }
-            value = phi;
-        } break;
-        case InstructionID::Call: {
-            auto call = Instruction::createCall(
-                instruction->asCall()->callee()->asFunction());
-            for (int i = 1; i < instruction->totalOperands(); ++i) {
-                call->op()[i] = mappingStrategy(instruction->useAt(i));
-            }
-            value = call;
-        } break;
-        default: {
-        } break;
+        }
+    };
+
+    std::function<int(int)> query = [&](int k) {
+        if (k == unionSet[k]) { return k; }
+        int result = query(unionSet[k]);
+        if (dfn[semi[minNode[unionSet[k]]]] < dfn[semi[minNode[k]]]) {
+            minNode[k] = minNode[unionSet[k]];
+        }
+        unionSet[k] = result;
+        return result;
+    };
+
+    //! compute deep-first order
+    tarjan(0);
+
+    //! initialize
+    for (int i = 0; i < n; ++i) {
+        semi[i]     = i;
+        unionSet[i] = i;
+        minNode[i]  = i;
     }
-    return value;
+
+    //! process in reverse dfn order
+    for (int i = nodeAt.size() - 1; i > 0; --i) {
+        //! compute semi-dom
+        int t = nodeAt[i];
+        for (int i = graphInv[t]; i != -1; i = edges[i].nextEdge) {
+            auto succ = edges[i].succ;
+            if (dfn[succ] == -1) { continue; }
+            query(succ);
+            if (dfn[semi[minNode[succ]]] < dfn[semi[t]]) {
+                semi[t] = semi[minNode[succ]];
+            }
+        }
+        unionSet[t] = father[t];
+
+        //! update semi tree
+        edges.push_back({t, semiTree[semi[t]]});
+        semiTree[semi[t]] = edges.size() - 1;
+
+        //! compute idom
+        t = father[t];
+        for (int i = semiTree[t]; i != -1; i = edges[i].nextEdge) {
+            auto succ = edges[i].succ;
+            query(succ);
+            idom_[succ] = t == semi[minNode[succ]] ? t : minNode[succ];
+        }
+
+        //! reset semi tree
+        semiTree[t] = -1;
+    }
+
+    //! post process to finalize idom
+    for (int i = 1; i < nodeAt.size(); ++i) {
+        auto t = nodeAt[i];
+        if (idom_[t] != semi[t]) { idom_[t] = idom_[idom_[t]]; }
+    }
+
+    //! compute dom frontier by idom
+    idom.clear();
+    for (auto block : target->basicBlocks()) {
+        idom[block] = revIndex[idom_[index[block]]];
+    }
+
+    domfr.clear();
+    for (auto block : target->basicBlocks()) { domfr[block].clear(); }
+
+    for (auto block : target->basicBlocks()) {
+        if (block->inBlocks().size() <= 1) { continue; }
+        for (auto pred : block->inBlocks()) {
+            auto runner = pred;
+            while (runner != idom[block]) {
+                domfr[runner].insert(block);
+                runner = idom[runner];
+            }
+        }
+    }
+
+    std::vector<BasicBlock *> deleteLater;
+    for (auto [succ, dominator] : idom) {
+        if (succ == dominator) { deleteLater.push_back(succ); }
+    }
+    for (auto block : deleteLater) { idom.erase(block); }
 }
 
 } // namespace slime::pass

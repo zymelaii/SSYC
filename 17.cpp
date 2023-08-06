@@ -14,13 +14,13 @@
 #include "20.h"
 
 #include "58.h"
-#include "94.h"
+#include "92.h"
+#include "96.h"
 #include "98.h"
-#include "100.h"
 #include "14.h"
-#include "70.h"
-#include "82.h"
-#include "78.h"
+#include "68.h"
+#include "80.h"
+#include "76.h"
 #include <filesystem>
 #include <iostream>
 #include <ostream>
@@ -213,7 +213,7 @@ void Driver::execute(int argc, char** argv) {
             currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
         pass::ControlFlowSimplificationPass{}.run(module);
         pass::ResortPass{}.run(module);
-        // pass::MemoryToRegisterPass{}.run(module);
+        pass::MemoryToRegisterPass{}.run(module);
 
         if (EmitIR) {
             auto visitor = visitor::IRDumpVisitor::createWithOstream(ostream);

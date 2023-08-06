@@ -1,37 +1,23 @@
-#pragma once
+#include "85.h"
 
-#include "87.h"
-
-#include "53.h"
-#include <vector>
 #include <set>
-#include <map>
 
 namespace slime::pass {
 
-class SCCPPass : public UniversalIRPass {
+class ValueNumberingPass final : public UniversalIRPass {
 public:
-    void runOnFunction(ir::Function *target) override;
-
-protected:
-    void runOnInstruction(ir::Instruction *inst);
+    inline void run(ir::Module *target) override;
+    void        runOnFunction(ir::Function *target) override;
 
 private:
-    struct CFGFlow {
-        ir::BasicBlock *from;
-        ir::BasicBlock *to;
-    };
-
-    enum Status {
-        BOT   = 0b00,
-        CONST = 0b01,
-        TOP   = 0b10,
-    };
-
-    std::vector<ir::Instruction *> ssaWorkList_;
-    std::vector<CFGFlow>           cfgWorkList_;
-    std::map<ir::Value *, Status>  valueStatus_;
-    std::set<CFGFlow>              flags_;
+    int                   nextId_ = 0;
+    std::set<ir::Value *> doneSet_;
 };
+
+inline void ValueNumberingPass::run(ir::Module *target) {
+    for (auto obj : target->globalObjects()) {
+        if (obj->isFunction()) { runOnFunction(obj->asFunction()); }
+    }
+}
 
 } // namespace slime::pass
