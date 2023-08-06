@@ -1,67 +1,34 @@
 #pragma once
 
-#include "0.h"
-#include <iostream>
-#include <iomanip>
-#include <stddef.h>
-#include <assert.h>
+#include "87.h"
 
-namespace slime::visitor {
+#include <functional>
 
-class ASTDumpVisitor {
+namespace slime::pass {
+
+class FunctionInliningPass : public UniversalIRPass {
 public:
-    ASTDumpVisitor(const ASTDumpVisitor&)            = delete;
-    ASTDumpVisitor& operator=(const ASTDumpVisitor&) = delete;
-
-    static ASTDumpVisitor* createWithOstream(std::ostream* os) {
-        return new ASTDumpVisitor(os);
-    }
-
-    void setIndent(size_t w) {
-        assert(w > 0);
-        indent_ = w;
-    }
-
-    void visit(ast::TranslationUnit* e);
-    void visit(ast::VarDecl* e);
-    void visit(ast::ParamVarDecl* e);
-    void visit(ast::FunctionDecl* e);
-    void visit(ast::Stmt* e);
-    void visit(ast::Expr* e);
-    void visit(ast::UnaryExpr* e);
-    void visit(ast::BinaryExpr* e);
-    void visit(ast::Type* e);
+    void run(ir::Module *module) override;
+    void runOnFunction(ir::Function *target) override;
 
 protected:
-    ASTDumpVisitor(std::ostream* os)
-        : os_{os}
-        , depth_{0} {
-        setIndent(2);
+    bool tryExecuteFunctionInlining(ir::BasicBlock *block, ir::CallInst *iter);
+
+    ir::BasicBlock *insertNewBlockAfter(ir::Instruction *inst);
+
+    inline bool isRecursiveFunction(ir::Function *fn) {
+        return depsMap[fn].count(fn) > 0;
     }
 
-    std::ostream& os() {
-        assert(depth_ <= 1024 && "AST is too deep");
-        *os_ << std::setw(depth_ * indent_) << "";
-        return *os_;
-    }
+    void testAndSetRecursionFlag(ir::Function *function);
 
-    struct DepthGuard {
-        DepthGuard(int& value)
-            : value_{value} {
-            ++value_;
-        }
-
-        ~DepthGuard() {
-            --value_;
-        }
-
-        int& value_;
-    };
+    ir::Instruction *cloneInstruction(
+        ir::Instruction                        *instruction,
+        std::function<ir::Value *(ir::Value *)> mappingStrategy);
 
 private:
-    std::ostream* os_;
-    size_t        indent_;
-    int           depth_;
+    //! function dependency map
+    std::map<ir::Function *, std::set<ir::Function *>> depsMap;
 };
 
-} // namespace slime::visitor
+} // namespace slime::pass

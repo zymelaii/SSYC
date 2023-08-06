@@ -1,90 +1,197 @@
 #pragma once
 
-#include <set>
+#include "28.h"
+#include "30.h"
+
+#include "40.h"
+#include "39.h"
+#include <string_view>
+#include <stdint.h>
 #include <assert.h>
 
-namespace slime::ir {
+namespace slime::experimental::ir {
 
-class BasicBlock;
-class Value;
+using UseList = LinkedList<Use *>;
 
-//! NOTE: CFGNode derives the BasicBlock
-class CFGNode {
-public:
-    inline bool isOrphan() const;
-    inline bool isIncomplete() const;
-    inline bool isTerminal() const;
-    inline bool isLinear() const;
-    inline bool isBranched() const;
-
-    inline Value*      control() const;
-    inline BasicBlock* branch() const;
-    inline BasicBlock* branchElse() const;
-
-    void reset();
-    void reset(BasicBlock* branch);
-    void reset(Value* control, BasicBlock* branch, BasicBlock* branchElse);
-
-    bool tryMarkAsTerminal(Value* hint = nullptr);
-    void syncFlowWithInstUnsafe();
-
-    inline size_t totalInBlocks() const {
-        return inBlocks_.size();
-    }
-
-    inline bool maybeFrom(BasicBlock* block) {
-        return inBlocks_.count(block) == 1;
-    }
-
-    inline const std::set<BasicBlock*>& inBlocks() const {
-        return inBlocks_;
-    }
-
-protected:
-    static BasicBlock* terminal();
-
-    void checkAndSolveOutdated();
-
-    void addIncoming(BasicBlock* inBlock);
-    void unlinkFrom(BasicBlock* inBlock);
-
-private:
-    Value*                control_    = nullptr;
-    BasicBlock*           branch_     = nullptr;
-    BasicBlock*           branchElse_ = nullptr;
-    std::set<BasicBlock*> inBlocks_;
+enum class ValueTag : uint32_t {
+    //! static value
+    Static = 0x8000 << 1,
+    //! global object, always a function or global variable
+    Global = Static | (0x8000 << 2),
+    //! constant semantically
+    Constant = 0x8000 << 3,
+    //! read-only completely, usually store in .rodata segment
+    ReadOnly = Constant | Static | (0x8000 << 4),
+    //! value is a label
+    Label = 0x8000 << 5,
+    //! value is an immediate
+    Immediate = ReadOnly | (0x8000 << 6),
+    //! value is a function
+    Function = Global | ReadOnly | (0x8000 << 7),
+    //! value is from an instruction
+    Instruction = 0x8000 << 8,
+    //! value is from a cmp instruction
+    CompareInst = Instruction | (0x8000 << 9),
+    //! value is a parameter
+    Parameter = 0x8000 << 10,
+    //! value is a user
+    User = 0x8000 << 11,
 };
 
-inline bool CFGNode::isOrphan() const {
-    return branch_ == nullptr && inBlocks_.empty();
+class ValueBaseImpl {
+protected:
+    inline ValueBaseImpl(Type *type, uint32_t tag);
+
+public:
+    inline uint32_t id() const;
+    inline Type    *type() const;
+
+    inline std::string_view name() const;
+    inline void             setName(std::string_view name);
+
+    inline bool isStatic() const;
+    inline bool isGlobal() const;
+    inline bool isConstant() const;
+    inline bool isReadOnly() const;
+    inline bool isLabel() const;
+    inline bool isImmediate() const;
+    inline bool isFunction() const;
+    inline bool isInstruction() const;
+    inline bool isParameter() const;
+    inline bool isUser() const;
+
+    void addUse(Use *use) const;
+    void removeUse(Use *use) const;
+
+    inline UseList       &uses();
+    inline const UseList &uses() const;
+
+    inline UseList::iterator use_begin();
+    inline UseList::iterator use_end();
+
+    inline UseList::const_iterator use_begin() const;
+    inline UseList::const_iterator use_end() const;
+
+private:
+    std::string_view name_;
+    int32_t          id_;
+    uint32_t         version_;
+    Type            *type_;
+    uint32_t         tag_;
+    mutable UseList  useList_;
+};
+
+using ValueBase = UniversalTryIntoTraitWrapper<ValueBaseImpl>;
+
+//! alias for forward declaration
+class Value : public ValueBase {
+protected:
+    inline Value(Type *type, uint32_t tag);
+};
+
+} // namespace slime::experimental::ir
+
+namespace slime::experimental::ir {
+
+inline ValueBaseImpl::ValueBaseImpl(Type *type, uint32_t tag)
+    : name_()
+    , id_{0}
+    , version_{0}
+    , type_{type}
+    , tag_{tag}
+    , useList_() {}
+
+inline uint32_t ValueBaseImpl::id() const {
+    return id_;
 }
 
-inline bool CFGNode::isIncomplete() const {
-    return branch_ == nullptr;
+inline std::string_view ValueBaseImpl::name() const {
+    return name_;
 }
 
-inline bool CFGNode::isTerminal() const {
-    return branch_ == terminal();
+inline Type *ValueBaseImpl::type() const {
+    return type_;
 }
 
-inline bool CFGNode::isLinear() const {
-    return branch_ != nullptr && branchElse_ == nullptr;
+inline void ValueBaseImpl::setName(std::string_view name) {
+    name_ = name;
 }
 
-inline bool CFGNode::isBranched() const {
-    return branchElse_ != nullptr;
+inline bool ValueBaseImpl::isStatic() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Static);
+    return (tag_ & testFlag) == testFlag;
 }
 
-inline Value* CFGNode::control() const {
-    return control_;
+inline bool ValueBaseImpl::isGlobal() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Global);
+    return (tag_ & testFlag) == testFlag;
 }
 
-inline BasicBlock* CFGNode::branch() const {
-    return branch_;
+inline bool ValueBaseImpl::isConstant() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Constant);
+    return (tag_ & testFlag) == testFlag;
 }
 
-inline BasicBlock* CFGNode::branchElse() const {
-    return branchElse_;
+inline bool ValueBaseImpl::isReadOnly() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::ReadOnly);
+    return (tag_ & testFlag) == testFlag;
 }
 
-} // namespace slime::ir
+inline bool ValueBaseImpl::isLabel() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Label);
+    return (tag_ & testFlag) == testFlag;
+}
+
+inline bool ValueBaseImpl::isImmediate() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Immediate);
+    return (tag_ & testFlag) == testFlag;
+}
+
+inline bool ValueBaseImpl::isFunction() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Function);
+    return (tag_ & testFlag) == testFlag;
+}
+
+inline bool ValueBaseImpl::isInstruction() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Instruction);
+    return (tag_ & testFlag) == testFlag;
+}
+
+inline bool ValueBaseImpl::isParameter() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::Parameter);
+    return (tag_ & testFlag) == testFlag;
+}
+
+inline bool ValueBaseImpl::isUser() const {
+    const auto testFlag = static_cast<uint32_t>(ValueTag::User);
+    return (tag_ & testFlag) == testFlag;
+}
+
+inline UseList &ValueBaseImpl::uses() {
+    return useList_;
+}
+
+inline UseList::iterator ValueBaseImpl::use_begin() {
+    return useList_.begin();
+}
+
+inline UseList::iterator ValueBaseImpl::use_end() {
+    return useList_.end();
+}
+
+inline const UseList &ValueBaseImpl::uses() const {
+    return useList_;
+}
+
+inline UseList::const_iterator ValueBaseImpl::use_begin() const {
+    return useList_.cbegin();
+}
+
+inline UseList::const_iterator ValueBaseImpl::use_end() const {
+    return useList_.cend();
+}
+
+inline Value::Value(Type *type, uint32_t tag)
+    : ValueBase(type, tag) {}
+
+} // namespace slime::experimental::ir

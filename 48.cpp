@@ -1,181 +1,131 @@
 #include "49.h"
+#include "51.h"
+#include "47.h"
 
-#include "2.h"
-#include "10.h"
-#include "78.h"
-#include <iostream>
-#include <stdlib.h>
+#include <string.h>
 
-namespace slime {
+namespace slime::ir {
 
-using namespace ast;
-using visitor::ASTExprSimplifier;
-
-void Diagnosis::expectAlwaysFalse(std::string_view message) {
-    std::cerr << message << "\n";
+Module::Module(const char* name)
+    : moduleName_{strdup(name)} {
+    initializeBuiltinFunctions();
 }
 
-void Diagnosis::assertAlwaysFalse(std::string_view message) {
-    std::cerr << message << "\n";
-    exit(-1);
+Module::~Module() {
+    free(const_cast<char*>(moduleName_));
+    moduleName_ = nullptr;
+
+    for (auto& [k, v] : i32DataMap_) { delete v; }
+    for (auto& [k, v] : f32DataMap_) { delete v; }
 }
 
-bool Diagnosis::checkTypeConvertible(Type *from, Type *to) {
-    if (auto builtin = to->tryIntoBuiltin()) {
-        auto type = from->tryIntoBuiltin();
-        return !(builtin->isVoid() || type->isVoid());
+ConstantInt* Module::createI8(int8_t value) {
+    if (i8DataMap_.count(value) == 0) {
+        i8DataMap_[value] = ConstantData::createI32(value);
     }
-    if (auto ptr = to->tryIntoIncompleteArray()) {
-        auto array = from->tryIntoArray();
-        if (ptr->size() + 1 != array->size()) { return false; }
-        auto it = array->begin();
-        for (auto e : *ptr) {
-            auto u = ASTExprSimplifier::tryEvaluateCompileTimeExpr(*++it);
-            auto v = ASTExprSimplifier::tryEvaluateCompileTimeExpr(e);
-            if (!u || !v || u->asConstant()->i32 != v->asConstant()->i32) {
-                return false;
-            }
+    return i8DataMap_.at(value);
+}
+
+ConstantInt* Module::createI32(int32_t value) {
+    if (i32DataMap_.count(value) == 0) {
+        i32DataMap_[value] = ConstantData::createI32(value);
+    }
+    return i32DataMap_.at(value);
+}
+
+ConstantFloat* Module::createF32(float value) {
+    if (f32DataMap_.count(value) == 0) {
+        f32DataMap_[value] = ConstantData::createF32(value);
+    }
+    return f32DataMap_.at(value);
+}
+
+GlobalVariable* Module::createString(std::string_view value) {
+    if (strDataMap_.count(value.data()) == 0) {
+        auto type = ArrayType::create(
+            IntegerType::get(IntegerKind::i8), value.size() + 1);
+        auto name =
+            strdup((".str." + std::to_string(strDataMap_.size())).c_str());
+        auto str  = GlobalVariable::create(name, type, true);
+        auto data = ConstantArray::create(type);
+        for (int i = 0; i < value.size() + 1; ++i) {
+            (*data)[i] = createI8(value[i]);
         }
-        return true;
+        str->setInitData(data);
+        auto ok = acceptGlobalVariable(str);
+        assert(ok);
+        strDataMap_[value.data()] = str;
     }
-    //! TODO: check function proto conversion
-    return false;
+    return strDataMap_.at(value.data());
 }
 
-void Diagnosis::assertConditionalExpression(Expr *expr) {
-    assert(expr != nullptr);
-    if (auto builtin = expr->implicitValueType()->tryIntoBuiltin();
-        !builtin || builtin->isVoid()) {
-        assertAlwaysFalse("value is not contextually convertible to bool");
-    }
-}
-
-void Diagnosis::assertWellFormedReturnStatement(
-    ast::ReturnStmt *stmt, ast::FunctionProtoType *proto) {
-    assert(stmt != nullptr);
-    assert(proto != nullptr);
-    assert(proto->returnType->tryIntoBuiltin() != nullptr);
-    auto type     = stmt->implicitValueType()->tryIntoBuiltin();
-    auto expected = proto->returnType->asBuiltin();
-    if (type == nullptr) {
-        assertAlwaysFalse("invalid return type");
-    } else if (type->isVoid() && !expected->isVoid()) {
-        assertAlwaysFalse("missing return value for non-void function");
-    } else if (!type->isVoid() && expected->isVoid()) {
-        assertAlwaysFalse("void function should not return a value");
-    }
-}
-
-void Diagnosis::assertWellFormedBreakStatement(BreakStmt *stmt) {
-    assert(stmt != nullptr);
-    auto loop = stmt->parent;
-    if (!loop || !loop->tryIntoWhileStmt()) {
-        assertAlwaysFalse("break appears out of a loop");
-    }
-}
-
-void Diagnosis::assertWellFormedContinueStatement(ContinueStmt *stmt) {
-    assert(stmt != nullptr);
-    auto loop = stmt->parent;
-    if (!loop || !loop->tryIntoWhileStmt()) {
-        assertAlwaysFalse("continue appears out of a loop");
-    }
-}
-
-void Diagnosis::assertWellFormedForStatement(ast::ForStmt *stmt) {
-    assert(stmt != nullptr);
-    bool isTypeOk = stmt->init->tryIntoNullStmt()
-                 || stmt->init->tryIntoExprStmt()
-                 || stmt->init->tryIntoDeclStmt();
-    isTypeOk = isTypeOk
-            && (stmt->condition->tryIntoNullStmt()
-                || stmt->condition->tryIntoExprStmt());
-    isTypeOk = isTypeOk && stmt->increment->tryIntoNullStmt()
-            || stmt->increment->tryIntoExprStmt();
-    if (!isTypeOk) { assertAlwaysFalse("ill-formed for statement"); }
-    if (auto condition = stmt->condition->tryIntoExprStmt()) {
-        assertConditionalExpression(condition->unwrap());
-    }
-}
-
-void Diagnosis::assertWellFormedCommaExpression(Expr *expr) {
-    assert(expr != nullptr);
-    if (!checkNotNull(expr)) {
-        assertAlwaysFalse("expect expression before comma");
-    }
-}
-
-void Diagnosis::assertNoAssignToConstQualifiedValue(
-    Expr *value, BinaryOperator op) {
-    assert(value != nullptr);
-    //! FIXME: value can be non-decl lvalue
-    if (op == BinaryOperator::Assign) {
-        if (auto decl = value->tryIntoDeclRef()) {
-            const auto &var = decl->source;
-            if (var->specifier->isConst() && op == BinaryOperator::Assign) {
-                assertAlwaysFalse("assign to const-qualified variable");
+bool Module::acceptFunction(Function* fn) {
+    assert(fn != nullptr);
+    assert(!fn->name().empty());
+    if (functions_.count(fn->name()) != 0) {
+        auto& prev = functions_.at(fn->name());
+        //! try to replace declaration with definition
+        if (prev->type()->equals(fn->proto()) && prev->size() == 0
+            && fn->size() != 0) {
+            auto it = node_begin();
+            while (it != node_end()) {
+                if (it->value() == prev) {
+                    it->value() = fn;
+                    break;
+                }
+                ++it;
             }
+            prev = fn;
+            return true;
         }
+        return false;
     }
+    functions_[fn->name()] = fn;
+    insertToTail(fn);
+    return true;
 }
 
-void Diagnosis::assertWellFormedArrayType(ArrayType *type) {
-    assert(type != nullptr);
-    bool pass = type->tryIntoIncompleteArray()
-             || type->tryIntoArray() && type->size() > 0;
-    for (auto e : *type) {
-        if (!pass) { break; }
-        auto expr = ASTExprSimplifier::tryEvaluateCompileTimeExpr(e);
-        pass      = expr != nullptr && expr->tryIntoConstant() != nullptr
-            && expr->asConstant()->type == ConstantType::i32
-            && expr->asConstant()->i32 > 0;
-    }
-    if (!pass) { assertAlwaysFalse("mal-formed array type"); }
+bool Module::acceptGlobalVariable(GlobalVariable* var) {
+    assert(var != nullptr);
+    assert(!var->name().empty());
+    if (globalVariables_.count(var->name()) != 0) { return false; }
+    globalVariables_[var->name()] = var;
+    insertToTail(var);
+    return true;
 }
 
-void Diagnosis::assertSubscriptableValue(Expr *value) {
-    assert(value != nullptr);
-    assertTrue(value->valueType->isArrayLike(), "subscript invalid value");
+Function* Module::lookupFunction(std::string_view name) {
+    return functions_.count(name) > 0 ? functions_.at(name) : nullptr;
 }
 
-void Diagnosis::assertCallable(Expr *callable) {
-    assert(callable != nullptr);
-    if (!callable->valueType->tryIntoFunctionProto()) {
-        assertAlwaysFalse("call to uncallable object");
-    }
+GlobalVariable* Module::lookupGlobalVariable(std::string_view name) {
+    return globalVariables_.count(name) > 0 ? globalVariables_.at(name)
+                                            : nullptr;
 }
 
-void Diagnosis::assertWellFormedFunctionCall(
-    FunctionProtoType *proto, ExprList *arguments) {
-    assert(proto != nullptr);
-    assert(arguments != nullptr);
-    bool matched = proto->size() == arguments->size();
-    if (matched) {
-        auto it = arguments->begin();
-        for (auto type : *proto) {
-            auto valueType = (*it)->valueType;
-            switch (type->typeId) {
-                case TypeID::None:
-                case TypeID::Unresolved:
-                case TypeID::Array: {
-                    matched = false;
-                } break;
-                case TypeID::Builtin: {
-                    matched =
-                        !(valueType->asBuiltin()->isVoid()
-                          || type->asBuiltin()->isVoid());
-                } break;
-                case TypeID::IncompleteArray:
-                case TypeID::FunctionProto: {
-                } break;
-            }
-            if (!matched) { break; }
-            ++it;
-        }
-    }
-    if (!matched) {
-        assertAlwaysFalse("mismatched arguments for the function call");
-    }
+CallInst* Module::createMemset(Value* address, uint8_t value, size_t n) {
+    assert(address != nullptr);
+    auto fn = lookupFunction("memset");
+    assert(fn != nullptr);
+    auto call        = Instruction::createCall(fn);
+    call->paramAt(0) = address;
+    call->paramAt(1) = createI32(value);
+    call->paramAt(2) = createI32(n);
+    return call;
 }
 
-} // namespace slime
+void Module::initializeBuiltinFunctions() {
+    bool ok = false;
+    //! void* memset(void*, int, size_t)
+    auto builtinMemset = Function::create(
+        "memset",
+        FunctionType::create(
+            Type::createPointerType(Type::getVoidType()),
+            Type::createPointerType(Type::getVoidType()),
+            Type::getIntegerType(),
+            Type::getIntegerType()));
+    ok = acceptFunction(builtinMemset);
+    assert(ok);
+}
+
+} // namespace slime::ir

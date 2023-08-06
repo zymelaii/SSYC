@@ -1,6 +1,7 @@
 #include "12.h"
 
-#include "78.h"
+#include "21.h"
+#include "96.h"
 #include <vector>
 
 namespace slime::ast {
@@ -44,6 +45,9 @@ Type* Type::getElementType(Type* type) {
                 return ArrayType::create(t->type, lengthList);
             }
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -61,6 +65,9 @@ Type* Type::extendIntoArrayType(Expr* length) {
         case TypeID::Array: {
             asArray()->insertToTail(length);
             return this;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
@@ -84,6 +91,9 @@ bool Type::equals(const Type* other) const {
         } break;
         case TypeID::FunctionProto: {
             return self->asFunctionProto()->equals(other);
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }

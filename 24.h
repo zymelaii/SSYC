@@ -1,249 +1,164 @@
 #pragma once
 
-#include "26.h"
+#include "32.h"
+#include "36.h"
 
-#include <string_view>
-#include <array>
-#include <vector>
-#include <stdint.h>
-#include <stddef.h>
-#include <assert.h>
+#include "40.h"
 
 namespace slime::experimental::ir {
 
-class UserBase : public Value {
-protected:
-    UserBase(Type *type, uint32_t tag, int totalUseIndicator)
-        : Value(type, tag)
-        , totalUseIndicator_{std::min(totalUseIndicator, 3) + 1} {
-        assert(totalUseIndicator_ >= 0 && totalUseIndicator_ <= 4);
-    }
-
-public:
-    bool used(const Use *use) const {
-        const auto invoke = used_FNPTR_TABLE[totalUseIndicator_];
-        const auto self   = const_cast<UserBase *>(this);
-        return invoke(self, use);
-    }
-
-    size_t totalUse() const {
-        const auto invoke = totalUse_FNPTR_TABLE[totalUseIndicator_];
-        const auto self   = const_cast<UserBase *>(this);
-        return invoke(self);
-    }
-
-    Use *uses() const {
-        const auto invoke = uses_FNPTR_TABLE[totalUseIndicator_];
-        const auto self   = const_cast<UserBase *>(this);
-        return invoke(self);
-    }
-
-    Use &useAt(int index) const {
-        assert(index >= 0 && index < totalUse());
-        assert(uses() != nullptr);
-        return uses()[index];
-    }
-
-protected:
-    template <typename Derived>
-    static bool usedForwardFn(UserBase *self, const Use *use) {
-        return static_cast<Derived *>(self)->used(use);
-    }
-
-    template <typename Derived>
-    static size_t totalUseForwardFn(UserBase *self) {
-        return static_cast<Derived *>(self)->totalUse();
-    }
-
-    template <typename Derived>
-    static Use *usesForwardFn(UserBase *self) {
-        return static_cast<Derived *>(self)->uses();
-    }
-
-private:
-    const int totalUseIndicator_;
-
-private:
-    template <typename Fn>
-    struct FnTypeConverter;
-
-    template <typename R, typename... Args>
-    struct FnTypeConverter<R (UserBase::*)(Args...) const> {
-        using type = R (*)(UserBase *, Args...);
-    };
-
-    template <auto Fn>
-    using invoke_type = typename FnTypeConverter<decltype(Fn)>::type;
-
-    template <auto Fn, size_t N = 5>
-    using FnPtrTable = std::array<invoke_type<Fn>, N>;
-
-    static FnPtrTable<&UserBase::used>     used_FNPTR_TABLE;
-    static FnPtrTable<&UserBase::totalUse> totalUse_FNPTR_TABLE;
-    static FnPtrTable<&UserBase::uses>     uses_FNPTR_TABLE;
+enum class InstrID {
+    Alloca,        //<! alloca
+    Load,          //<! load
+    Store,         //<! store
+    Ret,           //<! return
+    Br,            //<! branch
+    GetElementPtr, //<! getelementptr
+    Add,           //<! add
+    Sub,           //<! sub
+    Mul,           //<! mul
+    UDiv,          //<! div (unsigned)
+    SDiv,          //<! div (signed)
+    URem,          //<! remainder (unsigned)
+    SRem,          //<! remainder (signed)
+    FNeg,          //<! neg (float)
+    FAdd,          //<! add (float)
+    FSub,          //<! sub (float)
+    FMul,          //<! mul (float)
+    FDiv,          //<! div (float)
+    FRem,          //<! remainder (float)
+    Shl,           //<! shl
+    LShr,          //<! shr (logical)
+    AShr,          //<! shr (arithmetic)
+    And,           //<! bitwise and
+    Or,            //<! bitwise or
+    Xor,           //<! xor
+    FPToUI,        //<! floating point -> unsigned int
+    FPToSI,        //<! floating point -> signed int
+    UIToFP,        //<! unsigned int -> floating point
+    SIToFP,        //<! signed int -> floating point
+    ZExt,          //<! zext
+    Trunc,         //<! trunc
+    ICmp,          //<! cmp (int)
+    FCmp,          //<! cmp (float)
+    Phi,           //<! Phi node instruction
+    Call,          //<! call
+    LAST_INSTR = Call,
 };
 
-//! alias for forward declaration
-class User : public UserBase {
+class InstructionBaseImpl {
 protected:
-    User(Type *type, uint32_t tag, int totalUseIndicator)
-        : UserBase(type, tag, totalUseIndicator) {}
-};
-
-template <int N>
-class SpecificUser;
-
-template <>
-class SpecificUser<-1> : public User {
-protected:
-    SpecificUser(Type *type, uint32_t tag)
-        : User(type, tag, -1) {
-        for (auto &use : uses_) { use.attachTo(this); }
-    }
+    inline InstructionBaseImpl(InstrID id, User* self);
 
 public:
-    bool used(const Use *use) const {
-        const auto offset = reinterpret_cast<intptr_t>(use)
-                          - reinterpret_cast<intptr_t>(uses_.data());
-        return offset >= 0 && offset < sizeof(Use) * totalUse()
-            && offset % sizeof(Use) == 0;
-    }
-
-    size_t totalUse() const {
-        return uses_.size();
-    }
-
-    Use *uses() const {
-        return const_cast<Use *>(uses_.data());
-    }
-
-    template <size_t I>
-    Use &op() const {
-        assert(I >= 0 && I < totalUse());
-        return const_cast<Use &>(uses_[I]);
-    }
+    inline InstrID id() const;
+    inline User*   unwrap() const;
 
 private:
-    std::vector<Use> uses_;
+    InstrID                     id_;
+    User* const                 source_;
+    BasicBlock*                 parent_;
+    InstructionList::node_type* self_;
 };
 
-template <>
-class SpecificUser<0> : public User {
+using InstructionBase =
+    EnumBasedTryIntoTraitWrapper<InstructionBaseImpl, &InstructionBaseImpl::id>;
+
+class Instruction : public InstructionBase {
 protected:
-    SpecificUser(Type *type, uint32_t tag)
-        : User(type, tag, 0) {}
-
-public:
-    bool used(const Use *use) const {
-        return false;
-    }
-
-    size_t totalUse() const {
-        return 0;
-    }
-
-    Use *uses() const {
-        return nullptr;
-    }
-};
-
-template <>
-class SpecificUser<1> : public User {
-protected:
-    SpecificUser(Type *type, uint32_t tag)
-        : User(type, tag, 1) {
-        operand_.attachTo(this);
-    }
-
-public:
-    bool used(const Use *use) const {
-        return std::addressof(operand_) == use;
-    }
-
-    size_t totalUse() const {
-        return 1;
-    }
-
-    Use *uses() const {
-        return const_cast<Use *>(&operand_);
-    }
-
-    Use &operand() const {
-        return const_cast<Use &>(operand_);
-    }
-
-private:
-    Use operand_;
-};
-
-template <>
-class SpecificUser<2> : public User {
-protected:
-    SpecificUser(Type *type, uint32_t tag)
-        : User(type, tag, 2) {
-        uses_[0].attachTo(this);
-        uses_[1].attachTo(this);
-    }
-
-public:
-    bool used(const Use *use) const {
-        return std::addressof(uses_[0]) == use
-            || std::addressof(uses_[1]) == use;
-    }
-
-    size_t totalUse() const {
-        return 2;
-    }
-
-    Use *uses() const {
-        return const_cast<Use *>(uses_);
-    }
-
-    Use &lhs() const {
-        return const_cast<Use &>(uses_[0]);
-    }
-
-    Use &rhs() const {
-        return const_cast<Use &>(uses_[1]);
-    }
-
-private:
-    Use uses_[2];
-};
-
-template <>
-class SpecificUser<3> : public User {
-protected:
-    SpecificUser(Type *type, uint32_t tag)
-        : User(type, tag, 3) {
-        uses_[0].attachTo(this);
-        uses_[1].attachTo(this);
-        uses_[2].attachTo(this);
-    }
-
-public:
-    bool used(const Use *use) const {
-        return std::addressof(uses_[0]) == use
-            || std::addressof(uses_[1]) == use
-            || std::addressof(uses_[2]) == use;
-    }
-
-    size_t totalUse() const {
-        return 3;
-    }
-
-    Use *uses() const {
-        return const_cast<Use *>(uses_);
-    }
-
-    template <size_t I>
-    Use &op() const {
-        static_assert(I >= 0 && I < 3);
-        return const_cast<Use &>(uses_[I]);
-    }
-
-private:
-    Use uses_[3];
+    inline Instruction(InstrID id, User* self);
 };
 
 } // namespace slime::experimental::ir
+
+namespace slime::experimental::ir {
+
+inline InstructionBaseImpl::InstructionBaseImpl(InstrID id, User* source)
+    : id_{id}
+    , source_{source->withDelegator(this)}
+    , parent_{nullptr}
+    , self_{nullptr} {}
+
+inline InstrID InstructionBaseImpl::id() const {
+    return id_;
+}
+
+inline User* InstructionBaseImpl::unwrap() const {
+    return source_;
+}
+
+inline Instruction::Instruction(InstrID id, User* self)
+    : InstructionBase(id, self) {}
+
+} // namespace slime::experimental::ir
+
+emit(bool) slime::experimental::ir::ValueBase::is<
+    slime::experimental::ir::Instruction>() const {
+    return isInstruction();
+}
+
+emit(auto) slime::experimental::ir::ValueBase::as<
+    slime::experimental::ir::Instruction>() {
+    auto delegator = as<experimental::ir::User>()->delegator();
+    return reinterpret_cast<slime::experimental::ir::Instruction*>(delegator);
+}
+
+emit(bool) slime::experimental::ir::InstructionBase::is<
+    slime::experimental::ir::User>() const {
+    return true;
+}
+
+emit(bool) slime::experimental::ir::InstructionBase::is<
+    slime::experimental::ir::SpecificUser<-1>>() const {
+    return unwrap()->is<slime::experimental::ir::SpecificUser<-1>>();
+}
+
+emit(bool) slime::experimental::ir::InstructionBase::is<
+    slime::experimental::ir::SpecificUser<0>>() const {
+    return unwrap()->is<slime::experimental::ir::SpecificUser<0>>();
+}
+
+emit(bool) slime::experimental::ir::InstructionBase::is<
+    slime::experimental::ir::SpecificUser<1>>() const {
+    return unwrap()->is<slime::experimental::ir::SpecificUser<1>>();
+}
+
+emit(bool) slime::experimental::ir::InstructionBase::is<
+    slime::experimental::ir::SpecificUser<2>>() const {
+    return unwrap()->is<slime::experimental::ir::SpecificUser<2>>();
+}
+
+emit(bool) slime::experimental::ir::InstructionBase::is<
+    slime::experimental::ir::SpecificUser<3>>() const {
+    return unwrap()->is<slime::experimental::ir::SpecificUser<3>>();
+}
+
+emit(auto) slime::experimental::ir::InstructionBase::as<
+    slime::experimental::ir::User>() {
+    return unwrap();
+}
+
+emit(auto) slime::experimental::ir::InstructionBase::as<
+    slime::experimental::ir::SpecificUser<-1>>() {
+    return unwrap()->as<slime::experimental::ir::SpecificUser<-1>>();
+}
+
+emit(auto) slime::experimental::ir::InstructionBase::as<
+    slime::experimental::ir::SpecificUser<0>>() {
+    return unwrap()->as<slime::experimental::ir::SpecificUser<0>>();
+}
+
+emit(auto) slime::experimental::ir::InstructionBase::as<
+    slime::experimental::ir::SpecificUser<1>>() {
+    return unwrap()->as<slime::experimental::ir::SpecificUser<1>>();
+}
+
+emit(auto) slime::experimental::ir::InstructionBase::as<
+    slime::experimental::ir::SpecificUser<2>>() {
+    return unwrap()->as<slime::experimental::ir::SpecificUser<2>>();
+}
+
+emit(auto) slime::experimental::ir::InstructionBase::as<
+    slime::experimental::ir::SpecificUser<3>>() {
+    return unwrap()->as<slime::experimental::ir::SpecificUser<3>>();
+}

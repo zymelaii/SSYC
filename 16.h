@@ -1,10 +1,10 @@
-#include "36.def"
-#include "37.h"
-#include "41.h"
-#include "43.h"
-#include "72.h"
-#include "39.h"
-#include "40.h"
+#include "46.def"
+#include "47.h"
+#include "51.h"
+#include "53.h"
+#include "90.h"
+#include "49.h"
+#include "50.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -112,19 +112,20 @@ struct Stack {
         auto   end     = onStackVars->node_end();
         size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar = it->value();
+            auto stackvar  = it->value();
             sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
                 auto tmp = it++;
-                auto it2 = tmp;
+                auto it2 = it;
                 it       = tmp;
                 while (it2 != end) {
-                    auto tmpvar = it->value();
+                    auto tmpvar = it2->value();
                     if (tmpvar->var != nullptr)
                         break;
                     else {
-                        auto tmp = *it2++;
+                        auto tmp = *it2;
+                        it2++;
                         tmp.removeFromList();
                         stackvar->size += tmpvar->size;
                         sizecnt        += stackvar->size;
@@ -135,7 +136,8 @@ struct Stack {
                     var->stackpos = sizecnt;
                     return false;
                 } else if (stackvar->size > size) {
-                    it->emplaceAfter(
+                    assert(it->value() == stackvar);
+                    it->emplaceAfterThis(
                         new OnStackVar(nullptr, stackvar->size - size));
                     sizecnt        = sizecnt - (stackvar->size - size);
                     stackvar->var  = var;
@@ -149,7 +151,7 @@ struct Stack {
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
-        var->stackpos = stackSize;
+        var->stackpos  = stackSize;
         assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
@@ -214,17 +216,22 @@ public:
 
     void initVarInterval(Function *func);
     void computeInterval(Function *func);
-    void checkLiveInterval();
-    void updateAllocation(Generator *gen, BasicBlock *block, Instruction *inst);
+    void checkLiveInterval(std::string *instcode);
+    void updateAllocation(
+        Generator   *gen,
+        std::string *instcode,
+        BasicBlock  *block,
+        Instruction *inst);
     std::set<Variable *> *getInstOperands(Instruction *inst);
+    Variable             *getVarOfAllocatedReg(ARMGeneralRegs reg);
     Variable             *getMinIntervalRegVar(std::set<Variable *>);
     Variable             *createVariable(Value *val);
-    void                  getUsedRegs(BasicBlockList &blocklist);
 
     ARMGeneralRegs allocateRegister(
         bool                  force     = false,
         std::set<Variable *> *whitelist = nullptr,
-        Generator            *gen       = nullptr);
+        Generator            *gen       = nullptr,
+        std::string          *instcode  = nullptr);
     void releaseRegister(Variable *var);
     void releaseRegister(ARMGeneralRegs reg);
     void freeAllRegister();

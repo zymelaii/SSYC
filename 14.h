@@ -1,27 +1,56 @@
-#include "40.h"
+#include "51.h"
+#include "50.h"
 #include "2.h"
-#include "36.def"
-#include "43.h"
+#include "46.def"
+#include "53.h"
+#include "49.h"
+#include "90.h"
+#include "47.h"
 #include "39.h"
-#include "72.h"
-#include "37.h"
+
 #include <set>
+#include <string>
 #include <assert.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include <string_view>
 #include <vector>
+#include <ostream>
 
 namespace slime::backend {
 
+using namespace ir;
+
 struct Variable;
 struct Stack;
+
+struct InstCode {
+    InstCode(Instruction *inst)
+        : inst{inst} {};
+
+    std::string  code;
+    Instruction *inst;
+};
+
+using InstCodeList = slime::LinkedList<InstCode *>;
+
+struct BlockCode {
+    BlockCode()
+        : instcodes{nullptr} {};
+
+    BlockCode(InstCodeList *instcodes)
+        : instcodes{instcodes} {};
+
+    std::string   code;
+    InstCodeList *instcodes;
+};
+
 class Allocator;
 enum class ARMGeneralRegs;
 
-using namespace ir;
 using RegList        = utils::ListTrait<ARMGeneralRegs>;
+using BlockCodeList  = slime::LinkedList<BlockCode *>;
 using UsedGlobalVars = std::map<Variable *, std::string>;
 
 class Generator {
@@ -29,116 +58,142 @@ class Generator {
 
 public:
     static Generator *generate();
-    void              genGlobalDef(GlobalObject *obj);
-    void              genUsedGlobVars();
-    void              genCode(FILE *fp, Module *module);
-    void              genAssembly(Function *func);
+    std::string       genCode(Module *module);
+    std::string       genGlobalArrayInitData(
+              ConstantArray *globarr, uint32_t baseSize);
+    std::string genGlobalDef(GlobalObject *obj);
+    std::string genUsedGlobVars();
+    std::string genAssembly(Function *func);
 
     Variable          *findVariable(Value *val);
     static const char *reg2str(ARMGeneralRegs reg);
     Instruction       *getNextInst(Instruction *inst);
     int                sizeOfType(ir::Type *type);
+    bool               isImmediateValid(uint32_t imm);
 
-    void println(const char *fmt, ...) {
-        assert(generator_.asmFile != nullptr);
-        FILE   *output_file = generator_.asmFile;
-        va_list ap;
+    static std::string sprintln(const char *fmt, ...) {
+        static char strbuf[64];
+        va_list     ap;
         va_start(ap, fmt);
-        vfprintf(output_file, fmt, ap);
+        vsprintf(strbuf, fmt, ap);
         va_end(ap);
-        fprintf(output_file, "\n");
+        sprintf(strbuf + strlen(strbuf), "\n");
+        return std::string(strbuf);
     }
 
-    void cgMov(
+    std::string cgMov(
         ARMGeneralRegs         rd,
         ARMGeneralRegs         rs,
         ComparePredicationType cond = ComparePredicationType::TRUE);
-    void cgMov(
+    std::string cgMov(
         ARMGeneralRegs         rd,
         int32_t                imm,
         ComparePredicationType cond = ComparePredicationType::TRUE);
-    void cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
-    void cgLdr(ARMGeneralRegs dst, Variable *var); // only for globalvar
-    void cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset);
-    void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
-    void cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
-    void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
-    void cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
-    void cgMul(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
-    void cgMul(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
-    void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
-    void cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    std::string cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
+    std::string cgLdr(
+        ARMGeneralRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset);
+    std::string cgLdr(ARMGeneralRegs dst, int32_t imm);
+    std::string cgLdr(ARMGeneralRegs dst, Variable *var); // only for globalvar
+    std::string cgStr(ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset);
+    std::string cgStr(
+        ARMGeneralRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset);
+    std::string cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    std::string cgAdd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    std::string cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    std::string cgSub(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    std::string cgMul(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    std::string cgMul(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    std::string cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
+    std::string cgAnd(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
     // void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2);
-    void cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
-    void cgAsr(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
-    void cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2);
-    void cgCmp(ARMGeneralRegs op1, int32_t op2);
+    std::string cgLsl(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    std::string cgAsr(ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2);
+    std::string cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2);
+    std::string cgCmp(ARMGeneralRegs op1, int32_t op2);
     // void cgTst(ARMGeneralRegs op1, ARMGeneralRegs op2);
-    void cgTst(ARMGeneralRegs op1, int32_t op2);
-    void cgPush(RegList &reglist);
-    void cgPop(RegList &reglist);
-    void cgB(
+    std::string cgTst(ARMGeneralRegs op1, int32_t op2);
+    std::string cgPush(RegList &reglist);
+    std::string cgPop(RegList &reglist);
+    std::string cgB(
         Value                 *brTarget,
         ComparePredicationType cond = ComparePredicationType::TRUE);
-    void cgBl(Function *callee);
-    void cgBl(const char *libfuncname);
-    void cgBx(ARMGeneralRegs rd);
+    std::string cgBl(Function *callee);
+    std::string cgBl(const char *libfuncname);
+    std::string cgBx(ARMGeneralRegs rd);
 
 protected:
-    void                   saveCallerReg();
-    void                   restoreCallerReg();
+    std::string            saveCallerReg();
+    std::string            restoreCallerReg();
+    std::string            unpackInstCodeList(InstCodeList &instCodeList);
+    std::string            unpackBlockCodeList(BlockCodeList &blockCodeList);
+    void                   checkStackChanges(BlockCodeList &blockCodeList);
     void                   addUsedGlobalVar(Variable *var);
     BasicBlock            *getNextBlock();
     int                    getBlockNum(int blockid);
     ComparePredicationType reversePredict(ComparePredicationType predict);
 
-    void genInstList(InstructionList *instlist);
-    void genInst(Instruction *inst);
-    int  genAllocaInst(AllocaInst *inst);
-    void genLoadInst(LoadInst *inst);
-    void genStoreInst(StoreInst *inst);
-    void genRetInst(RetInst *inst);
-    void genBrInst(BrInst *inst);
-    void genGetElemPtrInst(GetElementPtrInst *inst);
-    void genAddInst(AddInst *inst);
-    void genSubInst(SubInst *inst);
-    void genMulInst(MulInst *inst);
-    void genUDivInst(UDivInst *inst);
-    void genSDivInst(SDivInst *inst);
-    void genURemInst(URemInst *inst);
-    void genSRemInst(SRemInst *inst);
-    void genFNegInst(FNegInst *inst);
-    void genFAddInst(FAddInst *inst);
-    void genFSubInst(FSubInst *inst);
-    void genFMulInst(FMulInst *inst);
-    void genFDivInst(FDivInst *inst);
-    void genFRemInst(FRemInst *inst);
-    void genShlInst(ShlInst *inst);
-    void genLShrInst(LShrInst *inst);
-    void genAShrInst(AShrInst *inst);
-    void genAndInst(AndInst *inst);
-    void genOrInst(OrInst *inst);
-    void genXorInst(XorInst *inst);
-    void genFPToUIInst(FPToUIInst *inst);
-    void genFPToSIInst(FPToSIInst *inst);
-    void genUIToFPInst(UIToFPInst *inst);
-    void genSIToFPInst(SIToFPInst *inst);
-    void genICmpInst(ICmpInst *inst);
-    void genFCmpInst(FCmpInst *inst);
-    void genZExtInst(ZExtInst *inst);
-    void genCallInst(CallInst *inst);
+    InstCodeList *genInstList(InstructionList *instlist);
+    InstCode     *genInst(Instruction *inst);
+    int           genAllocaInst(AllocaInst *inst);
+    InstCode     *genLoadInst(LoadInst *inst);
+    InstCode     *genStoreInst(StoreInst *inst);
+    InstCode     *genRetInst(RetInst *inst);
+    InstCode     *genBrInst(BrInst *inst);
+    InstCode     *genGetElemPtrInst(GetElementPtrInst *inst);
+    InstCode     *genAddInst(AddInst *inst);
+    InstCode     *genSubInst(SubInst *inst);
+    InstCode     *genMulInst(MulInst *inst);
+    InstCode     *genUDivInst(UDivInst *inst);
+    InstCode     *genSDivInst(SDivInst *inst);
+    InstCode     *genURemInst(URemInst *inst);
+    InstCode     *genSRemInst(SRemInst *inst);
+    InstCode     *genFNegInst(FNegInst *inst);
+    InstCode     *genFAddInst(FAddInst *inst);
+    InstCode     *genFSubInst(FSubInst *inst);
+    InstCode     *genFMulInst(FMulInst *inst);
+    InstCode     *genFDivInst(FDivInst *inst);
+    InstCode     *genFRemInst(FRemInst *inst);
+    InstCode     *genShlInst(ShlInst *inst);
+    InstCode     *genLShrInst(LShrInst *inst);
+    InstCode     *genAShrInst(AShrInst *inst);
+    InstCode     *genAndInst(AndInst *inst);
+    InstCode     *genOrInst(OrInst *inst);
+    InstCode     *genXorInst(XorInst *inst);
+    InstCode     *genFPToUIInst(FPToUIInst *inst);
+    InstCode     *genFPToSIInst(FPToSIInst *inst);
+    InstCode     *genUIToFPInst(UIToFPInst *inst);
+    InstCode     *genSIToFPInst(SIToFPInst *inst);
+    InstCode     *genICmpInst(ICmpInst *inst);
+    InstCode     *genFCmpInst(FCmpInst *inst);
+    InstCode     *genZExtInst(ZExtInst *inst);
+    InstCode     *genCallInst(CallInst *inst);
 
 private:
     std::set<std::string> libfunc = {
+        //! built-in
         "memset",
-        "putint",
-        "getint",
-        "putarray",
-        "getarray",
-        "putch",
-        "getch",
         "__aeabi_idiv",
-        "__aeabi_uidiv"};
+        "__aeabi_uidiv",
+        //! stdlib - debug & profile
+        "starttime",
+        "stoptime",
+        "__slime_starttime",
+        "__slime_stoptime",
+        "_sysy_starttime",
+        "_sysy_stoptime",
+        //! stdlib - io
+        "getint",
+        "getch",
+        "getfloat",
+        "putint",
+        "putch",
+        "putarray",
+        "putfarray",
+        "getfarray",
+        "getarray",
+        "putfloat",
+        "putf",
+    };
 
     struct GeneratorState {
         BasicBlock     *cur_block      = nullptr;
@@ -146,10 +201,10 @@ private:
         size_t          cur_funcnum    = 0;
         Allocator      *allocator      = nullptr;
         Stack          *stack          = nullptr;
-        FILE           *asmFile        = nullptr;
         UsedGlobalVars *usedGlobalVars = nullptr;
     };
 
+    // std::ostream    os;
     GeneratorState generator_;
 };
 } // namespace slime::backend

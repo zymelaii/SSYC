@@ -1,455 +1,520 @@
 #include "78.h"
+#include "86.h"
 
-#include "72.h"
-#include <vector>
+#include <assert.h>
+#include <algorithm>
+#include <sstream>
+#include <stack>
+#include <functional>
 
-namespace slime::visitor {
+namespace slime::pass {
 
-using namespace ast;
+using namespace ir;
 
-Expr* ASTExprSimplifier::trySimplify(Expr* expr) {
-    //! TODO: algebra simplification
-    auto e = tryEvaluateCompileTimeExpr(expr);
-    return !e ? expr : e;
-}
+void MemoryToRegisterPass::runOnFunction(Function *target) {
+    std::set<Value *>       promotableVarSet;
+    std::set<Instruction *> deleteLater;
 
-bool ASTExprSimplifier::trySmallLoopUnroll(LoopStmt* stmt) {
-    if (auto whileStmt = stmt->tryIntoWhileStmt()) {
-        auto cond = whileStmt->condition->tryIntoExprStmt();
-        if (cond == nullptr) { return false; }
-        auto op = cond->unwrap()->tryIntoBinary();
-        if (op == nullptr) { return false; }
-        switch (op->op) {
-            case BinaryOperator::LT:
-            case BinaryOperator::LE:
-            case BinaryOperator::GT:
-            case BinaryOperator::GE:
-            case BinaryOperator::EQ:
-            case BinaryOperator::NE: {
-            } break;
-            default: {
-                return false;
-            } break;
+    auto &blocks = target->basicBlocks();
+
+    //! compute deep first order
+    std::map<BasicBlock *, int> dfn;
+    int                         dfOrder = -1;
+    for (auto block : blocks) { dfn[block] = dfOrder; }
+    std::stack<BasicBlock *> dfStack;
+    dfStack.push(target->front());
+    while (!dfStack.empty()) {
+        auto block = dfStack.top();
+        dfStack.pop();
+        if (dfn[block] != -1) { continue; }
+        dfn[block] = ++dfOrder;
+        if (block->isBranched()) {
+            dfStack.push(block->branch());
+            dfStack.push(block->branchElse());
+        } else if (block->isLinear() && !block->isTerminal()) {
+            dfStack.push(block->branch());
         }
-    } else if (auto doStmt = stmt->tryIntoDoStmt()) {
-        //! TODO: detect small do loop
-        return false;
-    } else if (auto forStmt = stmt->tryIntoForStmt()) {
-        //! TODO: implement small for-loop unroll
-        return false;
     }
-    return false;
-}
+    std::vector<BasicBlock *> sortedBlocks(blocks.begin(), blocks.end());
+    std::sort(
+        sortedBlocks.begin(),
+        sortedBlocks.end(),
+        [&dfn](const auto &lhs, const auto &rhs) {
+            return dfn[lhs] < dfn[rhs];
+        });
 
-IfStmt* ASTExprSimplifier::transformIntoDoWhileLoop(WhileStmt* stmt) {
-    auto cond    = stmt->condition->asExprStmt()->unwrap();
-    auto doStmt  = new (stmt) DoStmt(cond, stmt->loopBody);
-    auto wrapper = IfStmt::create(cond, doStmt);
-    return wrapper;
-}
+    //! simplify inblock memory operations
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
 
-Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
-    switch (expr->exprId) {
-        case ExprID::DeclRef: {
-            auto e = expr->asDeclRef();
-            if (!e->source->specifier->isConst()) { return nullptr; }
-            switch (e->source->declId) {
-                case DeclID::Var: {
-                    auto var = e->source->asVarDecl();
-                    if (auto array = var->type()->tryIntoArray()) {
-                        return expr;
-                    } else if (auto builtin = var->type()->tryIntoBuiltin()) {
-                        return tryEvaluateCompileTimeExpr(var->initValue);
-                    } else {
-                        return nullptr;
-                    }
-                } break;
-                case DeclID::ParamVar: {
-                    return nullptr;
-                } break;
-                case DeclID::Function: {
-                    return expr;
-                }
-            }
-        } break;
-        case ExprID::Constant: {
-            return expr;
-        } break;
-        case ExprID::Unary: {
-            return tryEvaluateCompileTimeUnaryExpr(expr->asUnary());
-        } break;
-        case ExprID::Binary: {
-            return tryEvaluateCompileTimeBinaryExpr(expr->asBinary());
-        } break;
-        case ExprID::Comma: {
-            //! FIXME: only no-effect expr can be ignored
-            return tryEvaluateCompileTimeExpr(expr->asComma()->tail()->value());
-        } break;
-        case ExprID::Paren: {
-            return tryEvaluateCompileTimeExpr(expr->asParen()->inner);
-        } break;
-        case ExprID::Stmt: {
-            assert(false && "unsupported StmtExpr");
-            return nullptr;
-        } break;
-        case ExprID::Call: {
-            return tryEvaluateFunctionCall(expr->asCall());
-        } break;
-        case ExprID::Subscript: {
-            //! lookup array decl & init list and make indices
-            auto                            subscript = expr->asSubscript();
-            DeclRefExpr*                    seqlike   = nullptr;
-            utils::ListTrait<ConstantExpr*> indices;
-            while (subscript != nullptr) {
-                if (auto index = tryEvaluateCompileTimeExpr(subscript->rhs)) {
-                    indices.insertToHead(index->asConstant());
-                } else {
-                    return nullptr;
-                }
-                seqlike   = subscript->lhs->tryIntoDeclRef();
-                subscript = subscript->lhs->tryIntoSubscript();
-            }
-            if (seqlike == nullptr
-                || seqlike->valueType->typeId != TypeID::Array
-                || !seqlike->source->specifier->isConst()) {
-                return nullptr;
-            }
-            auto initval = trySimplify(seqlike->source->asVarDecl()->initValue)
-                               ->asInitList();
-            if (initval == nullptr) { return nullptr; }
-            //! decide zero value
-            ConstantExpr* zeroValue = nullptr;
-            auto builtin = seqlike->valueType->asArray()->type->asBuiltin();
-            if (builtin->isInt()) {
-                zeroValue = ConstantExpr::createI32(0);
-            } else if (builtin->isFloat()) {
-                zeroValue = ConstantExpr::createF32(0.f);
-            }
-            //! evaluate subscript expr
-            if (initval->size() == 0) { return zeroValue; }
-            int n = 0;
-            for (auto index : indices) {
-                if (index->i32 >= initval->size()) { return zeroValue; }
-                Expr* expr = nullptr;
-                int   i    = 0;
-                for (auto e : *initval) {
-                    if (i++ == index->i32) {
-                        expr = e;
+        auto &instrs   = block->instructions();
+        auto  instIter = instrs.begin();
+
+        std::map<Value *, StoreInst *> def;
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+
+            //! get promotable alloca
+            if (inst->id() == InstructionID::Alloca) {
+                auto alloca     = inst->asAlloca();
+                bool promotable = true;
+                for (auto use : alloca->uses()) {
+                    const auto id = use->owner()->asInstruction()->id();
+                    if (id != InstructionID::Load
+                        && id != InstructionID::Store) {
+                        promotable = false;
                         break;
                     }
                 }
-                if (++n < indices.size()) {
-                    initval = expr->asInitList();
-                } else {
-                    return trySimplify(expr);
-                }
+                if (promotable) { promotableVarSet.insert(alloca); }
+                continue;
             }
-            return nullptr;
-        } break;
-        case ExprID::InitList:
-        case ExprID::NoInit: {
-            return nullptr;
-        } break;
-    }
-}
 
-ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
-    auto e = expr->tryIntoUnary();
-    if (!e) { return nullptr; }
-    auto value = tryEvaluateCompileTimeExpr(e->operand);
-    if (!value) { return nullptr; }
-    switch (e->op) {
-        case UnaryOperator::Pos: {
-            return value->asConstant();
-        } break;
-        case UnaryOperator::Neg: {
-            if (auto builtin = value->valueType->tryIntoBuiltin()) {
-                auto c = value->asConstant();
-                if (builtin->isInt()) {
-                    c->setData(-c->i32);
-                } else if (builtin->isFloat()) {
-                    c->setData(-c->f32);
-                } else {
-                    return nullptr;
+            //! update most recent store
+            if (inst->id() == InstructionID::Store) {
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                auto &lastStore = def[target];
+                if (lastStore != nullptr) {
+                    auto ok = lastStore->removeFromBlock();
+                    assert(ok);
                 }
-                return c;
-            } else {
-                return nullptr;
+                lastStore = store;
+                continue;
             }
-        }
-        case UnaryOperator::Not: {
-            if (auto builtin = value->valueType->tryIntoBuiltin()) {
-                auto c = value->asConstant();
-                if (builtin->isInt()) {
-                    c->setData(!c->i32);
-                } else if (builtin->isFloat()) {
-                    c->setData(!c->f32);
-                } else {
-                    return nullptr;
+
+            //! forward use-def
+            if (inst->id() == InstructionID::Load) {
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!promotableVarSet.count(target)) { continue; }
+                if (load->uses().size() == 0) {
+                    auto ok = load->removeFromBlock();
+                    assert(ok);
+                    continue;
                 }
-                return value->asConstant();
-            } else {
-                return nullptr;
-            }
-        } break;
-        case UnaryOperator::Inv: {
-            if (auto builtin = value->valueType->tryIntoBuiltin();
-                builtin->isInt()) {
-                value->asConstant()->setData(~value->asConstant()->i32);
-                return value->asConstant();
-            } else {
-                return nullptr;
-            }
-        } break;
-        case UnaryOperator::Paren: {
-            assert(false && "ParenExpr is unreachable in UnaryExpr");
-            return nullptr;
-        } break;
-    }
-}
-
-ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
-    auto e = expr->tryIntoBinary();
-    if (!e) { return nullptr; }
-    auto lhs = tryEvaluateCompileTimeExpr(e->lhs);
-    auto rhs = tryEvaluateCompileTimeExpr(e->rhs);
-    if (!lhs || !rhs) { return nullptr; }
-    switch (e->op) {
-        case BinaryOperator::Assign: {
-            return nullptr;
-        } break;
-        case BinaryOperator::Add:
-        case BinaryOperator::Sub:
-        case BinaryOperator::Mul:
-        case BinaryOperator::Div:
-        case BinaryOperator::LT:
-        case BinaryOperator::LE:
-        case BinaryOperator::GT:
-        case BinaryOperator::GE:
-        case BinaryOperator::EQ:
-        case BinaryOperator::NE: {
-            auto lbuiltin = lhs->valueType->tryIntoBuiltin();
-            if (lbuiltin == nullptr || lbuiltin->isVoid()) { return nullptr; }
-            auto rbuiltin = rhs->valueType->tryIntoBuiltin();
-            if (rbuiltin == nullptr || rbuiltin->isVoid()) { return nullptr; }
-            if (lbuiltin->isFloat() || rbuiltin->isFloat()) {
-                auto lval = lbuiltin->isFloat()
-                              ? lhs->asConstant()->f32
-                              : static_cast<float>(lhs->asConstant()->i32);
-                auto rval = rbuiltin->isFloat()
-                              ? rhs->asConstant()->f32
-                              : static_cast<float>(rhs->asConstant()->i32);
-                switch (e->op) {
-                    case BinaryOperator::Add: {
-                        return ConstantExpr::createF32(lval + rval);
-                    } break;
-                    case BinaryOperator::Sub: {
-                        return ConstantExpr::createF32(lval - rval);
-                    } break;
-                    case BinaryOperator::Mul: {
-                        return ConstantExpr::createF32(lval * rval);
-                    } break;
-                    case BinaryOperator::Div: {
-                        return ConstantExpr::createF32(lval / rval);
-                    } break;
-                    case BinaryOperator::LT: {
-                        return ConstantExpr::createI32(lval < rval);
-                    } break;
-                    case BinaryOperator::LE: {
-                        return ConstantExpr::createI32(lval <= rval);
-                    } break;
-                    case BinaryOperator::GT: {
-                        return ConstantExpr::createI32(lval > rval);
-                    } break;
-                    case BinaryOperator::GE: {
-                        return ConstantExpr::createI32(lval >= rval);
-                    } break;
-                    case BinaryOperator::EQ: {
-                        return ConstantExpr::createI32(lval == rval);
-                    } break;
-                    case BinaryOperator::NE: {
-                        return ConstantExpr::createI32(lval != rval);
-                    } break;
-                    default: {
-                        return nullptr;
-                    } break;
+                auto &lastStore = def[target];
+                if (lastStore == nullptr) {
+                    //! value is from preds or is a non-def
+                    continue;
                 }
-            } else {
-                auto lval = lhs->asConstant()->i32;
-                auto rval = rhs->asConstant()->i32;
-                switch (e->op) {
-                    case BinaryOperator::Add: {
-                        return ConstantExpr::createI32(lval + rval);
-                    } break;
-                    case BinaryOperator::Sub: {
-                        return ConstantExpr::createI32(lval - rval);
-                    } break;
-                    case BinaryOperator::Mul: {
-                        return ConstantExpr::createI32(lval * rval);
-                    } break;
-                    case BinaryOperator::Div: {
-                        return ConstantExpr::createI32(lval / rval);
-                    } break;
-                    case BinaryOperator::LT: {
-                        return ConstantExpr::createI32(lval < rval);
-                    } break;
-                    case BinaryOperator::LE: {
-                        return ConstantExpr::createI32(lval <= rval);
-                    } break;
-                    case BinaryOperator::GT: {
-                        return ConstantExpr::createI32(lval > rval);
-                    } break;
-                    case BinaryOperator::GE: {
-                        return ConstantExpr::createI32(lval >= rval);
-                    } break;
-                    case BinaryOperator::EQ: {
-                        return ConstantExpr::createI32(lval == rval);
-                    } break;
-                    case BinaryOperator::NE: {
-                        return ConstantExpr::createI32(lval != rval);
-                    } break;
-                    default: {
-                        return nullptr;
-                    } break;
-                }
-            }
-        } break;
-        case BinaryOperator::Mod:
-        case BinaryOperator::And:
-        case BinaryOperator::Or:
-        case BinaryOperator::Xor:
-        case BinaryOperator::Shl:
-        case BinaryOperator::Shr: {
-            auto builtin = lhs->valueType->tryIntoBuiltin();
-            if (builtin == nullptr || !builtin->isInt()) { return nullptr; }
-            builtin = rhs->valueType->tryIntoBuiltin();
-            if (builtin == nullptr || !builtin->isInt()) { return nullptr; }
-            auto lval = lhs->asConstant()->i32;
-            auto rval = rhs->asConstant()->i32;
-            switch (e->op) {
-                case BinaryOperator::Mod: {
-                    return ConstantExpr::createI32(lval % rval);
-                } break;
-                case BinaryOperator::And: {
-                    return ConstantExpr::createI32(lval & rval);
-                } break;
-                case BinaryOperator::Or: {
-                    return ConstantExpr::createI32(lval | rval);
-                } break;
-                case BinaryOperator::Xor: {
-                    return ConstantExpr::createI32(lval ^ rval);
-                } break;
-                case BinaryOperator::Shl: {
-                    return ConstantExpr::createI32(lval << rval);
-                } break;
-                case BinaryOperator::Shr: {
-                    return ConstantExpr::createI32(lval >> rval);
-                } break;
-                default: {
-                    return nullptr;
-                } break;
-            }
-        } break;
-        case BinaryOperator::LAnd:
-        case BinaryOperator::LOr: {
-            UnaryExpr l(UnaryOperator::Not, lhs);
-            UnaryExpr r(UnaryOperator::Not, rhs);
-            auto lval = tryEvaluateCompileTimeUnaryExpr(&l)->tryIntoConstant();
-            auto rval = tryEvaluateCompileTimeUnaryExpr(&r)->tryIntoConstant();
-            if (!lval || !rval) { return nullptr; }
-            switch (e->op) {
-                case BinaryOperator::LAnd: {
-                    return ConstantExpr::createI32(!lval->i32 && !lval->i32);
-                } break;
-                case BinaryOperator::LOr: {
-                    return ConstantExpr::createI32(!lval->i32 || !lval->i32);
-                } break;
-                default: {
-                    return nullptr;
-                } break;
-            }
-        } break;
-        case BinaryOperator::Unreachable: {
-            assert(false && "unreachable binary expression");
-            return nullptr;
-        } break;
-    }
-}
-
-bool ASTExprSimplifier::isFunctionCallCompileTimeEvaluable(
-    FunctionDecl* function, size_t maxStmtAllowed) {
-    //! TODO: exclude non-const variable and extern function
-    return false;
-}
-
-ConstantExpr* ASTExprSimplifier::tryEvaluateFunctionCall(CallExpr* call) {
-    auto decl = call->callable->tryIntoDeclRef();
-    if (!decl) { return nullptr; }
-    auto fn = decl->source->tryIntoFunctionDecl();
-    if (!fn || !fn->canBeConstExpr) { return nullptr; }
-    //! TODO: execute AST evaluation machine
-    return nullptr;
-}
-
-static InitListExpr* consumeArrayInitBlock(
-    BuiltinTypeID                elementType,
-    const std::vector<int>&      array,
-    int                          currentDim,
-    InitListExpr::iterator&      it,
-    const InitListExpr::iterator end) {
-    assert(elementType != BuiltinTypeID::Void);
-    assert(currentDim > 0);
-    auto result = InitListExpr::create();
-    if (currentDim == array.size()) {
-        int n = array[currentDim - 1];
-        while (it != end && n-- > 0) {
-            auto e = ASTExprSimplifier::trySimplify(*it);
-            if (e->exprId == ExprID::InitList) {
-                assert(e->asInitList()->size() == 0);
-                e = elementType == BuiltinTypeID::Int
-                      ? ConstantExpr::createI32(0)
-                      : ConstantExpr::createF32(0.f);
-            }
-            result->insertToTail(e);
-            ++it;
-        }
-    } else {
-        for (int i = 0; i < array[currentDim - 1] && it != end; ++i) {
-            if ((*it)->exprId == ExprID::InitList) {
-                auto innerList = (*it)->asInitList();
-                auto innerIt   = innerList->begin();
-                result->insertToTail(consumeArrayInitBlock(
-                    elementType,
-                    array,
-                    currentDim + 1,
-                    innerIt,
-                    innerList->end()));
-                ++it;
-            } else {
-                result->insertToTail(consumeArrayInitBlock(
-                    elementType, array, currentDim + 1, it, end));
+                std::vector<Use *> uses(
+                    load->uses().begin(), load->uses().end());
+                for (auto use : uses) { use->reset(lastStore->rhs()); }
+                auto ok = load->removeFromBlock();
+                assert(ok);
+                continue;
             }
         }
     }
-    return result;
-}
 
-InitListExpr* ASTExprSimplifier::regulateInitListForArray(
-    ArrayType* array, InitListExpr* list) {
-    //! 1. empty brace zeros corresponding dimension
-    //! 2. rest of given values are reset to zero
-    //! 3. plain values must fit the length before next brace
-    std::vector<int> arrayLength;
-    for (auto e : *array) {
-        auto n = tryEvaluateCompileTimeExpr(e);
-        assert(n != nullptr);
-        assert(n->tryIntoConstant() != nullptr);
-        assert(n->asConstant()->type == ConstantType::i32);
-        arrayLength.push_back(n->asConstant()->i32);
+    //! remove unused alloca
+    for (auto var : promotableVarSet) {
+        auto alloca  = var->asInstruction()->asAlloca();
+        bool hasUser = false;
+        for (auto use : alloca->uses()) {
+            auto inst = use->owner()->asInstruction();
+            if (inst->id() == InstructionID::Load) {
+                auto load = inst->asLoad();
+                if (load->uses().size() > 0) {
+                    hasUser = true;
+                    break;
+                }
+            }
+        }
+        if (!hasUser) {
+            std::vector<Use *> uses(
+                alloca->uses().begin(), alloca->uses().end());
+            for (auto use : uses) {
+                auto ok = use->owner()->asInstruction()->removeFromBlock();
+                assert(ok);
+            }
+            deleteLater.insert(alloca);
+        }
     }
-    auto it = list->begin();
-    return consumeArrayInitBlock(
-        array->type->asBuiltin()->type, arrayLength, 1, it, list->end());
+    for (auto var : deleteLater) {
+        auto ok = var->removeFromBlock();
+        assert(ok);
+        promotableVarSet.erase(var->unwrap());
+    }
+    deleteLater.clear();
+
+    //! compute dom tree and frontiers
+    BlockMap    idom;
+    BlockSetMap domfr;
+    BlockSetMap idomSuccs;
+    computeDomFrontier(idom, domfr, target);
+    for (auto &[succ, dominator] : idom) { idomSuccs[dominator].insert(succ); }
+
+    //! place phi node
+    std::map<PhiInst *, AllocaInst *> phiSource;
+    std::set<PhiInst *>               phiSet;
+    for (auto var : promotableVarSet) {
+        std::set<BasicBlock *>   visted;
+        std::stack<BasicBlock *> worklist;
+
+        auto alloca = var->asInstruction()->asAlloca();
+        for (auto use : alloca->uses()) {
+            auto user = use->owner()->asInstruction();
+            if (user->id() != InstructionID::Store) { continue; }
+            auto store = user->asStore();
+            worklist.push(store->parent());
+        }
+
+        while (!worklist.empty()) {
+            auto df = worklist.top();
+            worklist.pop();
+            for (auto frontier : domfr[df]) {
+                if (visted.count(frontier)) { continue; }
+                auto phi = PhiInst::create(alloca->type()->tryGetElementType());
+                phi->insertToHead(frontier);
+                phiSource[phi] = alloca;
+                phiSet.insert(phi);
+                visted.insert(frontier);
+                worklist.push(frontier);
+            }
+        }
+    }
+
+    //! place non-def load
+    std::set<LoadInst *> nondefSet;
+    for (auto var : promotableVarSet) {
+        auto nondef = LoadInst::create(var);
+        nondefSet.insert(nondef);
+        nondef->insertAfter(var->asInstruction());
+    }
+
+    //! compute reach defines
+    using DefineListTable = std::map<Value *, std::set<Instruction *>>;
+    std::map<BasicBlock *, DefineListTable> reachDefines;
+    std::set<StoreInst *>                   storeSet;
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
+        std::map<Value *, Instruction *> defineTable;
+
+        auto &incomingValues = reachDefines[block];
+        auto &instrs         = block->instructions();
+        auto  instIter       = instrs.begin();
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+            //! define from phi
+            if (inst->id() == InstructionID::Phi) {
+                auto phi    = inst->asPhi();
+                auto target = phiSource[phi];
+                assert(promotableVarSet.count(target));
+                defineTable[target] = phi;
+                continue;
+            }
+            //! define from store
+            if (inst->id() == InstructionID::Store) {
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                defineTable[target] = store;
+                storeSet.insert(store);
+                continue;
+            }
+            //! nondef from load
+            if (inst->id() == InstructionID::Load) {
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!nondefSet.count(load)) { continue; }
+                defineTable[target] = load;
+                continue;
+            }
+        }
+
+        std::vector<BasicBlock *> succs;
+        if (block->isBranched()) {
+            succs.push_back(block->branch());
+            succs.push_back(block->branchElse());
+        } else if (block->isLinear() && !block->isTerminal()) {
+            succs.push_back(block->branch());
+        }
+        for (auto succ : succs) {
+            auto &incomings = reachDefines[succ];
+            for (auto &[var, def] : defineTable) { incomings[var].insert(def); }
+            for (auto &[var, defs] : incomingValues) {
+                if (!defineTable.count(var)) {
+                    auto &incomings = reachDefines[succ];
+                    incomings[var].insert(defs.begin(), defs.end());
+                }
+            }
+        }
+    }
+
+    //! apply reach defines
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
+        std::map<Value *, Instruction *> defineTable;
+
+        auto &incomingValues = reachDefines[block];
+        auto &instrs         = block->instructions();
+        auto  instIter       = instrs.begin();
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+
+            if (inst->id() == InstructionID::Phi) {
+                auto phi    = inst->asPhi();
+                auto target = phiSource[phi];
+                for (auto value : incomingValues[target]) {
+                    auto source = value->parent();
+                    auto define = value->unwrap();
+                    if (value->id() == InstructionID::Store) {
+                        define = value->asStore()->rhs();
+                    }
+                    phi->addIncomingValue(define, source);
+                }
+                defineTable[target] = phi;
+                continue;
+            }
+
+            if (inst->id() == InstructionID::Store) {
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                defineTable[target] = store;
+                continue;
+            }
+
+            if (inst->id() == InstructionID::Load) {
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!promotableVarSet.count(target)) { continue; }
+                if (nondefSet.count(load)) {
+                    defineTable[target] = load;
+                    continue;
+                }
+
+                Value *value = nullptr;
+                if (defineTable.count(target)) {
+                    value = defineTable[target]->unwrap();
+                } else if (
+                    incomingValues.count(target)
+                    && incomingValues[target].size() == 1) {
+                    value = (*incomingValues[target].begin())->unwrap();
+                }
+                if (value->asInstruction()->id() == InstructionID::Store) {
+                    value = value->asInstruction()->asStore()->rhs();
+                }
+                assert(value != nullptr);
+
+                std::vector<Use *> uses(
+                    load->uses().begin(), load->uses().end());
+                for (auto use : uses) { use->reset(value); }
+
+                auto ok = load->removeFromBlock();
+                assert(ok);
+
+                continue;
+            }
+        }
+    }
+
+    //! clean up insts
+    for (auto phi : phiSet) {
+        bool shouldRemove = phi->uses().size() == 0;
+        if (auto singleIncoming = phi->totalOperands() == 2) {
+            auto source = static_cast<BasicBlock *>(phi->op()[1].value());
+            auto value  = phi->op()[0];
+            std::vector<Use *> uses(phi->uses().begin(), phi->uses().end());
+            for (auto use : uses) {
+                auto owner = use->owner()->asInstruction();
+                use->reset(value);
+                if (owner->id() == InstructionID::Phi) {
+                    (use + 1)->reset(source);
+                }
+            }
+            shouldRemove = true;
+        }
+        if (shouldRemove) {
+            auto ok = phi->removeFromBlock();
+            assert(ok);
+        }
+    }
+
+    for (auto load : nondefSet) {
+        if (load->uses().size() == 0) {
+            auto ok = load->removeFromBlock();
+            assert(ok);
+            deleteLater.insert(load);
+        }
+    }
+    for (auto load : deleteLater) { nondefSet.erase(load->asLoad()); }
+    deleteLater.clear();
+
+    for (auto store : storeSet) {
+        auto ok = store->removeFromBlock();
+        assert(ok);
+    }
+
+    for (auto alloca : promotableVarSet) {
+        assert(alloca->uses().size() <= 1);
+        if (alloca->uses().size() == 0) {
+            auto ok = alloca->asInstruction()->asAlloca()->removeFromBlock();
+            assert(ok);
+        }
+    }
 }
 
-} // namespace slime::visitor
+void MemoryToRegisterPass::computeDomFrontier(
+    BlockMap &idom, BlockSetMap &domfr, Function *target) {
+    const auto n = target->size();
+
+    //! NOTE: using linked list to represent graph
+    using edge_t = struct {
+        int succ;
+        int nextEdge;
+    };
+
+    std::vector<edge_t> edges;
+    std::vector<int>    graph(n, -1);
+    std::vector<int>    graphInv(n, -1);
+    std::vector<int>    semiTree(n, -1);
+
+    //! encode BasicBlock* into int
+    std::map<BasicBlock *, int> index;
+    std::vector<BasicBlock *>   revIndex(n);
+    int                         i = 0;
+    for (auto block : target->basicBlocks()) {
+        index[block]  = i;
+        revIndex[i++] = block;
+    }
+
+    //! build graph
+    for (auto block : target->basicBlocks()) {
+        for (auto pred : block->inBlocks()) {
+            auto from = index[pred];
+            auto to   = index[block];
+            edges.push_back({to, graph[from]});
+            graph[from] = edges.size() - 1;
+            edges.push_back({from, graphInv[to]});
+            graphInv[to] = edges.size() - 1;
+        }
+    }
+
+    std::vector<int> idom_(n);
+
+    //! Lengauer-Tarjan algorithm
+    //! 1. compute deep-first order
+    //! 2. compute semi-dom
+    //! 3. compute idom
+
+    //! dfn[k] := deep-first order of node k
+
+    //! semi[k] := x with min dfn[x],
+    //!     where x->xi...->k, dfn[xi] > dfn[k], i >= 1
+
+    //! if dfn[x] < dfn[k] then semi[k] may be x
+    //! if dfn[x] > dfn[k] then semi[k] may be semi[u],
+    //!     where u is ancestor of k, dfn[u] > dfn[k],
+    //!     where x->k
+
+    //! if x = v then idom[k] = x
+    //! if dfn[x] > dfn[v] then idom[k] = idom[u],
+    //!     where x = semi[k], k->...->x, v = semi[u],
+    //!     where u with min dfn[u], u belongs k->...
+
+    std::vector<int> dfn(n, -1);
+    std::vector<int> father(n);
+    std::vector<int> unionSet(n);
+    std::vector<int> semi(n);
+    std::vector<int> minNode(n);
+    std::vector<int> nodeAt;
+
+    std::function<void(int)> tarjan = [&](int k) {
+        dfn[k] = nodeAt.size();
+        nodeAt.push_back(k);
+        for (int i = graph[k]; i != -1; i = edges[i].nextEdge) {
+            if (dfn[edges[i].succ] == -1) {
+                father[edges[i].succ] = k;
+                tarjan(edges[i].succ);
+            }
+        }
+    };
+
+    std::function<int(int)> query = [&](int k) {
+        if (k == unionSet[k]) { return k; }
+        int result = query(unionSet[k]);
+        if (dfn[semi[minNode[unionSet[k]]]] < dfn[semi[minNode[k]]]) {
+            minNode[k] = minNode[unionSet[k]];
+        }
+        unionSet[k] = result;
+        return result;
+    };
+
+    //! compute deep-first order
+    tarjan(0);
+
+    //! initialize
+    for (int i = 0; i < n; ++i) {
+        semi[i]     = i;
+        unionSet[i] = i;
+        minNode[i]  = i;
+    }
+
+    //! process in reverse dfn order
+    for (int i = nodeAt.size() - 1; i > 0; --i) {
+        //! compute semi-dom
+        int t = nodeAt[i];
+        for (int i = graphInv[t]; i != -1; i = edges[i].nextEdge) {
+            auto succ = edges[i].succ;
+            if (dfn[succ] == -1) { continue; }
+            query(succ);
+            if (dfn[semi[minNode[succ]]] < dfn[semi[t]]) {
+                semi[t] = semi[minNode[succ]];
+            }
+        }
+        unionSet[t] = father[t];
+
+        //! update semi tree
+        edges.push_back({t, semiTree[semi[t]]});
+        semiTree[semi[t]] = edges.size() - 1;
+
+        //! compute idom
+        t = father[t];
+        for (int i = semiTree[t]; i != -1; i = edges[i].nextEdge) {
+            auto succ = edges[i].succ;
+            query(succ);
+            idom_[succ] = t == semi[minNode[succ]] ? t : minNode[succ];
+        }
+
+        //! reset semi tree
+        semiTree[t] = -1;
+    }
+
+    //! post process to finalize idom
+    for (int i = 1; i < nodeAt.size(); ++i) {
+        auto t = nodeAt[i];
+        if (idom_[t] != semi[t]) { idom_[t] = idom_[idom_[t]]; }
+    }
+
+    //! compute dom frontier by idom
+    idom.clear();
+    for (auto block : target->basicBlocks()) {
+        idom[block] = revIndex[idom_[index[block]]];
+    }
+
+    domfr.clear();
+    for (auto block : target->basicBlocks()) { domfr[block].clear(); }
+
+    for (auto block : target->basicBlocks()) {
+        if (block->inBlocks().size() <= 1) { continue; }
+        for (auto pred : block->inBlocks()) {
+            auto runner = pred;
+            while (runner != idom[block]) {
+                domfr[runner].insert(block);
+                runner = idom[runner];
+            }
+        }
+    }
+
+    std::vector<BasicBlock *> deleteLater;
+    for (auto [succ, dominator] : idom) {
+        if (succ == dominator) { deleteLater.push_back(succ); }
+    }
+    for (auto block : deleteLater) { idom.erase(block); }
+}
+
+} // namespace slime::pass

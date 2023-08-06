@@ -1,10 +1,11 @@
 #pragma once
 
-#include "47.h"
+#include "59.h"
 
 #include <set>
 #include <memory>
 #include <istream>
+#include <string_view>
 
 namespace slime {
 
@@ -27,7 +28,7 @@ public:
     ~LexState();
 
     LexState(LexState &&other);
-    LexState& operator=(LexState &&other);
+    LexState &operator=(LexState &&other);
 
     LexState(const LexState &)            = delete;
     LexState &operator=(const LexState &) = delete;
@@ -36,8 +37,8 @@ public:
     template <
         typename T,
         typename = std::enable_if_t<std::is_base_of_v<std::istream, T>>>
-    void reset(T &input) {
-        resetstream(new T(std::move(input)));
+    void reset(T &input, std::string_view source) {
+        resetstream(new T(std::move(input)), source);
         cur          = '\0';
         line         = 1;
         column       = 0;
@@ -54,7 +55,7 @@ public:
     TOKEN lookahead();
 
 protected:
-    void resetstream(std::istream *input);
+    void resetstream(std::istream *input, std::string_view source);
 };
 
 const char *tok2str(TOKEN token, char *buffer, size_t len);

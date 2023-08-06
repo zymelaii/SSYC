@@ -1,37 +1,29 @@
 #pragma once
 
-#include "69.h"
+#include "87.h"
 
-#include "43.h"
-#include <vector>
-#include <set>
-#include <map>
+#include "47.h"
+#include <tuple>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace slime::pass {
 
-class SCCPPass : public UniversalIRPass {
+//! Common Subexpression Elimiantion
+class CSEPass : public UniversalIRPass {
+private:
+    using key_type =
+        std::tuple<ir::InstructionID, intptr_t, intptr_t, intptr_t>;
+
 public:
-    void runOnFunction(ir::Function *target) override;
+    void runOnFunction(ir::Function* target) override;
 
 protected:
-    void runOnInstruction(ir::Instruction *inst);
+    std::pair<bool, key_type> encode(ir::Instruction* inst);
 
 private:
-    struct CFGFlow {
-        ir::BasicBlock *from;
-        ir::BasicBlock *to;
-    };
-
-    enum Status {
-        BOT   = 0b00,
-        CONST = 0b01,
-        TOP   = 0b10,
-    };
-
-    std::vector<ir::Instruction *> ssaWorkList_;
-    std::vector<CFGFlow>           cfgWorkList_;
-    std::map<ir::Value *, Status>  valueStatus_;
-    std::set<CFGFlow>              flags_;
+    std::map<key_type, ir::Value*>   numberingTable_;
+    std::set<ir::GetElementPtrInst*> constantPtrInst_;
 };
 
 } // namespace slime::pass

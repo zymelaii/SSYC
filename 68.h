@@ -1,16 +1,29 @@
-#include "69.h"
+#pragma once
 
-#include <set>
+#include "87.h"
+
+#include "47.h"
+#include <map>
 
 namespace slime::pass {
 
-class ValueNumberingPass final : public UniversalIRPass {
+class ConstantPropagation : public UniversalIRPass {
 public:
-    void runOnFunction(ir::Function *target) override;
+    void run(ir::Module* target) override;
+    void runOnFunction(ir::Function* target) override;
+
+protected:
+    void collectReadOnlyGlobalVariables(ir::Module* target);
+
+    ir::Value* tryFoldLoadInst(ir::LoadInst *inst);
+    ir::Value* tryFoldIntInst(ir::Instruction* inst);
+    ir::Value* tryFoldFloatInst(ir::Instruction* inst);
+    ir::Value* tryFoldCmpInst(ir::Instruction* inst);
+    ir::Value* tryFoldCastInst(ir::Instruction* inst);
+    bool       tryFoldBranchInst(ir::BrInst* inst);
 
 private:
-    int                   nextId_ = 0;
-    std::set<ir::Value *> doneSet_;
+    std::set<ir::Value*> readOnlyAddrSet_;
 };
 
 } // namespace slime::pass

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "72.h"
-#include "70.def"
+#include "90.h"
+#include "88.def"
 #include <vector>
 #include <assert.h>
 
@@ -28,6 +28,7 @@ enum class TypeID {
 
 enum class BuiltinTypeID {
     Int,
+    Char,
     Float,
     Void,
 };
@@ -88,6 +89,9 @@ struct BuiltinType : public Type {
             case BuiltinTypeID::Int: {
                 return getIntType();
             } break;
+            case BuiltinTypeID::Char: {
+                return getCharType();
+            } break;
             case BuiltinTypeID::Float: {
                 return getFloatType();
             } break;
@@ -99,6 +103,11 @@ struct BuiltinType : public Type {
 
     static BuiltinType* getIntType() {
         static BuiltinType singleton(BuiltinTypeID::Int);
+        return &singleton;
+    }
+
+    static BuiltinType* getCharType() {
+        static BuiltinType singleton(BuiltinTypeID::Char);
         return &singleton;
     }
 

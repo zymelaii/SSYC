@@ -1,122 +1,207 @@
 #pragma once
 
-#include "46.h"
-#include "0.h"
-#include "10.h"
-#include "5.h"
-#include <set>
-#include <map>
-#include <vector>
-#include <limits>
-#include <string_view>
+#include "53.h"
 
-namespace slime {
+#include "90.h"
+#include "91.h"
+#include <stdint.h>
+#include <stddef.h>
+#include <memory>
 
-using namespace ast;
+namespace slime::ir {
 
-class Parser {
+class BasicBlock;
+class Function;
+class ConstantData;
+class ConstantInt;
+class ConstantFloat;
+class ConstantArray;
+
+using BasicBlockList   = utils::ListTrait<BasicBlock*>;
+using ConstantDataList = utils::ListTrait<ConstantData*>;
+
+class Constant : public User<0> {
 public:
-    Parser()
-        : stringSet_{lexer_.strtable()} {
-        //! the bottom is always alive for global symbols
-        symbolTableStack_.push_back(new SymbolTable);
-    }
-
-    template <typename T>
-    void reset(T& stream) {
-        lexer_.reset(stream);
-    }
-
-    inline const Token&         token() const;
-    inline const Lexer&         lexer() const;
-    [[nodiscard]] inline Lexer* unbindLexer();
-
-    bool        expect(TOKEN token, const char* msg = nullptr);
-    const char* lookup(std::string_view s);
-
-    void                     addSymbol(NamedDecl* decl);
-    [[nodiscard]] NamedDecl* findSymbol(std::string_view name, DeclID declID);
-
-    [[nodiscard]] TranslationUnit* parse();
-
-    void                           parseGlobalDecl();
-    [[nodiscard]] DeclStmt*        parseDeclStmt();
-    [[nodiscard]] VarDecl*         parseVarDef();
-    [[nodiscard]] FunctionDecl*    parseFunction();
-    [[nodiscard]] ParamVarDeclList parseFunctionParams();
-    [[nodiscard]] Stmt*            parseStmt(bool standalone = false);
-    [[nodiscard]] IfStmt*          parseIfStmt();
-    [[nodiscard]] DoStmt*          parseDoStmt();
-    [[nodiscard]] WhileStmt*       parseWhileStmt();
-    [[nodiscard]] ForStmt*         parseForStmt();
-    [[nodiscard]] BreakStmt*       parseBreakStmt();
-    [[nodiscard]] ContinueStmt*    parseContinueStmt();
-    [[nodiscard]] ReturnStmt*      parseReturnStmt();
-    [[nodiscard]] CompoundStmt*    parseBlock();
-    [[nodiscard]] Expr*            parsePrimaryExpr();
-    [[nodiscard]] Expr*            parsePostfixExpr();
-    [[nodiscard]] Expr*            parseUnaryExpr();
-    [[nodiscard]] inline Expr*     parseBinaryExpr();
-    [[nodiscard]] Expr*            parseCommaExpr();
-    [[nodiscard]] InitListExpr*    parseInitListExpr();
-    [[nodiscard]] ExprList*        parseExprList();
-
-protected:
-    void                        enterDecl();
-    void                        leaveDecl();
-    [[nodiscard]] FunctionDecl* enterFunction();
-    void                        leaveFunction();
-    void                        enterBlock();
-    void                        leaveBlock();
-
-private:
-    void addExternalFunction(
-        const char* name, Type* returnType, ParamVarDeclList& params);
-
-    void addPresetSymbols();
-
-    void dropUnusedExternalSymbols();
-
-    [[nodiscard]] Expr* parseBinaryExprWithPriority(int priority);
-
-private:
-    using SymbolTable = std::map<std::string_view, NamedDecl*>;
-
-    struct ParseState {
-        FunctionDecl*        cur_func              = nullptr;
-        int                  cur_depth             = 0;
-        DeclID               decl_type             = DeclID::ParamVar;
-        DeclSpecifier*       cur_specifs           = nullptr;
-        ParamVarDeclList*    cur_params            = nullptr;
-        TranslationUnit*     tu                    = nullptr;
-        LoopStmt*            cur_loop              = nullptr;
-        bool                 not_deepen_next_block = false;
-        bool                 ignore_next_funcdecl  = false;
-        std::set<NamedDecl*> symref_set;
-    };
-
-    Lexer                                  lexer_;
-    ParseState                             state_;
-    std::shared_ptr<std::set<const char*>> stringSet_;
-    std::vector<SymbolTable*>              symbolTableStack_;
+    Constant(Type* type, uint32_t tag)
+        : User(type, tag) {}
 };
 
-inline const Token& Parser::token() const {
-    return lexer().this_token();
+class ConstantData : public Constant {
+public:
+    ConstantData(Type* type, uint32_t tag)
+        : Constant(type, tag) {}
+
+    static inline ConstantInt*   getBoolean(bool value);
+    static inline ConstantInt*   createI8(int8_t data);
+    static inline ConstantInt*   createI32(int32_t data);
+    static inline ConstantFloat* createF32(float data);
+};
+
+class ConstantInt final
+    : public ConstantData
+    , public utils::BuildTrait<ConstantInt> {
+public:
+    ConstantInt(int32_t value, Type* type = Type::getIntegerType())
+        : ConstantData(type, ValueTag::Immediate | 0)
+        , value{value} {}
+
+public:
+    int32_t value;
+};
+
+class ConstantFloat final
+    : public ConstantData
+    , public utils::BuildTrait<ConstantFloat> {
+public:
+    ConstantFloat(float value)
+        : ConstantData(Type::getFloatType(), ValueTag::Immediate | 0)
+        , value{value} {}
+
+public:
+    float value;
+};
+
+class ConstantArray final
+    : public ConstantData
+    , public utils::BuildTrait<ConstantArray> {
+public:
+    ConstantArray(ArrayType* type)
+        : ConstantData(type, ValueTag::ReadOnly | 0) {}
+
+    ConstantData*& operator[](size_t index) {
+        if (index >= values_.size()) { values_.resize(index + 1, nullptr); }
+        return values_[index];
+    }
+
+    ConstantData* at(size_t index) {
+        return index < values_.size() ? values_[index] : nullptr;
+    }
+
+    size_t size() const {
+        return values_.size();
+    }
+
+private:
+    std::vector<ConstantData*> values_;
+};
+
+class GlobalObject : public Constant {
+public:
+    GlobalObject(Type* type, uint32_t tag)
+        : Constant(type, tag) {}
+};
+
+class GlobalVariable final
+    : public GlobalObject
+    , public utils::BuildTrait<GlobalVariable> {
+public:
+    GlobalVariable(std::string_view name, Type* type, bool constant = false)
+        : GlobalObject(
+            Type::createPointerType(type),
+            ValueTag::Global | (constant ? ValueTag::ReadOnly | 0 : 0)) {
+        setName(name);
+    }
+
+    void setInitData(ConstantData* data) {
+        assert(data->type()->equals(type()->tryGetElementType()));
+        data_ = data;
+    }
+
+    void setInitData(int32_t data) {
+        setInitData(ConstantData::createI32(data));
+    }
+
+    void setInitData(float data) {
+        setInitData(ConstantData::createF32(data));
+    }
+
+    const ConstantData* data() const {
+        return data_;
+    }
+
+    bool isConst() const {
+        return isConstant();
+    }
+
+private:
+    ConstantData* data_;
+};
+
+//! NOTE: function may contains uses of global variable, but we do not care
+//! about it at the definition stage
+class Function final
+    : public GlobalObject
+    , public BasicBlockList
+    , public utils::BuildTrait<Function> {
+public:
+    Function(std::string_view name, FunctionType* proto)
+        : GlobalObject(proto, ValueTag::Function | 0)
+        , params_(new Parameter[proto->totalParams()]) {
+        setName(name);
+    }
+
+    inline BasicBlockList& basicBlocks() {
+        return *this;
+    }
+
+    inline const BasicBlockList& basicBlocks() const {
+        return *this;
+    }
+
+    inline BasicBlock* front() {
+        assert(size() > 0);
+        return head()->value();
+    }
+
+    inline BasicBlock* back() {
+        assert(size() > 0);
+        return tail()->value();
+    }
+
+    inline FunctionType* proto() const {
+        return const_cast<Function*>(this)->type()->asFunctionType();
+    }
+
+    inline const Parameter* params() const {
+        return &params_.get()[0];
+    }
+
+    inline size_t totalParams() const {
+        return proto()->totalParams();
+    }
+
+    inline const Parameter* paramAt(size_t index) const {
+        return index < proto()->totalParams() ? &params_.get()[index] : nullptr;
+    }
+
+    inline void setParam(std::string_view name, size_t index) {
+        if (index >= totalParams()) { return; }
+        auto& param = params_.get()[index];
+        param.setName(name);
+        param.resetValueTypeUnsafe(proto()->paramTypeAt(index));
+        param.attachTo(this, index);
+    }
+
+private:
+    std::unique_ptr<Parameter> params_;
+};
+
+inline ConstantInt* ConstantData::getBoolean(bool value) {
+    static ConstantInt trueSingleton(true, Type::getBooleanType());
+    static ConstantInt falseSingleton(false, Type::getBooleanType());
+    return value ? &trueSingleton : &falseSingleton;
 }
 
-inline const Lexer& Parser::lexer() const {
-    return lexer_;
+inline ConstantInt* ConstantData::createI8(int8_t data) {
+    return ConstantInt::create(data, IntegerType::get(IntegerKind::i8));
 }
 
-inline Lexer* Parser::unbindLexer() {
-    auto lexer = new Lexer(std::move(lexer_));
-    new (&lexer_) Lexer;
-    return lexer;
+inline ConstantInt* ConstantData::createI32(int32_t data) {
+    return ConstantInt::create(data);
 }
 
-inline Expr* Parser::parseBinaryExpr() {
-    return parseBinaryExprWithPriority(std::numeric_limits<int>::max());
+inline ConstantFloat* ConstantData::createF32(float data) {
+    return ConstantFloat::create(data);
 }
 
-} // namespace slime
+} // namespace slime::ir

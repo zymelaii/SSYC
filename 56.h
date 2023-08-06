@@ -1,29 +1,115 @@
 #pragma once
 
-#include "69.h"
+#include "55.h"
 
-namespace slime::pass {
+#include <array>
+#include <memory>
+#include <type_traits>
+#include <string_view>
 
-class CopyPropagationPass : public UniversalIRPass {
+namespace slime {
+
+namespace detail {
+
+template <TOKEN... Tokens>
+constexpr bool isUniqueTokenSequence() {
+    constexpr std::array tokens{Tokens...};
+    for (int i = 0; i < tokens.size(); ++i) {
+        for (int j = i + 1; j < tokens.size(); ++j) {
+            if (tokens[i] == tokens[j]) { return false; }
+        }
+    }
+    return true;
+}
+
+template <typename P, TOKEN... Ts>
+class IncompleteLexerTrait;
+
+template <TOKEN... Ts>
+class IncompleteLexerTrait<void, Ts...> {
 public:
-    //! WARNING: run after phi elimination
-    void runOnFunction(ir::Function *target) override;
+    static constexpr inline bool isDiscard(TOKEN token) {
+        if constexpr (discards_.size() == 0) {
+            return false;
+        } else if constexpr (discards_.size() == 1) {
+            return token == discards_[0];
+        } else if constexpr (discards_.size() == 2) {
+            return token == discards_[0] || token == discards_[1];
+        } else {
+            for (auto e : discards_) {
+                if (token == e) { return true; }
+            }
+            return false;
+        }
+    }
 
-protected:
-    void           createUseDefRecord(ir::Value *ptr);
-    void           updateUseDef(ir::StoreInst *store);
-    ir::Value     *lookupValueDef(ir::Value *ptr);
-    ir::StoreInst *lookupLastStoreInst(ir::Value *ptr);
-    bool           removeLastStoreIfUnused(ir::Value *ptr);
+public:
+    IncompleteLexerTrait()
+        : state_() {}
+
+    IncompleteLexerTrait(IncompleteLexerTrait&& other)
+        : state_(std::move(other.state_)) {}
+
+    IncompleteLexerTrait& operator=(IncompleteLexerTrait&& other) {
+        new (this) IncompleteLexerTrait(std::move(other));
+    }
+
+    IncompleteLexerTrait(const IncompleteLexerTrait&)            = delete;
+    IncompleteLexerTrait& operator=(const IncompleteLexerTrait&) = delete;
+
+public:
+    const Token& this_token() const {
+        return state_.token;
+    }
+
+    const Token& exact_next() const {
+        state_.next();
+        return state_.token;
+    }
+
+    const Token& exact_lookahead() const {
+        if (state_.nexttoken.isNone()) { state_.lookahead(); }
+        return state_.nexttoken;
+    }
+
+    const Token& next() const {
+        do { state_.next(); } while (isDiscard(state_.token.id));
+        return state_.token;
+    }
+
+    const Token& lookahead() const {
+        if (isDiscard(state_.nexttoken.id) || state_.nexttoken.isNone()) {
+            do {
+                state_.nexttoken.id = TOKEN::TK_NONE;
+                state_.lookahead();
+            } while (isDiscard(state_.nexttoken.id));
+        }
+        return state_.nexttoken;
+    }
+
+    auto& strtable() const {
+        return state_.strtable;
+    }
+
+    template <typename T>
+    void reset(T& stream, std::string_view source) {
+        state_.reset(stream, source);
+        state_.next();
+    }
 
 private:
-    struct UseDefRecord {
-        ir::Value     *value;
-        ir::StoreInst *store;
-        bool           used;
-    };
+    static constexpr std::array discards_{Ts...};
 
-    std::map<ir::Value *, UseDefRecord> useDef_;
+    mutable LexState state_;
 };
 
-} // namespace slime::pass
+} // namespace detail
+
+template <TOKEN... Ts>
+using LexerTrait = detail::IncompleteLexerTrait<
+    std::enable_if_t<detail::isUniqueTokenSequence<Ts...>()>,
+    Ts...>;
+
+using Lexer = LexerTrait<TOKEN::TK_COMMENT, TOKEN::TK_MLCOMMENT>;
+
+} // namespace slime

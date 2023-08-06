@@ -1,23 +1,23 @@
 #pragma once
 
-#include "5.h"
-#include <stddef.h>
+#include "87.h"
 
-namespace slime::visitor {
+#include "47.h"
+#include <set>
+#include <map>
+#include <vector>
 
-class ASTExprSimplifier {
+namespace slime::pass {
+
+class MemoryToRegisterPass : public UniversalIRPass {
 public:
-    static ast::Expr*         trySimplify(ast::Expr* expr);
-    static bool               trySmallLoopUnroll(ast::LoopStmt* stmt);
-    static ast::IfStmt*       transformIntoDoWhileLoop(ast::WhileStmt* stmt);
-    static ast::Expr*         tryEvaluateCompileTimeExpr(ast::Expr* expr);
-    static ast::ConstantExpr* tryEvaluateCompileTimeUnaryExpr(ast::Expr* expr);
-    static ast::ConstantExpr* tryEvaluateCompileTimeBinaryExpr(ast::Expr* expr);
-    static bool               isFunctionCallCompileTimeEvaluable(
-                      ast::FunctionDecl* function, size_t maxStmtAllowed = 64);
-    static ast::ConstantExpr* tryEvaluateFunctionCall(ast::CallExpr* call);
-    static ast::InitListExpr* regulateInitListForArray(
-        ast::ArrayType* array, ast::InitListExpr* list);
+    void runOnFunction(ir::Function *target) override;
+
+protected:
+    using BlockSetMap = std::map<ir::BasicBlock *, std::set<ir::BasicBlock *>>;
+    using BlockMap    = std::map<ir::BasicBlock *, ir::BasicBlock *>;
+    void computeDomFrontier(
+        BlockMap &idom, BlockSetMap &domfr, ir::Function *target);
 };
 
-} // namespace slime::visitor
+} // namespace slime::pass

@@ -1,17 +1,33 @@
-#include "69.h"
+#pragma once
 
-namespace slime::pass {
+#include <iostream>
+#include <memory>
+#include <string_view>
+#include <assert.h>
+#include <limits.h>
 
-class DeadCodeEliminationPass final : public UniversalIRPass {
+#ifndef PATH_MAX
+#define PATH_MAX 260
+#endif
+
+namespace slime {
+
+class InputStreamTransformer {
 public:
-    void run(ir::Module *module) override;
-    void runOnFunction(ir::Function *target) override;
+    void reset(std::istream *stream, std::string_view source);
+    char get();
 
 protected:
-    //! address -> store
-    std::map<ir::Value *, ir::StoreInst *> defList;
-    //! store -> load
-    std::map<ir::StoreInst *, ir::LoadInst *> useList;
+    void transform();
+
+private:
+    std::unique_ptr<std::istream> stream_;
+    std::string                   buffer_;
+    size_t                        cursor_;
+    char                          source_[PATH_MAX];
+
+    size_t lineMacro_;
+    char   pathMacro_[PATH_MAX];
 };
 
-} // namespace slime::pass
+} // namespace slime

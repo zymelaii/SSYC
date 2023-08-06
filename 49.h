@@ -1,80 +1,121 @@
 #pragma once
 
-#include "5.h"
+#include "90.h"
+#include <stdint.h>
 #include <string_view>
+#include <map>
 
-namespace slime {
+namespace slime::ir {
 
-struct Diagnosis {
-    //! expect: always false
-    static void expectAlwaysFalse(std::string_view message);
+class Type;
+class SequentialType;
+class ArrayType;
+class PointerType;
+class FunctionType;
 
-    //! expect: the given expression is true
-    static inline void expectTrue(bool value, std::string_view message);
+class Value;
+class Use;
+template <int N>
+class User;
 
-    //! assert: always false
-    [[noreturn]] static void assertAlwaysFalse(std::string_view message);
+class BasicBlock;
+class Parameter;
 
-    //! assert: the given expression is true
-    static inline void assertTrue(bool value, std::string_view message);
+class Constant;
+class ConstantData;
+class ConstantInt;
+class ConstantFloat;
+class ConstantArray;
+class GlobalObject;
+class GlobalVariable;
+class Function;
 
-    //! check: pointer is not null
-    static inline bool checkNotNull(void *ptr);
+class Instruction;
+class AllocaInst;
+class LoadInst;
+class StoreInst;
+class RetInst;
+class BrInst;
+class GetElementPtrInst;
+class AddInst;
+class SubInst;
+class MulInst;
+class UDivInst;
+class SDivInst;
+class URemInst;
+class SRemInst;
+class FNegInst;
+class FAddInst;
+class FSubInst;
+class FMulInst;
+class FDivInst;
+class FRemInst;
+class ShlInst;
+class LShrInst;
+class AShrInst;
+class AndInst;
+class OrInst;
+class XorInst;
+class FPToUIInst;
+class FPToSIInst;
+class UIToFPInst;
+class SIToFPInst;
+class ICmpInst;
+class FCmpInst;
+class PhiInst;
+class CallInst;
 
-    //! check: type 'from' is convertible to type 'to'
-    static bool checkTypeConvertible(ast::Type *from, ast::Type *to);
+using GlobalObjectList = utils::ListTrait<GlobalObject*>;
 
-    //! assert: the given conditional expression is convertible to 'bool'
-    static void assertConditionalExpression(ast::Expr *expr);
+class Module : public GlobalObjectList {
+public:
+    Module(const char* name);
+    ~Module();
 
-    //! assert: the return statement matches the function proto
-    static void assertWellFormedReturnStatement(
-        ast::ReturnStmt *stmt, ast::FunctionProtoType *proto);
+    inline std::string_view name() const;
 
-    //! assert: break statement appears in a loop statement
-    static void assertWellFormedBreakStatement(ast::BreakStmt *stmt);
+    [[nodiscard]] ConstantInt*    createI8(int8_t value);
+    [[nodiscard]] ConstantInt*    createI32(int32_t value);
+    [[nodiscard]] ConstantFloat*  createF32(float value);
+    [[nodiscard]] GlobalVariable* createString(std::string_view value);
 
-    //! assert: continue statement appears in a loop statement
-    static void assertWellFormedContinueStatement(ast::ContinueStmt *stmt);
+    bool acceptFunction(Function* fn);
+    bool acceptGlobalVariable(GlobalVariable* var);
 
-    //! assert: for statement is well-formed
-    static void assertWellFormedForStatement(ast::ForStmt *stmt);
+    Function*       lookupFunction(std::string_view name);
+    GlobalVariable* lookupGlobalVariable(std::string_view name);
 
-    //! assert: comma is not left alone in a comma expression
-    static void assertWellFormedCommaExpression(ast::Expr *expr);
+    inline GlobalObjectList&       globalObjects();
+    inline const GlobalObjectList& globalObjects() const;
 
-    //! assert: the value being assigned is not constant
-    static void assertNoAssignToConstQualifiedValue(
-        ast::Expr *value, ast::BinaryOperator op = ast::BinaryOperator::Assign);
+    [[nodiscard]] CallInst* createMemset(
+        Value* address, uint8_t value, size_t n);
 
-    //! assert: the given array type is well-formed
-    static void assertWellFormedArrayType(ast::ArrayType *type);
+protected:
+    void initializeBuiltinFunctions();
 
-    //! assert: the subscripted value is valid, e.g. array, pointer...
-    static void assertSubscriptableValue(ast::Expr *value);
+private:
+    const char* moduleName_;
 
-    //! assert: the initialization is well formed
-    static void assertWellFormedInitialization(
-        ast::Type *type, ast::Expr *value);
+    std::map<int32_t, ConstantInt*>        i32DataMap_;
+    std::map<int8_t, ConstantInt*>         i8DataMap_;
+    std::map<float, ConstantFloat*>        f32DataMap_;
+    std::map<const char*, GlobalVariable*> strDataMap_;
 
-    //! assert: the given callable is valid
-    static void assertCallable(ast::Expr *callable);
-
-    //! assert: the function is valid
-    static void assertWellFormedFunctionCall(
-        ast::FunctionProtoType *proto, ast::ExprList *arguments);
+    std::map<std::string_view, Function*>       functions_;
+    std::map<std::string_view, GlobalVariable*> globalVariables_;
 };
 
-inline void Diagnosis::expectTrue(bool value, std::string_view message) {
-    if (!value) { expectAlwaysFalse(message); }
+inline std::string_view Module::name() const {
+    return moduleName_;
 }
 
-inline void Diagnosis::assertTrue(bool value, std::string_view message) {
-    if (!value) { assertAlwaysFalse(message); }
+inline GlobalObjectList& Module::globalObjects() {
+    return *this;
 }
 
-inline bool Diagnosis::checkNotNull(void *ptr) {
-    return ptr != nullptr;
+inline const GlobalObjectList& Module::globalObjects() const {
+    return *this;
 }
 
-} // namespace slime
+} // namespace slime::ir

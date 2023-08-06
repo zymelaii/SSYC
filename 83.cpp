@@ -1,46 +1,43 @@
-#include "18.h"
-#include <iostream>
-#include <getopt.h>
-#include <string.h>
-#include <memory>
+#include "84.h"
 
-using slime::Driver;
+#include "47.h"
 
-int main(int argc, char* argv[]) {
-    std::unique_ptr<Driver> driver{Driver::create()};
-    Driver::Flags           flags{};
+namespace slime::pass {
 
-    static option opts[]{
-        {"lex-only", no_argument, 0, 0},
-        {"dump-ast", no_argument, 0, 0},
-        {"emit-ir",  no_argument, 0, 0},
-    };
+using namespace ir;
 
-    int optval = -1;
-    int optidx = -1;
+void SCCPPass::runOnFunction(Function *target) {
+    // if (target->size() == 0) { return; }
 
-    while ((optval = getopt_long(argc, argv, "S", opts, &optidx)) != -1) {
-        if (optval == 0) {
-            if (strcmp(opts[optidx].name, "lex-only") == 0) {
-                flags.LexOnly = true;
-                if (flags.DumpAST) { flags.DumpAST = false; }
-            } else if (strcmp(opts[optidx].name, "dump-ast") == 0) {
-                if (!flags.LexOnly) { flags.DumpAST = true; }
-            } else if (strcmp(opts[optidx].name, "emit-ir") == 0) {
-                flags.EmitIR = true;
-            }
-        } else if (optval == 'S') {
-            flags.DumpAssembly = true;
-        }
-    }
+    // cfgWorkList_.push_back({nullptr, target->front()});
 
-    for (int i = optind; i < argc; ++i) {
-        if (driver->withSourceFile(argv[i])->isReady()) { break; }
-    }
+    // for (auto block : target->basicBlocks()) {
+    //     for (auto inst : block->instructions()) {
+    //         valueStatus_[inst->unwrap()] = Status::TOP;
+    //     }
+    // }
 
-    if (!driver->isReady()) { driver->withStdin(); }
-
-    driver->withFlags(flags)->execute();
-
-    return 0;
+    // int i = 0, j = 0;
+    // while (i < cfgWorkList_.size() && j < ssaWorkList_.size()) {
+    //     while (i < cfgWorkList_.size()) {
+    //         auto &e = cfgWorkList_[i++];
+    //         if (flags_.count(e) != 0) { continue; }
+    //         flags_.insert(e);
+    //         for (auto inst : e.to->instructions()) { runOnInstruction(inst);
+    //         }
+    //     }
+    //     while (j < ssaWorkList_.size()) {
+    //         auto inst = ssaWorkList_[j++];
+    //         for (auto block : inst->parent()->inBlocks()) {
+    //             if (flags_.count({block, inst->parent()}) != 0) {
+    //                 runOnInstruction(inst);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
 }
+
+void SCCPPass::runOnInstruction(Instruction *inst) {}
+
+} // namespace slime::pass

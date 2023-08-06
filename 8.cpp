@@ -1,6 +1,8 @@
 #include "10.h"
 #include "5.h"
 
+#include "21.h"
+
 namespace slime::ast {
 
 Type* Stmt::implicitValueType() {
@@ -28,6 +30,9 @@ Type* Stmt::implicitValueType() {
             } else {
                 return stmt->tail()->value()->implicitValueType();
             }
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }

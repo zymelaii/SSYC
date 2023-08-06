@@ -1,367 +1,195 @@
 #pragma once
 
-#include "70.def"
-#include "73.h"
-#include <vector>
-#include <type_traits>
-#include <assert.h>
-#include <stdint.h>
-#include <stddef.h>
+#include "37.h"
 
-namespace slime::ir {
+/*!
+ * \brief magic macros and types for universal try-into inplements
+ *
+ *  1. declare your own base type
+ *
+ *  enum ID { A, B, C, D };
+ *  class TypeBase {
+ *  public:
+ *      TypeBase(ID id) : id_{id} {}
+ *      auto id() const { return id_; }
+ *
+ *  private:
+ *      ID id_;
+ *  };
+ *
+ *  using Type = TryIntoTraitWrapper<TypeBase, &TypeBase::id>;
+ *
+ *  2. declare your derived types
+ *
+ *  class DA : public Type {
+ *  public:
+ *      DA() : Type(ID::A) {}
+ *  };
+ *
+ *  class DB : public Type {
+ *  public:
+ *      DB() : Type(ID::B) {}
+ *  };
+ *
+ *  class DC : public Type {
+ *  public:
+ *      DC(ID id = ID::C) : Type(id) {}
+ *  };
+ *
+ * class DD : public DC {
+ *  public:
+ *      DD() : DC(id) {}
+ *  };
+ *
+ *  3. specify enum type for derived type
+ *
+ *  emit(auto) Type::declareTryIntoItem(DA, ID::A);
+ *  emit(auto) Type::declareTryIntoItem(DB, ID::B);
+ *  emit(auto) Type::declareTryIntoItem(DD, ID::D);
+ *
+ *  4. provide specilized is<G> check
+ *
+ *  emit(bool) Type::is<DC>() const {
+ *      return wrapper()->id() == ID::C || is<DC>();
+ *  }
+ *
+ *  5. enjoy yourself
+ *
+ *  int main() {
+ *      Type* t = new DD;
+ *      if (auto e = t->tryInto<DC>()) {
+ *          //! TODO: ...
+ *      }
+ *      return 0;
+ *  }
+ */
 
-class Type;
-class IntegerType;
-class ArrayType;
-class PointerType;
-class FunctionType;
+namespace slime {
 
-enum class TypeKind : uint8_t {
-    //! primitive types begin
-    FirstPrimitive,
-    Token = FirstPrimitive,
-    Label,
-    Void,
+namespace detail {
 
-    //! element types
-    FirstBuiltin,
-    Integer = FirstBuiltin, //<! i32 and i1 only
-    Float,                  //<! f32 only
-    LastBuiltin   = Float,
-    LastPrimitive = LastBuiltin,
+template <typename Self, typename E, auto FnEnum>
+class TryIntoTrait;
 
-    //! compound types begin
-    FirstCompound,
-    Array = FirstCompound,
-    Pointer,
-    Function,
-    LastCompound = Pointer,
-};
+enum class EmptyEnum;
 
-enum class IntegerKind : uint8_t {
-    i1,
-    i32,
-};
+}; // namespace detail
 
-class Type {
+template <
+    typename Self,
+    auto FnEnum,
+    typename Fn = decltype(FnEnum),
+    typename R  = std::invoke_result_t<Fn, Self>,
+    typename    = std::enable_if_t<is_scoped_enum<R>>,
+    typename    = std::enable_if_t<std::is_same_v<R (Self::*)() const, Fn>>>
+using EnumBasedTryIntoTraitWrapper = detail::TryIntoTrait<Self, R, FnEnum>;
+
+template <typename Self>
+using UniversalTryIntoTraitWrapper =
+    detail::TryIntoTrait<Self, detail::EmptyEnum, nullptr>;
+
+namespace detail {
+template <typename Self, typename E, auto FnEnum>
+class TryIntoTrait : public Self {
+private:
+    using wrapper_type = TryIntoTrait<Self, E, FnEnum>;
+    using inner_type   = Self;
+
 public:
-    inline TypeKind kind() const;
-
-    inline bool isToken() const;
-    inline bool isLabel() const;
-    inline bool isVoid() const;
-    inline bool isInteger() const;
-    inline bool isBoolean() const;
-    inline bool isFloat() const;
-    inline bool isArray() const;
-    inline bool isPointer() const;
-    inline bool isFunction() const;
-
-    inline bool isPrimitiveType() const;
-    inline bool isBuiltinType() const;
-    inline bool isCompoundType() const;
-    inline bool isElementType() const;
-
-    //! have same type kind
-    //! FIXME: equals do not check equality deeply
-    inline bool equals(const Type *other) const;
-    inline bool equals(const Type &other) const;
-
-    static inline Type *getTokenType();
-    static inline Type *getLabelType();
-    static inline Type *getVoidType();
-    static inline Type *getIntegerType(IntegerKind kind = IntegerKind::i32);
-    static inline Type *getBooleanType();
-    static inline Type *getFloatType();
-
-    static inline ArrayType   *createArrayType(Type *elementType, size_t size);
-    static inline PointerType *createPointerType(Type *elementType);
     template <typename... Args>
-    static inline FunctionType *createFunctionType(Args &&...args);
+    TryIntoTrait(Args&&... args)
+        : Self(std::forward<Args>(args)...) {}
 
-    static inline Type *tryGetElementTypeOf(Type *type);
-    inline Type        *tryGetElementType();
-
-    RegisterCastDecl(kind, Integer, Type, TypeKind);
-    RegisterCastDecl(kind, Function, Type, TypeKind);
-    RegisterCastDecl(kind, Array, Type, TypeKind);
-    RegisterCastDecl(kind, Pointer, Type, TypeKind);
-
-protected:
-    Type(TypeKind kind)
-        : kind_{kind} {}
-
-private:
-    TypeKind kind_;
-};
-
-class IntegerType final : public Type {
 public:
-    IntegerType(IntegerKind kind)
-        : Type(TypeKind::Integer)
-        , kind_{kind} {}
-
-    static inline IntegerType *get(IntegerKind kind = IntegerKind::i32);
-
-    inline IntegerKind kind() const;
-
-    inline bool isI1() const;
-    inline bool isI32() const;
-
-private:
-    const IntegerKind kind_;
-};
-
-class SequentialType : public Type {
-public:
-    //! element type in SequentialType only indicates the inner type
-    inline Type *elementType() const;
-
-protected:
-    SequentialType(TypeKind kind, Type *elementType)
-        : Type(kind)
-        , elementType_{elementType} {
-        assert(elementType != nullptr);
+    template <typename G>
+    inline auto as() {
+        using forward_type = std::add_pointer_t<G>;
+        return static_cast<forward_type>(self());
     }
 
-private:
-    Type *elementType_;
-};
-
-class ArrayType
-    : public SequentialType
-    , public utils::BuildTrait<ArrayType> {
-public:
-    inline size_t size() const;
-
-    ArrayType(Type *elementType, size_t size)
-        : SequentialType(TypeKind::Array, elementType)
-        , size_{size} {
-        assert(size > 0);
+    template <typename G>
+    inline auto as() const {
+        using const_type   = std::add_const_t<G>;
+        using forward_type = std::add_pointer_t<const_type>;
+        return static_cast<forward_type>(self()->template as<G>());
     }
 
-private:
-    size_t size_;
-};
-
-class PointerType
-    : public SequentialType
-    , public utils::BuildTrait<PointerType> {
-public:
-    PointerType(Type *elementType)
-        : SequentialType(TypeKind::Pointer, elementType) {}
-};
-
-class FunctionType
-    : public Type
-    , public utils::BuildTrait<FunctionType> {
-public:
-    inline Type  *returnType() const;
-    inline Type  *paramTypeAt(int index) const;
-    inline size_t totalParams() const;
-
-    FunctionType(Type *returnType)
-        : Type(TypeKind::Function)
-        , returnType_{returnType} {
-        assert(returnType != nullptr);
+    template <typename G>
+    inline auto into() const {
+        return self()->template as<G>();
     }
 
-    template <typename... Args>
-    FunctionType(Type *returnType, Args &&...args)
-        : FunctionType(returnType) {
-        if constexpr (sizeof...(Args) > 0) {
-            using first_type =
-                std::remove_reference_t<utils::nth_type<0, Args...>>;
-            if constexpr (
-                std::is_pointer_v<first_type>
-                && std::is_base_of_v<Type, std::remove_pointer_t<first_type>>) {
-                //! case1: create(returnType, paramType1, paramType2, ...)
-                std::initializer_list<Type *> paramTypes{
-                    std::forward<Args>(args)...};
-                paramsTypes_.assign(paramTypes.begin(), paramTypes.end());
-            } else if constexpr (utils::is_iterable_as<first_type, Type *>) {
-                //! case2: create(returnType, iterableContainer)
-                auto &list = utils::firstValueOfTArguments(args...);
-                paramsTypes_.assign(list.begin(), list.end());
-            } else {
-                abort();
-            }
+    template <typename G>
+    inline auto tryInto() const {
+        return is<G>() ? into<G>() : nullptr;
+    }
+
+    template <typename G>
+    inline bool is() const {
+        using this_type  = std::add_pointer_t<wrapper_type>;
+        using other_type = std::add_pointer_t<G>;
+        if constexpr (std::is_same_v<G, wrapper_type>) {
+            return true;
+        } else if constexpr (std::is_same_v<G, inner_type>) {
+            return true;
+        } else if constexpr (std::is_same_v<E, detail::EmptyEnum>) {
+            return false;
+        } else {
+            return (this->*FnEnum)() == declare_t<G>;
         }
     }
 
+    //! FIXME: -1 can be a valid of scoped enum E
+    template <typename G>
+    static inline constexpr E declare_t = static_cast<E>(-1);
+
 private:
-    Type               *returnType_;
-    std::vector<Type *> paramsTypes_;
+    inline constexpr auto self() const {
+        using forward_type = std::add_pointer_t<wrapper_type>;
+        return const_cast<forward_type>(this);
+    }
 };
 
-inline TypeKind Type::kind() const {
-    return kind_;
-}
+} // namespace detail
 
-inline bool Type::isToken() const {
-    return kind_ == TypeKind::Token;
-}
+#ifndef TRY_INTO_MAGIC_MACROS
+#define TRY_INTO_MAGIC_MACROS
 
-inline bool Type::isLabel() const {
-    return kind_ == TypeKind::Label;
-}
+#if defined(emit) || defined(declareTryIntoItem)
+#error macro `emit` or `declareTryIntoItem` is reserved for try-into trait
+#endif
 
-inline bool Type::isVoid() const {
-    return kind_ == TypeKind::Void;
-}
+#define emit(type) \
+ template <>       \
+ template <>       \
+ inline /*constexpr*/ type
 
-inline bool Type::isInteger() const {
-    return kind_ == TypeKind::Integer;
-}
+#define DECLARE_TRY_INTO_ITEM_M4(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
+#define DECLARE_TRY_INTO_ITEM_M3(...) \
+ DECLARE_TRY_INTO_ITEM_M4(__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define DECLARE_TRY_INTO_ITEM_M2(n, a, b, ...) \
+ TRY_INTO_DECLARE_DISPATCH_##n(a, b, ##__VA_ARGS__)
+#define DECLARE_TRY_INTO_ITEM_M1(...) DECLARE_TRY_INTO_ITEM_M2(__VA_ARGS__)
 
-inline bool Type::isBoolean() const {
-    return isInteger() && asIntegerType()->isI1();
-}
+#define declareTryIntoItem(a, b, ...) \
+ DECLARE_TRY_INTO_ITEM_M1(            \
+     DECLARE_TRY_INTO_ITEM_M3(b, ##__VA_ARGS__), a, b, ##__VA_ARGS__)
 
-inline bool Type::isFloat() const {
-    return kind_ == TypeKind::Float;
-}
+#define TRY_INTO_DECLARE_DISPATCH_1(a, b)          declare_t<a> = b
+#define TRY_INTO_DECLARE_DISPATCH_2(a, b, c)       declare_t<a, b> = c
+#define TRY_INTO_DECLARE_DISPATCH_3(a, b, c, d)    declare_t<a, b, c> = d
+#define TRY_INTO_DECLARE_DISPATCH_4(a, b, c, d, e) declare_t<a, b, c, d> = e
+#define TRY_INTO_DECLARE_DISPATCH_5(a, b, c, d, e, f) \
+ declare_t<a, b, c, d, e> = f
+#define TRY_INTO_DECLARE_DISPATCH_6(a, b, c, d, e, f, g) \
+ declare_t<a, b, c, d, e, f> = g
+#define TRY_INTO_DECLARE_DISPATCH_7(a, b, c, d, e, f, g, h) \
+ declare_t<a, b, c, d, e, f, g> = h
+#define TRY_INTO_DECLARE_DISPATCH_8(a, b, c, d, e, f, g, h, i) \
+ declare_t<a, b, c, d, e, f, g, h> = i
+#define TRY_INTO_DECLARE_DISPATCH_9(a, b, c, d, e, f, g, h, i, j) \
+ declare_t<a, b, c, d, e, f, g, h, i> = j
 
-inline bool Type::isArray() const {
-    return kind_ == TypeKind::Array;
-}
+#endif
 
-inline bool Type::isPointer() const {
-    return kind_ == TypeKind::Pointer;
-}
-
-inline bool Type::isFunction() const {
-    return kind_ == TypeKind::Function;
-}
-
-inline bool Type::isPrimitiveType() const {
-    const auto v     = static_cast<uint8_t>(kind_);
-    const auto first = static_cast<uint8_t>(TypeKind::FirstPrimitive);
-    const auto last  = static_cast<uint8_t>(TypeKind::LastPrimitive);
-    return v >= first && v <= last;
-}
-
-inline bool Type::isBuiltinType() const {
-    const auto v     = static_cast<uint8_t>(kind_);
-    const auto first = static_cast<uint8_t>(TypeKind::FirstBuiltin);
-    const auto last  = static_cast<uint8_t>(TypeKind::LastBuiltin);
-    return v >= first && v <= last;
-}
-
-inline bool Type::isCompoundType() const {
-    const auto v     = static_cast<uint8_t>(kind_);
-    const auto first = static_cast<uint8_t>(TypeKind::FirstCompound);
-    const auto last  = static_cast<uint8_t>(TypeKind::LastCompound);
-    return v >= first && v <= last;
-}
-
-inline bool Type::isElementType() const {
-    return isBuiltinType() || kind_ == TypeKind::Pointer;
-}
-
-inline bool Type::equals(const Type *other) const {
-    return kind_ == other->kind_;
-}
-
-inline bool Type::equals(const Type &other) const {
-    return kind_ == other.kind_;
-}
-
-RegisterCastImpl(kind_, Integer, Type, TypeKind);
-RegisterCastImpl(kind_, Function, Type, TypeKind);
-RegisterCastImpl(kind_, Array, Type, TypeKind);
-RegisterCastImpl(kind_, Pointer, Type, TypeKind);
-
-inline Type *Type::getTokenType() {
-    static Type singleton(TypeKind::Token);
-    return &singleton;
-}
-
-inline Type *Type::getLabelType() {
-    static Type singleton(TypeKind::Label);
-    return &singleton;
-}
-
-inline Type *Type::getVoidType() {
-    static Type singleton(TypeKind::Void);
-    return &singleton;
-}
-
-inline Type *Type::getIntegerType(IntegerKind kind) {
-    return IntegerType::get(kind);
-}
-
-inline Type *Type::getBooleanType() {
-    return getIntegerType(IntegerKind::i1);
-}
-
-inline Type *Type::getFloatType() {
-    static Type singleton(TypeKind::Float);
-    return &singleton;
-}
-
-inline ArrayType *Type::createArrayType(Type *elementType, size_t size) {
-    return ArrayType::create(elementType, size);
-}
-
-inline PointerType *Type::createPointerType(Type *elementType) {
-    return PointerType::create(elementType);
-}
-
-template <typename... Args>
-inline FunctionType *Type::createFunctionType(Args &&...args) {
-    return FunctionType::create(std::forward<Args>(args)...);
-}
-
-inline Type *Type::tryGetElementTypeOf(Type *type) {
-    if (type->isArray() || type->isPointer()) {
-        return static_cast<SequentialType *>(type)->elementType();
-    }
-    return nullptr;
-}
-
-inline Type *Type::tryGetElementType() {
-    return Type::tryGetElementTypeOf(this);
-}
-
-inline IntegerType *IntegerType::get(IntegerKind kind) {
-    static IntegerType i1Singleton(IntegerKind::i1);
-    static IntegerType i32Singleton(IntegerKind::i32);
-    return kind == IntegerKind::i32 ? &i32Singleton : &i1Singleton;
-}
-
-inline IntegerKind IntegerType::kind() const {
-    return kind_;
-}
-
-inline bool IntegerType::isI1() const {
-    return kind_ == IntegerKind::i1;
-}
-
-inline bool IntegerType::isI32() const {
-    return kind_ == IntegerKind::i32;
-}
-
-inline Type *SequentialType::elementType() const {
-    return elementType_;
-}
-
-inline size_t ArrayType::size() const {
-    return size_;
-}
-
-inline Type *FunctionType::returnType() const {
-    return returnType_;
-}
-
-inline Type *FunctionType::paramTypeAt(int index) const {
-    const int n = totalParams();
-    if (index < 0) { index = n + index; }
-    return (index < 0 || index >= n) ? nullptr : paramsTypes_[index];
-}
-
-inline size_t FunctionType::totalParams() const {
-    return paramsTypes_.size();
-}
-
-} // namespace slime::ir
+} // namespace slime

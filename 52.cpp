@@ -1,5 +1,5 @@
-#include "41.h"
-#include "37.h"
+#include "51.h"
+#include "47.h"
 
 namespace slime::ir {
 
@@ -78,6 +78,11 @@ bool BasicBlock::insertOrMoveAfter(BasicBlock *block) {
 bool BasicBlock::remove() {
     if (totalInBlocks() > 0) { return false; }
     reset();
+    for (auto inst : instructions()) {
+        for (int i = 0; i < inst->totalOperands(); ++i) {
+            inst->useAt(i).reset();
+        }
+    }
     node_->removeFromList();
     return true;
 }
