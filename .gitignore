@@ -17,3 +17,6 @@ testcase_*.json
 *.prof*
 
 test/testcase/*performance*/
+
+# local test generations
+/foobar.*
