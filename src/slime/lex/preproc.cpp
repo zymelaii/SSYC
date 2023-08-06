@@ -1,6 +1,7 @@
 #include "preproc.h"
 
 #include <string>
+#include <string.h>
 
 #ifdef WIN32
 #define realpath(rel, abs) _fullpath((abs), (rel), PATH_MAX)
