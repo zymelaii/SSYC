@@ -11,3 +11,5 @@
 *.log
 testcase_*.json
 *.prof*
+
+/foobar*.*
