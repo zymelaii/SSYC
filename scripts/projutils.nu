@@ -82,7 +82,7 @@ export def FlattenProject [
             }
             | flatten
             )
-        $sloc | str join (char nl) | save -f $"($target)(char psep)($item.target)"
+        $"($sloc | str join (char nl))(char nl)" | save -f $"($target)(char psep)($item.target)"
         print $'complete ($item.source) -> ($item.target)'
     } | ignore
 }
