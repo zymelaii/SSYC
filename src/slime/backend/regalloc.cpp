@@ -54,11 +54,11 @@ void Allocator::initVarInterval(Function *func) {
         if (i < 4) {
             var->reg           = static_cast<ARMGeneralRegs>(i);
             regAllocatedMap[i] = true;
-            funcparams.insert({const_cast<Parameter *>(func->paramAt(i)), var});
         } else {
-            var->is_spilled = true;
+            var->is_alloca = true;
             stack->pushVar(var, 4);
         }
+        funcparams.insert({const_cast<Parameter *>(func->paramAt(i)), var});
     }
     for (auto block : func->basicBlocks()) {
         auto valVarTable = new ValVarTable;

@@ -1,6 +1,7 @@
 #include "gencode.h"
 #include "regalloc.h"
 
+#include <cassert>
 #include <slime/ir/instruction.def>
 #include <slime/ir/module.h>
 #include <slime/ir/value.h>
@@ -11,7 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string>
+#include <string.h>
 #include <type_traits>
 
 namespace slime::backend {
@@ -87,6 +88,38 @@ const char *Generator::reg2str(ARMGeneralRegs reg) {
     }
 }
 
+std::string Generator::genGlobalArrayInitData(
+    ConstantArray *globarr, uint32_t baseSize) {
+    static uint32_t consecutiveCnt = 0;
+    static uint32_t consecutiveVal = 0;
+    std::string     initcode;
+    bool            baseDimensionFlag = (globarr->size() == 0);
+
+    assert(baseSize != 0);
+    initcode.clear();
+    for (int i = 0; i < globarr->size(); i++) {
+        auto initval = globarr->at(i);
+        if (initval->isImmediate()) {
+            assert(!initval->type()->isFloat());
+            baseDimensionFlag = true;
+            uint32_t imm =
+                static_cast<ConstantInt *>(initval->asConstantData())->value;
+            initcode += sprintln("   .long   %d", imm);
+        } else {
+            auto nextDimension = static_cast<ConstantArray *>(
+                const_cast<ConstantData *>(initval));
+            initcode += genGlobalArrayInitData(nextDimension, baseSize);
+        }
+    }
+    if (baseDimensionFlag && globarr->size() < baseSize) {
+        for (int i = 0; i < baseSize - globarr->size(); i++) {
+            initcode += sprintln("   .long   0");
+        }
+    }
+
+    return initcode;
+}
+
 std::string Generator::genGlobalDef(GlobalObject *obj) {
     std::string globdefs;
     if (obj->tryIntoFunction() != nullptr) {
@@ -98,29 +131,37 @@ std::string Generator::genGlobalDef(GlobalObject *obj) {
     } else if (obj->tryIntoGlobalVariable()) {
         auto globvar  = obj->asGlobalVariable();
         auto initData = globvar->type()->tryGetElementType();
-        globdefs += sprintln("   .type %s, %%object", globvar->name().data());
-        if (initData->isArray()) {
-            uint32_t size = 1;
-            auto     e    = initData;
-            while (e != nullptr && e->isArray()) {
-                size *= e->asArrayType()->size();
-                e     = e->tryGetElementType();
-            }
-            //! TODO: Initialisation of global arrary
-            // auto initVals = static_cast<ConstantArray
-            // *>(const_cast<ConstantData *>(globvar->data()));
-            // initVals->size();
 
-            globdefs += sprintln(
-                "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
+        globdefs += sprintln("   .type %s, %%object", globvar->name().data());
+        globdefs += sprintln("   .data");
+        globdefs += sprintln("   .globl %s", globvar->name().data());
+        globdefs += sprintln("   .p2align 2");
+        if (initData->isArray()) {
+            uint32_t size     = 1;
+            uint32_t baseSize = 0;
+            auto     e        = initData;
+            while (e != nullptr && e->isArray()) {
+                baseSize  = e->asArrayType()->size();
+                size     *= e->asArrayType()->size();
+                e         = e->tryGetElementType();
+            }
+
+            auto initVals = static_cast<ConstantArray *>(
+                const_cast<ConstantData *>(globvar->data()));
+            if (initVals->size() == 0) {
+                globdefs += sprintln(
+                    "   .comm %s, %d, %d", globvar->name().data(), size * 4, 4);
+            } else {
+                globdefs += sprintln("%s:", globvar->name().data());
+                globdefs += genGlobalArrayInitData(initVals, baseSize);
+                globdefs += sprintln(
+                    "   .size %s, %d\n", globvar->name().data(), size * 4);
+            }
         } else {
-            globdefs += sprintln("   .data");
-            globdefs += sprintln("   .globl %s", globvar->name().data());
-            globdefs += sprintln("   .p2align 2");
-            globdefs += sprintln("%s:", globvar->name().data());
             //! TODO: float global var
             assert(!initData->isFloat());
             if (initData->isInteger()) {
+                globdefs += sprintln("%s:", globvar->name().data());
                 globdefs += sprintln(
                     "   .long   %d",
                     static_cast<const ConstantInt *>(globvar->data())->value);
@@ -144,19 +185,23 @@ std::string Generator::genUsedGlobVars() {
 
 std::string Generator::genAssembly(Function *func) {
     generator_.allocator->computeInterval(func);
-    std::string funccode;
-    std::string blockcodes;
+    std::string   funccode;
+    BlockCodeList blockCodeList;
+
     funccode += genGlobalDef(func);
     for (auto block : func->basicBlocks()) {
-        blockcodes += sprintln(
+        BlockCode *blockcodes  = new BlockCode;
+        blockcodes->code      += sprintln(
             ".F%dBB.%d:",
             generator_.cur_funcnum,
             getBlockNum(block->id())); // label
         generator_.cur_block  = block;
-        blockcodes           += genInstList(&block->instructions());
+        blockcodes->instcodes = genInstList(&block->instructions());
+        blockCodeList.insertToTail(blockcodes);
     }
+    checkStackChanges(blockCodeList);
     funccode += saveCallerReg();
-    funccode += blockcodes;
+    funccode += unpackBlockCodeList(blockCodeList);
     return funccode;
 }
 
@@ -199,6 +244,22 @@ bool Generator::isImmediateValid(uint32_t imm) {
     }
 }
 
+void Generator::checkStackChanges(BlockCodeList &blockCodeList) {
+    auto it = blockCodeList.begin();
+    while (it != blockCodeList.end()) {
+        auto it2 = (*it)->instcodes->begin();
+        while (it2 != (*it)->instcodes->end()) {
+            auto inst = (*it2)->inst;
+            if ((*it2)->inst->id() == InstructionID::Ret) {
+                (*it2)->code = (*it2)->code + restoreCallerReg();
+            }
+            it2++;
+        }
+        it++;
+    }
+    // TODO: 处理通过栈传入的函数参数
+}
+
 void Generator::addUsedGlobalVar(Variable *var) {
     assert(var->is_global);
     static uint32_t nrGlobVar = 0;
@@ -225,7 +286,30 @@ std::string Generator::restoreCallerReg() {
     usedRegs.erase(ARMGeneralRegs::R0);
     for (auto reg : usedRegs) { regList.insertToTail(reg); }
     regList.insertToTail(ARMGeneralRegs::LR);
-    return cgPop(regList);
+    return cgPop(regList) + cgBx(ARMGeneralRegs::LR);
+}
+
+std::string Generator::unpackInstCodeList(InstCodeList &instCodeList) {
+    static std::string unpackedInstcodes;
+    unpackedInstcodes.clear();
+    auto it = instCodeList.begin();
+    while (it != instCodeList.end()) {
+        unpackedInstcodes += (*it)->code;
+        it++;
+    }
+    return unpackedInstcodes;
+}
+
+std::string Generator::unpackBlockCodeList(BlockCodeList &blockCodeList) {
+    static std::string unpackedBlockcodes;
+    unpackedBlockcodes.clear();
+    auto it = blockCodeList.begin();
+    while (it != blockCodeList.end()) {
+        unpackedBlockcodes += (*it)->code;
+        unpackedBlockcodes += unpackInstCodeList(*(*it)->instcodes);
+        it++;
+    }
+    return unpackedBlockcodes;
 }
 
 // 将IR中基本块的id转成从0开始的顺序编号
@@ -278,15 +362,17 @@ Instruction *Generator::getNextInst(Instruction *inst) {
     return nullptr;
 }
 
-std::string Generator::genInstList(InstructionList *instlist) {
-    int         allocaSize = 0;
-    bool        flag       = false;
-    std::string blockcode;
+InstCodeList *Generator::genInstList(InstructionList *instlist) {
+    InstCodeList *instCodeList = new InstCodeList();
+    int           allocaSize   = 0;
+    bool          flag         = false;
+    InstCode     *allocacode   = new InstCode(nullptr);
     for (auto inst : *instlist) {
         generator_.allocator->cur_inst++;
         if (inst->id() == InstructionID::Alloca) {
-            allocaSize += genAllocaInst(inst->asAlloca());
-            flag        = true;
+            allocaSize       += genAllocaInst(inst->asAlloca());
+            allocacode->inst  = inst;
+            flag              = true;
             continue;
         } else if (
             (flag || generator_.allocator->cur_inst == 1)
@@ -294,128 +380,141 @@ std::string Generator::genInstList(InstructionList *instlist) {
             flag = false;
             if (inst->parent()
                     == generator_.cur_func->basicBlocks().head()->value()
-                && allocaSize != 0)
-                blockcode +=
-                    cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, allocaSize);
+                && allocaSize != 0) {
+                if (!isImmediateValid(allocaSize)) {
+                    ARMGeneralRegs tmpreg =
+                        generator_.allocator->allocateRegister();
+                    assert(tmpreg != ARMGeneralRegs::None);
+                    allocacode->code += cgLdr(tmpreg, allocaSize);
+                    allocacode->code +=
+                        cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, tmpreg);
+                    generator_.allocator->releaseRegister(tmpreg);
+                } else
+                    allocacode->code += cgSub(
+                        ARMGeneralRegs::SP, ARMGeneralRegs::SP, allocaSize);
+                instCodeList->insertToTail(allocacode);
+            }
         }
-        blockcode += genInst(inst);
+        instCodeList->insertToTail(genInst(inst));
     }
-    return blockcode;
+    return instCodeList;
 }
 
-std::string Generator::genInst(Instruction *inst) {
+InstCode *Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
     assert(instID != InstructionID::Alloca);
-    std::string instcode;
+    InstCode   *instcode;
+    std::string tmpcode;
     generator_.allocator->updateAllocation(
-        this, &instcode, generator_.cur_block, inst);
+        this, &tmpcode, generator_.cur_block, inst);
 
-    switch (inst->id()) {
+    switch (instID) {
         case InstructionID::Alloca:
-            instcode += genAllocaInst(inst->asAlloca());
+            assert(0);
             break;
         case InstructionID::Load:
-            instcode += genLoadInst(inst->asLoad());
+            instcode = genLoadInst(inst->asLoad());
             break;
         case InstructionID::Store:
-            instcode += genStoreInst(inst->asStore());
+            instcode = genStoreInst(inst->asStore());
             break;
         case InstructionID::Ret:
-            instcode += genRetInst(inst->asRet());
+            instcode = genRetInst(inst->asRet());
             break;
         case InstructionID::Br:
-            instcode += genBrInst(inst->asBr());
+            instcode = genBrInst(inst->asBr());
             break;
         case InstructionID::GetElementPtr:
-            instcode += genGetElemPtrInst(inst->asGetElementPtr());
+            instcode = genGetElemPtrInst(inst->asGetElementPtr());
             break;
         case InstructionID::Add:
-            instcode += genAddInst(inst->asAdd());
+            instcode = genAddInst(inst->asAdd());
             break;
         case InstructionID::Sub:
-            instcode += genSubInst(inst->asSub());
+            instcode = genSubInst(inst->asSub());
             break;
         case InstructionID::Mul:
-            instcode += genMulInst(inst->asMul());
+            instcode = genMulInst(inst->asMul());
             break;
         case InstructionID::UDiv:
-            instcode += genUDivInst(inst->asUDiv());
+            instcode = genUDivInst(inst->asUDiv());
             break;
         case InstructionID::SDiv:
-            instcode += genSDivInst(inst->asSDiv());
+            instcode = genSDivInst(inst->asSDiv());
             break;
         case InstructionID::URem:
-            instcode += genURemInst(inst->asURem());
+            instcode = genURemInst(inst->asURem());
             break;
         case InstructionID::SRem:
-            instcode += genSRemInst(inst->asSRem());
+            instcode = genSRemInst(inst->asSRem());
             break;
         case InstructionID::FNeg:
-            instcode += genFNegInst(inst->asFNeg());
+            instcode = genFNegInst(inst->asFNeg());
             break;
         case InstructionID::FAdd:
-            instcode += genFAddInst(inst->asFAdd());
+            instcode = genFAddInst(inst->asFAdd());
             break;
         case InstructionID::FSub:
-            instcode += genFSubInst(inst->asFSub());
+            instcode = genFSubInst(inst->asFSub());
             break;
         case InstructionID::FMul:
-            instcode += genFMulInst(inst->asFMul());
+            instcode = genFMulInst(inst->asFMul());
             break;
         case InstructionID::FDiv:
-            instcode += genFDivInst(inst->asFDiv());
+            instcode = genFDivInst(inst->asFDiv());
             break;
         case InstructionID::FRem:
-            instcode += genFRemInst(inst->asFRem());
+            instcode = genFRemInst(inst->asFRem());
             break;
         case InstructionID::Shl:
-            instcode += genShlInst(inst->asShl());
+            instcode = genShlInst(inst->asShl());
             break;
         case InstructionID::LShr:
-            instcode += genLShrInst(inst->asLShr());
+            instcode = genLShrInst(inst->asLShr());
             break;
         case InstructionID::AShr:
-            instcode += genAShrInst(inst->asAShr());
+            instcode = genAShrInst(inst->asAShr());
             break;
         case InstructionID::And:
-            instcode += genAndInst(inst->asAnd());
+            instcode = genAndInst(inst->asAnd());
             break;
         case InstructionID::Or:
-            instcode += genOrInst(inst->asOr());
+            instcode = genOrInst(inst->asOr());
             break;
         case InstructionID::Xor:
-            instcode += genXorInst(inst->asXor());
+            instcode = genXorInst(inst->asXor());
             break;
         case InstructionID::FPToUI:
-            instcode += genFPToUIInst(inst->asFPToUI());
+            instcode = genFPToUIInst(inst->asFPToUI());
             break;
         case InstructionID::FPToSI:
-            instcode += genFPToSIInst(inst->asFPToSI());
+            instcode = genFPToSIInst(inst->asFPToSI());
             break;
         case InstructionID::UIToFP:
-            instcode += genUIToFPInst(inst->asUIToFP());
+            instcode = genUIToFPInst(inst->asUIToFP());
             break;
         case InstructionID::SIToFP:
-            instcode += genSIToFPInst(inst->asSIToFP());
+            instcode = genSIToFPInst(inst->asSIToFP());
             break;
         case InstructionID::ICmp:
-            instcode += genICmpInst(inst->asICmp());
+            instcode = genICmpInst(inst->asICmp());
             break;
         case InstructionID::FCmp:
-            instcode += genFCmpInst(inst->asFCmp());
+            instcode = genFCmpInst(inst->asFCmp());
             break;
         case InstructionID::ZExt:
-            instcode += genZExtInst(inst->asZExt());
+            instcode = genZExtInst(inst->asZExt());
             break;
         case InstructionID::Call:
-            instcode += genCallInst(inst->asCall());
+            instcode = genCallInst(inst->asCall());
             break;
         default:
             fprintf(stderr, "Unkown ir inst type:%d!\n", instID);
             exit(-1);
     }
     generator_.allocator->checkLiveInterval();
-    std::cout << instcode;
+    if (!tmpcode.empty()) instcode->code = tmpcode + instcode->code;
+    std::cout << instcode->code;
     return instcode;
 }
 
@@ -433,13 +532,13 @@ int Generator::genAllocaInst(AllocaInst *inst) {
     return size * 4;
 }
 
-std::string Generator::genLoadInst(LoadInst *inst) {
+InstCode *Generator::genLoadInst(LoadInst *inst) {
     auto           targetVar = findVariable(inst->unwrap());
     auto           source    = inst->useAt(0);
     int            offset;
-    std::string    loadcode;
-    ARMGeneralRegs sourceReg;
-    loadcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    InstCode      *loadcode = new InstCode(inst);
+    ARMGeneralRegs sourceReg, tmpreg = ARMGeneralRegs::None;
+    loadcode->code += sprintln("@ %%%d:", inst->unwrap()->id());
     if (source->isLabel()) {
         //! TODO: label
         assert(0);
@@ -454,8 +553,8 @@ std::string Generator::genLoadInst(LoadInst *inst) {
             addUsedGlobalVar(sourceVar);
             offset = 0;
             // assert(sourceVar->reg != ARMGeneralRegs::None);
-            loadcode  += cgLdr(targetVar->reg, sourceVar);
-            sourceReg  = targetVar->reg;
+            loadcode->code += cgLdr(targetVar->reg, sourceVar);
+            sourceReg       = targetVar->reg;
             // if (sourceVar->reg == ARMGeneralRegs::None) {
             //     cgLdr(targetVar->reg, sourceVar);
             //     sourceReg = targetVar->reg;
@@ -465,42 +564,56 @@ std::string Generator::genLoadInst(LoadInst *inst) {
             sourceReg = sourceVar->reg;
             offset    = 0;
         }
-        loadcode += cgLdr(targetVar->reg, sourceReg, offset);
+
+        if (!isImmediateValid(offset)) {
+            //! TODO: simpify invalid immediate number
+            // by using "LDR rd [rs, rn , lsl #imm]"
+            auto whitelist = generator_.allocator->getInstOperands(inst);
+            tmpreg         = generator_.allocator->allocateRegister(
+                true, whitelist, this, &loadcode->code);
+            loadcode->code += cgLdr(tmpreg, offset);
+            loadcode->code += cgLdr(targetVar->reg, sourceReg, tmpreg);
+        } else
+            loadcode->code += cgLdr(targetVar->reg, sourceReg, offset);
     }
+
+    if (tmpreg != ARMGeneralRegs::None)
+        generator_.allocator->releaseRegister(tmpreg);
     return loadcode;
 }
 
-std::string Generator::genStoreInst(StoreInst *inst) {
+InstCode *Generator::genStoreInst(StoreInst *inst) {
     auto           target = inst->useAt(0);
     auto           source = inst->useAt(1);
     ARMGeneralRegs sourceReg, targetReg;
     int            offset;
-    std::string    storecode;
+    InstCode      *storecode = new InstCode(inst);
+    auto           whitelist = generator_.allocator->getInstOperands(inst);
 
     ARMGeneralRegs tmpreg = ARMGeneralRegs::None;
     if (source.value()->isConstant()) {
         if (source.value()->type()->isInteger()) {
-            std::set<Variable *> whitelist;
             sourceReg = generator_.allocator->allocateRegister(
-                true, &whitelist, this, &storecode);
-            tmpreg      = sourceReg;
+                true, whitelist, this, &storecode->code);
             int32_t imm = static_cast<ConstantInt *>(source.value())->value;
-            if (sourceReg == ARMGeneralRegs::None) {
-                //! TODO: spill something
-                assert(0 && "TODO!");
-            }
-            storecode += cgLdr(sourceReg, imm);
+            storecode->code += cgLdr(sourceReg, imm);
         } else if (source.value()->type()->isFloat()) {
             //! TODO: float
             assert(0);
         }
     } else {
         auto sourceVar = findVariable(source);
-        if (sourceVar->is_spilled) {
-            //! TODO: handle spilled variable
+        if (sourceVar->is_alloca) {
+            //! NOTE: only funcparams could reach here
             assert(0);
-        }
-        sourceReg = sourceVar->reg;
+            int32_t offset = generator_.stack->stackSize - sourceVar->stackpos;
+
+            tmpreg = generator_.allocator->allocateRegister(
+                true, whitelist, this, &storecode->code);
+            storecode->code += cgLdr(tmpreg, ARMGeneralRegs::SP, offset);
+            sourceReg        = tmpreg;
+        } else
+            sourceReg = sourceVar->reg;
     }
     auto targetVar = findVariable(target);
     if (targetVar->is_global) {
@@ -508,8 +621,8 @@ std::string Generator::genStoreInst(StoreInst *inst) {
         if (targetVar->reg != ARMGeneralRegs::None) {
             targetReg = targetVar->reg;
             addUsedGlobalVar(targetVar);
-            storecode += cgLdr(targetReg, targetVar);
-            storecode += cgStr(sourceReg, targetReg, 0);
+            storecode->code += cgLdr(targetReg, targetVar);
+            storecode->code += cgStr(sourceReg, targetReg, 0);
         }
     } else {
         if (targetVar->is_alloca) {
@@ -519,44 +632,63 @@ std::string Generator::genStoreInst(StoreInst *inst) {
             targetReg = targetVar->reg;
             offset    = 0;
         }
-        storecode += cgStr(sourceReg, targetReg, offset);
+        if (!isImmediateValid(offset)) {
+            assert(tmpreg == ARMGeneralRegs::None);
+            tmpreg = generator_.allocator->allocateRegister(
+                true, whitelist, this, &storecode->code);
+            storecode->code += cgLdr(tmpreg, offset);
+            storecode->code += cgStr(sourceReg, targetReg, tmpreg);
+        } else
+            storecode->code += cgStr(sourceReg, targetReg, offset);
     }
     if (source.value()->isConstant())
         generator_.allocator->releaseRegister(sourceReg);
+    if (tmpreg != ARMGeneralRegs::None)
+        generator_.allocator->releaseRegister(tmpreg);
     return storecode;
 }
 
-std::string Generator::genRetInst(RetInst *inst) {
-    std::string retcode;
+InstCode *Generator::genRetInst(RetInst *inst) {
+    InstCode *retcode = new InstCode(inst);
     if (inst->totalOperands() != 0 && inst->useAt(0).value()) {
         auto operand = inst->useAt(0).value();
         if (operand->isImmediate()) {
             assert(operand->type()->isInteger());
-            retcode += cgLdr(
+            retcode->code += cgLdr(
                 ARMGeneralRegs::R0, static_cast<ConstantInt *>(operand)->value);
         } else {
             assert(Allocator::isVariable(operand));
             auto var = findVariable(operand);
             if (var->reg != ARMGeneralRegs::R0)
-                retcode += cgMov(ARMGeneralRegs::R0, var->reg);
+                retcode->code += cgMov(ARMGeneralRegs::R0, var->reg);
         }
     }
-    if (generator_.stack->stackSize > 0)
-        retcode += cgAdd(
-            ARMGeneralRegs::SP,
-            ARMGeneralRegs::SP,
-            generator_.stack->stackSize);
-    retcode += restoreCallerReg();
-    retcode += cgBx(ARMGeneralRegs::LR);
+    if (generator_.stack->stackSize > 0) {
+        if (!isImmediateValid(generator_.stack->stackSize)) {
+            ARMGeneralRegs tmpreg = generator_.allocator->allocateRegister();
+            assert(tmpreg != ARMGeneralRegs::None);
+            retcode->code += cgLdr(tmpreg, generator_.stack->stackSize);
+            retcode->code +=
+                cgAdd(ARMGeneralRegs::SP, ARMGeneralRegs::SP, tmpreg);
+            generator_.allocator->releaseRegister(tmpreg);
+        } else
+            retcode->code += cgAdd(
+                ARMGeneralRegs::SP,
+                ARMGeneralRegs::SP,
+                generator_.stack->stackSize);
+    }
+
+    // caller registers' restoration will be handled in funciton 'genAssembly'
     return retcode;
 }
 
-std::string Generator::genBrInst(BrInst *inst) {
-    std::string brcode;
+InstCode *Generator::genBrInst(BrInst *inst) {
+    InstCode   *brcode    = new InstCode(inst);
     BasicBlock *nextblock = getNextBlock();
     if (generator_.cur_block->isLinear()) {
         Value *target = inst->useAt(0);
-        if (target->id() != nextblock->id()) brcode += cgB(inst->useAt(0));
+        if (!nextblock || target->id() != nextblock->id())
+            brcode->code += cgB(inst->useAt(0));
     } else {
         auto control = inst->parent()->control()->asInstruction();
         ComparePredicationType predict;
@@ -571,9 +703,9 @@ std::string Generator::genBrInst(BrInst *inst) {
         Variable *cond    = findVariable(inst->useAt(0));
         Value    *target1 = inst->useAt(1), *target2 = inst->useAt(2);
         if (cond->reg != ARMGeneralRegs::None) {
-            brcode += cgTst(cond->reg, 1);
-            brcode += cgB(target2, ComparePredicationType::EQ);
-            brcode += cgB(target1);
+            brcode->code += cgTst(cond->reg, 1);
+            brcode->code += cgB(target2, ComparePredicationType::EQ);
+            brcode->code += cgB(target1);
             return brcode;
         }
         // if (nextblock->id() == target1->id()) {
@@ -581,8 +713,8 @@ std::string Generator::genBrInst(BrInst *inst) {
         // } else if (nextblock->id() == target2->id()) {
         //     cgB(target1, ComparePredicationType::NE);
         // } else {
-        brcode += cgB(target1, predict);
-        brcode += cgB(target2);
+        brcode->code += cgB(target1, predict);
+        brcode->code += cgB(target2);
         // }
     }
     return brcode;
@@ -607,26 +739,33 @@ int Generator::sizeOfType(ir::Type *type) {
     }
 }
 
-std::string Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
+InstCode *Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     //! NOTE: 2 more extra registers requried
 
     //! addr = base + i[0] * sizeof(type) + i[1] * sizeof(*type) + ...
-    auto        baseType = inst->op<0>()->type()->tryGetElementType();
-    std::string getelemcode;
-    getelemcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    auto      baseType     = inst->op<0>()->type()->tryGetElementType();
+    InstCode *getelemcode  = new InstCode(inst);
+    getelemcode->code     += sprintln("@ %%%d:", inst->unwrap()->id());
     //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
     if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
-        getelemcode += cgMov(dest, ARMGeneralRegs::SP);
-        getelemcode +=
-            cgAdd(dest, dest, generator_.stack->stackSize - var->stackpos);
+        int offset = generator_.stack->stackSize - var->stackpos;
+        if (!isImmediateValid(offset)) {
+            getelemcode->code += cgLdr(dest, offset);
+            getelemcode->code += cgAdd(dest, ARMGeneralRegs::SP, dest);
+        } else {
+            getelemcode->code += cgAdd(
+                dest,
+                ARMGeneralRegs::SP,
+                generator_.stack->stackSize - var->stackpos);
+        }
     } else if (var->is_global) {
         addUsedGlobalVar(var);
-        getelemcode += cgLdr(dest, var);
+        getelemcode->code += cgLdr(dest, var);
     } else {
         assert(!var->is_spilled);
         assert(!inst->op<0>()->isImmediate());
-        getelemcode += cgMov(dest, var->reg);
+        getelemcode->code += cgMov(dest, var->reg);
     }
 
     decltype(dest) *tmp = nullptr;
@@ -646,18 +785,18 @@ std::string Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
             if (multiplier >= 1) {
                 auto whitelist = generator_.allocator->getInstOperands(inst);
                 regPlaceholder = generator_.allocator->allocateRegister(
-                    true, whitelist, this, &getelemcode);
+                    true, whitelist, this, &getelemcode->code);
                 tmp            = &regPlaceholder;
                 tmpIsAllocated = true;
-                if (multiplier > 1) { getelemcode += cgLdr(*tmp, imm); }
+                if (multiplier > 1) { getelemcode->code += cgLdr(*tmp, imm); }
             }
         } else if (op->isGlobal()) {
             //! FIXME: assume that reg of global variable is free to use
             addUsedGlobalVar(findVariable(op));
-            auto var     = findVariable(op);
-            tmp          = &var->reg;
-            getelemcode += cgLdr(*tmp, var);
-            getelemcode += cgLdr(*tmp, *tmp, 0);
+            auto var           = findVariable(op);
+            tmp                = &var->reg;
+            getelemcode->code += cgLdr(*tmp, var);
+            getelemcode->code += cgLdr(*tmp, *tmp, 0);
         } else {
             auto var = findVariable(op);
             assert(var != nullptr);
@@ -670,31 +809,31 @@ std::string Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
         if (multiplier == -1) {
             auto whitelist = generator_.allocator->getInstOperands(inst);
             auto reg       = generator_.allocator->allocateRegister(
-                true, whitelist, this, &getelemcode);
-            getelemcode += cgMov(reg, stride);
-            getelemcode += cgMul(*tmp, *tmp, reg);
+                true, whitelist, this, &getelemcode->code);
+            getelemcode->code += cgLdr(reg, stride);
+            getelemcode->code += cgMul(*tmp, *tmp, reg);
             //! swap register: *tmp <- reg
             if (tmpIsAllocated) { generator_.allocator->releaseRegister(*tmp); }
             generator_.allocator->releaseRegister(reg);
         } else if (multiplier > 0) {
             if (multiplier == 1) {
-                getelemcode += cgMov(*tmp, stride);
+                getelemcode->code += cgLdr(*tmp, stride);
             } else if (multiplier == 2) {
-                getelemcode += cgMov(*tmp, stride);
-                getelemcode += cgAdd(*tmp, *tmp, *tmp);
+                getelemcode->code += cgLdr(*tmp, stride);
+                getelemcode->code += cgAdd(*tmp, *tmp, *tmp);
             } else {
                 auto whitelist = generator_.allocator->getInstOperands(inst);
                 auto reg       = generator_.allocator->allocateRegister(
-                    true, whitelist, this, &getelemcode);
-                getelemcode += cgMov(reg, stride);
-                getelemcode += cgMul(*tmp, *tmp, reg);
+                    true, whitelist, this, &getelemcode->code);
+                getelemcode->code += cgLdr(reg, stride);
+                getelemcode->code += cgMul(*tmp, *tmp, reg);
                 generator_.allocator->releaseRegister(reg);
             }
         }
 
         if (multiplier != 0) {
             //! dest <- base + offset
-            getelemcode += cgAdd(dest, dest, *tmp);
+            getelemcode->code += cgAdd(dest, dest, *tmp);
         }
 
         if (tmpIsAllocated) {
@@ -712,134 +851,142 @@ std::string Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     return getelemcode;
 }
 
-std::string Generator::genAddInst(AddInst *inst) {
+InstCode *Generator::genAddInst(AddInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rn;
-    std::string    addcode;
-    auto           op1  = inst->useAt(0);
-    auto           op2  = inst->useAt(1);
-    addcode            += sprintln("@ %%%d:", inst->unwrap()->id());
+    InstCode      *addcode  = new InstCode(inst);
+    auto           op1      = inst->useAt(0);
+    auto           op2      = inst->useAt(1);
+    addcode->code          += sprintln("@ %%%d:", inst->unwrap()->id());
 
     if (Allocator::isVariable(op1)) {
         rn = findVariable(op1)->reg;
     } else {
         rn = rd;
-        addcode +=
+        addcode->code +=
             cgLdr(rd, static_cast<ConstantInt *>(op1->asConstantData())->value);
     }
 
     if (Allocator::isVariable(op2)) {
         ARMGeneralRegs op2reg  = findVariable(op2)->reg;
-        addcode               += cgAdd(rd, rn, op2reg);
+        addcode->code         += cgAdd(rd, rn, op2reg);
     } else {
+        assert(Allocator::isVariable(op1));
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        addcode += cgAdd(rd, rn, imm);
+        if (!isImmediateValid(imm)) {
+            addcode->code += cgLdr(rd, imm);
+            addcode->code += cgLdr(rd, rn, rd);
+        } else
+            addcode->code += cgAdd(rd, rn, imm);
     }
     return addcode;
 }
 
-std::string Generator::genSubInst(SubInst *inst) {
+InstCode *Generator::genSubInst(SubInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
-    std::string    subcode;
-    subcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    InstCode      *subcode  = new InstCode(inst);
+    subcode->code          += sprintln("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
-        subcode += cgMov(rd, imm);
-        rs       = rd;
+        subcode->code += cgMov(rd, imm);
+        rs             = rd;
     } else
         rs = findVariable(inst->useAt(0))->reg;
 
     auto op2 = inst->useAt(1);
     if (Allocator::isVariable(op2)) {
         ARMGeneralRegs op2reg  = findVariable(op2)->reg;
-        subcode               += cgSub(rd, rs, op2reg);
+        subcode->code         += cgSub(rd, rs, op2reg);
     } else {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        subcode += cgSub(rd, rs, imm);
+        subcode->code += cgSub(rd, rs, imm);
     }
     return subcode;
 }
 
-std::string Generator::genMulInst(MulInst *inst) {
+InstCode *Generator::genMulInst(MulInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
-    std::string    mulcode;
-    mulcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    InstCode      *mulcode  = new InstCode(inst);
+    mulcode->code          += sprintln("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
-        mulcode += cgLdr(rd, imm);
-        rs       = rd;
+        mulcode->code += cgLdr(rd, imm);
+        rs             = rd;
     } else
         rs = findVariable(inst->useAt(0))->reg;
 
     auto op2 = inst->useAt(1);
     if (Allocator::isVariable(op2)) {
         ARMGeneralRegs op2reg  = findVariable(op2)->reg;
-        mulcode               += cgMul(rd, rs, op2reg);
+        mulcode->code         += cgMul(rd, rs, op2reg);
     } else {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
         assert(Allocator::isVariable(inst->useAt(0)));
-        mulcode += cgLdr(rd, imm);
-        mulcode += cgMul(rd, rs, rd);
+        mulcode->code += cgLdr(rd, imm);
+        mulcode->code += cgMul(rd, rs, rd);
     }
     return mulcode;
 }
 
-std::string Generator::genUDivInst(UDivInst *inst) {
+InstCode *Generator::genUDivInst(UDivInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genSDivInst(SDivInst *inst) {
+//! FIXME: a variable may lose when it holds RO-R3
+InstCode *Generator::genSDivInst(SDivInst *inst) {
     assert(!generator_.allocator->regAllocatedMap[0]);
     assert(!generator_.allocator->regAllocatedMap[1]);
-    std::string sdivcode;
-    sdivcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    InstCode *sdivcode  = new InstCode(inst);
+    sdivcode->code     += sprintln("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalOperands(); i++) {
+        generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
         if (inst->useAt(i)->isConstant()) {
-            sdivcode += cgLdr(
+            sdivcode->code += cgLdr(
                 static_cast<ARMGeneralRegs>(i),
                 static_cast<ConstantInt *>(inst->useAt(i)->asConstantData())
                     ->value);
         } else {
-            sdivcode += cgMov(
+            sdivcode->code += cgMov(
                 static_cast<ARMGeneralRegs>(i),
                 findVariable(inst->useAt(i))->reg);
         }
     }
     auto resultReg  = findVariable(inst->unwrap())->reg;
-    sdivcode       += cgBl("__aeabi_idiv");
-    sdivcode       += cgMov(resultReg, ARMGeneralRegs::R0);
+    sdivcode->code += cgBl("__aeabi_idiv");
+    sdivcode->code += cgMov(resultReg, ARMGeneralRegs::R0);
     return sdivcode;
 }
 
-std::string Generator::genURemInst(URemInst *inst) {
+InstCode *Generator::genURemInst(URemInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
 //! NOTE: 用除法和乘法完成求余
-std::string Generator::genSRemInst(SRemInst *inst) {
-    auto        targetReg = findVariable(inst->unwrap())->reg;
-    std::string sremcode;
-    sremcode += sprintln("@ %%%d:", inst->unwrap()->id());
+InstCode *Generator::genSRemInst(SRemInst *inst) {
+    auto      targetReg  = findVariable(inst->unwrap())->reg;
+    InstCode *sremcode   = new InstCode(inst);
+    sremcode->code      += sprintln("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalOperands(); i++) {
+        generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
         if (inst->useAt(i)->isConstant()) {
-            sremcode += cgLdr(
+            sremcode->code += cgLdr(
                 static_cast<ARMGeneralRegs>(i),
                 static_cast<ConstantInt *>(inst->useAt(i)->asConstantData())
                     ->value);
         } else {
-            sremcode += cgMov(
+            sremcode->code += cgMov(
                 static_cast<ARMGeneralRegs>(i),
                 findVariable(inst->useAt(i))->reg);
         }
     }
-    sremcode += cgBl("__aeabi_idiv");
+    sremcode->code += cgBl("__aeabi_idiv");
     ARMGeneralRegs tmpReg;
     if (inst->useAt(1)->isConstant()) {
-        sremcode += cgLdr(
+        sremcode->code += cgLdr(
             ARMGeneralRegs::R1,
             static_cast<ConstantInt *>(inst->useAt(1)->asConstantData())
                 ->value);
@@ -847,56 +994,56 @@ std::string Generator::genSRemInst(SRemInst *inst) {
     } else {
         tmpReg = findVariable(inst->useAt(1))->reg;
     }
-    sremcode += cgMul(targetReg, tmpReg, ARMGeneralRegs::R0);
+    sremcode->code += cgMul(targetReg, tmpReg, ARMGeneralRegs::R0);
     if (inst->useAt(0)->isConstant()) {
-        sremcode += cgLdr(
+        sremcode->code += cgLdr(
             ARMGeneralRegs::R0,
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())
                 ->value);
-        sremcode += cgSub(targetReg, ARMGeneralRegs::R0, targetReg);
+        sremcode->code += cgSub(targetReg, ARMGeneralRegs::R0, targetReg);
     } else {
-        sremcode +=
+        sremcode->code +=
             cgSub(targetReg, findVariable(inst->useAt(0))->reg, targetReg);
     }
     return sremcode;
 }
 
-std::string Generator::genFNegInst(FNegInst *inst) {
+InstCode *Generator::genFNegInst(FNegInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFAddInst(FAddInst *inst) {
+InstCode *Generator::genFAddInst(FAddInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFSubInst(FSubInst *inst) {
+InstCode *Generator::genFSubInst(FSubInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFMulInst(FMulInst *inst) {
+InstCode *Generator::genFMulInst(FMulInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFDivInst(FDivInst *inst) {
+InstCode *Generator::genFDivInst(FDivInst *inst) {
     assert(0 && "unfinished yet!\n");
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFRemInst(FRemInst *inst) {
+InstCode *Generator::genFRemInst(FRemInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genShlInst(ShlInst *inst) {
+InstCode *Generator::genShlInst(ShlInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
-    std::string    shlcode;
+    InstCode      *shlcode = new InstCode(inst);
 
-    shlcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    shlcode->code += sprintln("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
-        shlcode += cgLdr(rd, imm);
-        rs       = rd;
+        shlcode->code += cgLdr(rd, imm);
+        rs             = rd;
     } else
         rs = findVariable(inst->useAt(0))->reg;
 
@@ -907,26 +1054,26 @@ std::string Generator::genShlInst(ShlInst *inst) {
         // += cgLsl(rd, rs, op2reg);
     } else {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        shlcode += cgLsl(rd, rs, imm);
+        shlcode->code += cgLsl(rd, rs, imm);
     }
     return shlcode;
 }
 
-std::string Generator::genLShrInst(LShrInst *inst) {
+InstCode *Generator::genLShrInst(LShrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genAShrInst(AShrInst *inst) {
+InstCode *Generator::genAShrInst(AShrInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
-    std::string    ashrcode;
+    InstCode      *ashrcode = new InstCode(inst);
 
-    ashrcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    ashrcode->code += sprintln("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
-        ashrcode += cgLdr(rd, imm);
-        rs        = rd;
+        ashrcode->code += cgLdr(rd, imm);
+        rs              = rd;
     } else
         rs = findVariable(inst->useAt(0))->reg;
 
@@ -937,78 +1084,78 @@ std::string Generator::genAShrInst(AShrInst *inst) {
         // += cgAsr(rd, rs, op2reg);
     } else {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        ashrcode += cgAsr(rd, rs, imm);
+        ashrcode->code += cgAsr(rd, rs, imm);
     }
     return ashrcode;
 }
 
-std::string Generator::genAndInst(AndInst *inst) {
+InstCode *Generator::genAndInst(AndInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
-    std::string    andcode;
-    andcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    InstCode      *andcode  = new InstCode(inst);
+    andcode->code          += sprintln("@ %%%d:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
-        andcode += cgLdr(rd, imm);
-        rs       = rd;
+        andcode->code += cgLdr(rd, imm);
+        rs             = rd;
     } else
         rs = findVariable(inst->useAt(0))->reg;
 
     auto op2 = inst->useAt(1);
     if (Allocator::isVariable(op2)) {
         ARMGeneralRegs op2reg  = findVariable(op2)->reg;
-        andcode               += cgAnd(rd, rs, op2reg);
+        andcode->code         += cgAnd(rd, rs, op2reg);
     } else {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
-        andcode += cgAnd(rd, rs, imm);
+        andcode->code += cgAnd(rd, rs, imm);
     }
     return andcode;
 }
 
-std::string Generator::genOrInst(OrInst *inst) {
+InstCode *Generator::genOrInst(OrInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genXorInst(XorInst *inst) {
+InstCode *Generator::genXorInst(XorInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFPToUIInst(FPToUIInst *inst) {
+InstCode *Generator::genFPToUIInst(FPToUIInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genFPToSIInst(FPToSIInst *inst) {
+InstCode *Generator::genFPToSIInst(FPToSIInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genUIToFPInst(UIToFPInst *inst) {
+InstCode *Generator::genUIToFPInst(UIToFPInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genSIToFPInst(SIToFPInst *inst) {
+InstCode *Generator::genSIToFPInst(SIToFPInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
-std::string Generator::genICmpInst(ICmpInst *inst) {
-    auto        op1 = inst->useAt(0), op2 = inst->useAt(1);
-    auto        result = findVariable(inst->unwrap());
-    std::string icmpcode;
-    auto        whitelist = generator_.allocator->getInstOperands(inst);
+InstCode *Generator::genICmpInst(ICmpInst *inst) {
+    auto      op1 = inst->useAt(0), op2 = inst->useAt(1);
+    auto      result    = findVariable(inst->unwrap());
+    InstCode *icmpcode  = new InstCode(inst);
+    auto      whitelist = generator_.allocator->getInstOperands(inst);
 
-    icmpcode += sprintln("@ %%%d:", inst->unwrap()->id());
+    icmpcode->code += sprintln("@ %%%d:", inst->unwrap()->id());
     if (Allocator::isVariable(op2)) {
         if (!Allocator::isVariable(op1)) {
             auto tmpreg = generator_.allocator->allocateRegister(
-                true, whitelist, this, &icmpcode);
-            icmpcode += cgLdr(
+                true, whitelist, this, &icmpcode->code);
+            icmpcode->code += cgLdr(
                 tmpreg,
                 static_cast<ConstantInt *>(op1->asConstantData())->value);
-            icmpcode += cgCmp(tmpreg, findVariable(op2)->reg);
+            icmpcode->code += cgCmp(tmpreg, findVariable(op2)->reg);
             generator_.allocator->releaseRegister(tmpreg);
         } else {
             Variable *lhs = findVariable(op1), *rhs = findVariable(op2);
-            icmpcode += cgCmp(lhs->reg, rhs->reg);
+            icmpcode->code += cgCmp(lhs->reg, rhs->reg);
         }
     } else if (Allocator::isVariable(op1)) {
         //! TODO: float
@@ -1016,20 +1163,20 @@ std::string Generator::genICmpInst(ICmpInst *inst) {
         Variable *lhs = findVariable(op1);
         int32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
         if (isImmediateValid(imm))
-            icmpcode += cgCmp(lhs->reg, imm);
+            icmpcode->code += cgCmp(lhs->reg, imm);
         else {
             auto tmpreg = generator_.allocator->allocateRegister(
-                true, whitelist, this, &icmpcode);
-            icmpcode += cgLdr(tmpreg, imm);
-            icmpcode += cgCmp(lhs->reg, tmpreg);
+                true, whitelist, this, &icmpcode->code);
+            icmpcode->code += cgLdr(tmpreg, imm);
+            icmpcode->code += cgCmp(lhs->reg, tmpreg);
             generator_.allocator->releaseRegister(tmpreg);
         }
     } else {
         int32_t imm  = static_cast<ConstantInt *>(op1->asConstantData())->value;
         int32_t imm2 = static_cast<ConstantInt *>(op2->asConstantData())->value;
         if (result->reg != ARMGeneralRegs::None) {
-            icmpcode += cgMov(result->reg, imm);
-            icmpcode += cgMov(result->reg, imm2, inst->predicate());
+            icmpcode->code += cgMov(result->reg, imm);
+            icmpcode->code += cgMov(result->reg, imm2, inst->predicate());
             return icmpcode;
         } else {
             assert(false);
@@ -1037,75 +1184,78 @@ std::string Generator::genICmpInst(ICmpInst *inst) {
     }
 
     if (result->reg != ARMGeneralRegs::None) {
-        icmpcode += cgMov(result->reg, 0);
-        icmpcode += cgMov(result->reg, 1, inst->predicate());
-        icmpcode += cgAnd(result->reg, result->reg, 1);
+        icmpcode->code += cgMov(result->reg, 0);
+        icmpcode->code += cgMov(result->reg, 1, inst->predicate());
+        icmpcode->code += cgAnd(result->reg, result->reg, 1);
     }
     return icmpcode;
 }
 
-std::string Generator::genFCmpInst(FCmpInst *inst) {
+InstCode *Generator::genFCmpInst(FCmpInst *inst) {
     assert(0 && "unfinished yet!\n");
 }
 
 //! TODO: optimise
-std::string Generator::genZExtInst(ZExtInst *inst) {
-    auto        extVar = findVariable(inst->unwrap());
-    std::string zextcode;
+InstCode *Generator::genZExtInst(ZExtInst *inst) {
+    auto      extVar   = findVariable(inst->unwrap());
+    InstCode *zextcode = new InstCode(inst);
     if (Allocator::isVariable(inst->useAt(0))) {
-        zextcode += cgMov(extVar->reg, findVariable(inst->useAt(0))->reg);
+        zextcode->code += cgMov(extVar->reg, findVariable(inst->useAt(0))->reg);
     } else {
         int imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
-        zextcode += cgLdr(extVar->reg, imm);
+        zextcode->code += cgLdr(extVar->reg, imm);
     }
     return zextcode;
 }
 
-std::string Generator::genCallInst(CallInst *inst) {
-    std::string callcode;
+InstCode *Generator::genCallInst(CallInst *inst) {
+    InstCode   *callcode = new InstCode(inst);
+    std::string commentCode;
+    auto        whitelist = generator_.allocator->getInstOperands(inst);
     if (!inst->unwrap()->type()->isVoid())
-        callcode += sprintln("@ %%%d:", inst->unwrap()->id());
+        commentCode += sprintln("@ %%%d:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalParams(); i++) {
         if (i < 4) {
             // param register has already been allocated
+            generator_.allocator->usedRegs.insert(
+                static_cast<ARMGeneralRegs>(i));
             if (generator_.allocator->regAllocatedMap[i]) {
                 // allocate a new one
-                auto whitelist = generator_.allocator->getInstOperands(inst);
                 ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
-                    true, whitelist, this, &callcode);
+                    true, whitelist, this, &callcode->code);
                 auto var = generator_.allocator->getVarOfAllocatedReg(
                     static_cast<ARMGeneralRegs>(i));
-                callcode += cgMov(newreg, var->reg);
-                var->reg  = newreg;
+                callcode->code += cgMov(newreg, var->reg);
+                var->reg        = newreg;
                 generator_.allocator->releaseRegister(
                     static_cast<ARMGeneralRegs>(i));
             }
             assert(!generator_.allocator->regAllocatedMap[i]);
             if (inst->paramAt(i)->tryIntoConstantData() != nullptr) {
                 assert(!inst->paramAt(i)->type()->isFloat());
-                auto constant  = inst->paramAt(i)->asConstantData();
-                callcode      += cgLdr(
+                auto constant   = inst->paramAt(i)->asConstantData();
+                callcode->code += cgLdr(
                     static_cast<ARMGeneralRegs>(i),
                     static_cast<ConstantInt *>(constant)->value);
             } else {
                 assert(Allocator::isVariable(inst->paramAt(i)));
                 Variable *var = findVariable(inst->paramAt(i));
                 if (var->is_alloca) {
-                    callcode += cgMov(
+                    callcode->code += cgMov(
                         static_cast<ARMGeneralRegs>(i), ARMGeneralRegs::SP);
-                    callcode += cgAdd(
+                    callcode->code += cgAdd(
                         static_cast<ARMGeneralRegs>(i),
                         static_cast<ARMGeneralRegs>(i),
                         generator_.stack->stackSize - var->stackpos);
                 } else if (var->reg != static_cast<ARMGeneralRegs>(i)) {
                     assert(var->reg != ARMGeneralRegs::None);
-                    callcode += cgMov(static_cast<ARMGeneralRegs>(i), var->reg);
+                    callcode->code +=
+                        cgMov(static_cast<ARMGeneralRegs>(i), var->reg);
                 }
             }
         } else {
-            assert(0);
-            // 需要修改
+            //! NOTE: untested code
             if (inst->paramAt(i)->tryIntoConstantData() != nullptr) {
                 assert(!inst->paramAt(i)->type()->isFloat());
                 generator_.stack->pushVar(
@@ -1118,11 +1268,14 @@ std::string Generator::genCallInst(CallInst *inst) {
         }
     }
     if (inst->unwrap()->uses().size() != 0) {
-        if (inst->totalParams() == 0
-            && generator_.allocator->regAllocatedMap[0]) {
+        if (generator_.allocator->regAllocatedMap[0]) {
             auto var =
                 generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
-            generator_.allocator->releaseRegister(var);
+            assert(var->val->asInstruction()->id() == InstructionID::Call);
+            ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
+                true, whitelist, this, &callcode->code);
+            callcode->code += cgMov(newreg, var->reg);
+            var->reg        = newreg;
         }
         generator_.allocator->regAllocatedMap[0] = true;
         auto var                                 = findVariable(inst->unwrap());
@@ -1130,7 +1283,22 @@ std::string Generator::genCallInst(CallInst *inst) {
             generator_.allocator->releaseRegister(var);
         var->reg = ARMGeneralRegs::R0;
     }
-    callcode += cgBl(inst->callee()->asFunction());
+    callcode->code          += cgBl(inst->callee()->asFunction());
+    const char *callee_name  = inst->callee()->asFunction()->name().data();
+    if (!strncmp(callee_name, "get", 3)
+        && libfunc.find(callee_name) != libfunc.end()) {
+        RegList saveRegs;
+        for (int i = 1; i <= 3 - inst->totalParams(); i++) {
+            auto it = generator_.allocator->usedRegs.find(
+                static_cast<ARMGeneralRegs>(i));
+            if (it != generator_.allocator->usedRegs.end())
+                saveRegs.insertToTail(static_cast<ARMGeneralRegs>(i));
+        }
+        callcode->code = cgPush(saveRegs) + callcode->code;
+        callcode->code = callcode->code + cgPop(saveRegs);
+    }
+    callcode->code = commentCode + callcode->code;
+
     return callcode;
 }
 
@@ -1188,6 +1356,13 @@ std::string Generator::cgLdr(
     return sprintln("    ldr    %s, %s", reg2str(dst), tmpStr);
 }
 
+std::string Generator::cgLdr(
+    ARMGeneralRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset) {
+    static char tmpStr[10];
+    sprintf(tmpStr, "[%s, %s]", reg2str(src), reg2str(offset));
+    return sprintln("    ldr    %s, %s", reg2str(dst), tmpStr);
+}
+
 std::string Generator::cgLdr(ARMGeneralRegs dst, int32_t imm) {
     return sprintln("    ldr    %s, =%d", reg2str(dst), imm);
 }
@@ -1197,7 +1372,7 @@ std::string Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
     auto it = generator_.usedGlobalVars->find(var);
     if (it == generator_.usedGlobalVars->end())
         assert(0 && "it must be an error here.");
-    return sprintln("    ldr    %s, =%s", reg2str(dst), it->second.data());
+    return sprintln("    ldr    %s, %s", reg2str(dst), it->second.data());
 }
 
 std::string Generator::cgStr(
@@ -1207,6 +1382,13 @@ std::string Generator::cgStr(
         sprintf(tmpStr, "[%s, #%d]", reg2str(dst), offset);
     else
         sprintf(tmpStr, "[%s]", reg2str(dst));
+    return sprintln("    str    %s, %s", reg2str(src), tmpStr);
+}
+
+std::string Generator::cgStr(
+    ARMGeneralRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset) {
+    static char tmpStr[10];
+    sprintf(tmpStr, "[%s, %s]", reg2str(dst), reg2str(offset));
     return sprintln("    str    %s, %s", reg2str(src), tmpStr);
 }
 
@@ -1336,6 +1518,7 @@ std::string Generator::cgBl(const char *libfuncname) {
 
 std::string Generator::cgPush(RegList &reglist) {
     std::string pushcode;
+    if (reglist.size() == 0) return "";
     pushcode += "    push   {";
     for (auto reg : reglist) {
         pushcode += std::string(reg2str(reg));
@@ -1347,6 +1530,7 @@ std::string Generator::cgPush(RegList &reglist) {
 
 std::string Generator::cgPop(RegList &reglist) {
     std::string popcode;
+    if (reglist.size() == 0) return "";
     popcode += std::string("    pop    {");
     for (auto reg : reglist) {
         popcode += std::string(reg2str(reg));
