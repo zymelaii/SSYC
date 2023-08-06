@@ -1,8 +1,8 @@
 #pragma once
 
+#include <slime/experimental/Utility.h>
 #include <slime/utils/cast.def>
 #include <slime/utils/traits.h>
-#include <slime/experimental/Utility.h>
 #include <vector>
 #include <type_traits>
 #include <assert.h>
@@ -175,8 +175,7 @@ public:
     FunctionType(Type *returnType, Args &&...args)
         : FunctionType(returnType) {
         if constexpr (sizeof...(Args) > 0) {
-            using first_type =
-                std::remove_reference_t<utils::nth_type<0, Args...>>;
+            using first_type = std::remove_reference_t<nth_type<0, Args...>>;
             if constexpr (
                 std::is_pointer_v<first_type>
                 && std::is_base_of_v<Type, std::remove_pointer_t<first_type>>) {

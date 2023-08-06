@@ -1,5 +1,6 @@
 #pragma once
 
+#include <slime/experimental/Utility.h>
 #include <slime/utils/list.h>
 #include <slime/utils/cast.def>
 #include <vector>
@@ -157,7 +158,7 @@ struct ArrayType
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
-        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename First = nth_type<0, Args...>,
         typename       = std::enable_if_t<std::is_convertible_v<First, Expr*>>>
     ArrayType(Type* type, Args... args)
         : ArrayType(type, std::initializer_list<Expr*>{args...}) {}
@@ -193,7 +194,7 @@ struct IncompleteArrayType : public ArrayType {
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
-        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename First = nth_type<0, Args...>,
         typename       = std::enable_if_t<std::is_convertible_v<First, Expr*>>>
     IncompleteArrayType(Type* type, Args... args)
         : ArrayType(type, std::initializer_list<Expr*>{args...}) {
@@ -223,7 +224,7 @@ struct FunctionProtoType
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
-        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename First = nth_type<0, Args...>,
         typename       = std::enable_if_t<std::is_convertible_v<First, Type*>>>
     FunctionProtoType(Type* type, Args... args)
         : FunctionProtoType(type, std::initializer_list<Type*>{args...}) {}
