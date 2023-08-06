@@ -17,6 +17,7 @@ namespace slime::backend {
 struct Variable;
 struct LiveInterval;
 struct Stack;
+struct InstCode;
 class Generator;
 struct GeneratorState;
 
@@ -64,6 +65,7 @@ struct Variable {
         : val(val)
         , is_spilled(0)
         , is_alloca(0)
+        , is_funcparam(0)
         , is_global(val->isGlobal())
         , stackpos(0)
         , reg(ARMGeneralRegs::None)
@@ -74,6 +76,7 @@ struct Variable {
     bool           is_spilled;
     bool           is_alloca;
     bool           is_global;
+    bool           is_funcparam;
     size_t         stackpos; // only valid when is_spiiled or is_alloca is true
     LiveInterval  *livIntvl;
 
@@ -219,7 +222,7 @@ public:
     void checkLiveInterval(std::string *instcode);
     void updateAllocation(
         Generator   *gen,
-        std::string *instcode,
+        InstCode    *instcode,
         BasicBlock  *block,
         Instruction *inst);
     std::set<Variable *> *getInstOperands(Instruction *inst);
@@ -231,7 +234,7 @@ public:
         bool                  force     = false,
         std::set<Variable *> *whitelist = nullptr,
         Generator            *gen       = nullptr,
-        std::string          *instcode  = nullptr);
+        InstCode             *instcode  = nullptr);
     void releaseRegister(Variable *var);
     void releaseRegister(ARMGeneralRegs reg);
     void freeAllRegister();

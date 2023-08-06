@@ -213,7 +213,6 @@ void Driver::execute(int argc, char** argv) {
             currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
         pass::ControlFlowSimplificationPass{}.run(module);
         pass::ResortPass{}.run(module);
-        pass::MemoryToRegisterPass{}.run(module);
 
         if (EmitIR) {
             auto visitor = visitor::IRDumpVisitor::createWithOstream(ostream);
