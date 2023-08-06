@@ -12,9 +12,8 @@ namespace slime::pass {
 using namespace ir;
 
 void MemoryToRegisterPass::runOnFunction(Function *target) {
-    using DefineMap = std::map<AllocaInst *, std::vector<Instruction *>>;
-    std::set<Value *> promotableVarSet;
-    std::set<Value *> maybeUseBeforeDef;
+    std::set<Value *>       promotableVarSet;
+    std::set<Instruction *> deleteLater;
 
     auto &blocks = target->basicBlocks();
 
@@ -44,14 +43,16 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
             return dfn[lhs] < dfn[rhs];
         });
 
-    //! simplify inblock memory operation
-    std::map<Value *, StoreInst *> def;
+    //! simplify inblock memory operations
     for (auto block : sortedBlocks) {
         if (dfn[block] == -1) { continue; }
-        auto &instrs = block->instructions();
-        auto  iter   = instrs.begin();
-        while (iter != instrs.end()) {
-            auto inst = *iter++;
+
+        auto &instrs   = block->instructions();
+        auto  instIter = instrs.begin();
+
+        std::map<Value *, StoreInst *> def;
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
 
             //! get promotable alloca
             if (inst->id() == InstructionID::Alloca) {
@@ -76,10 +77,8 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
                 if (!promotableVarSet.count(target)) { continue; }
                 auto &lastStore = def[target];
                 if (lastStore != nullptr) {
-                    if (lastStore->parent() == store->parent()) {
-                        auto ok = lastStore->removeFromBlock();
-                        assert(ok);
-                    }
+                    auto ok = lastStore->removeFromBlock();
+                    assert(ok);
                 }
                 lastStore = store;
                 continue;
@@ -97,60 +96,34 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
                 }
                 auto &lastStore = def[target];
                 if (lastStore == nullptr) {
-                    maybeUseBeforeDef.insert(target);
+                    //! value is from preds or is a non-def
                     continue;
                 }
-                //! FIXME: store may not dom load
-                if (lastStore->parent() == load->parent()) {
-                    std::vector<Use *> uses(
-                        load->uses().begin(), load->uses().end());
-                    for (auto use : uses) { use->reset(lastStore->rhs()); }
-                    assert(load->uses().size() == 0);
-                    auto ok = load->removeFromBlock();
-                    assert(ok);
-                }
+                std::vector<Use *> uses(
+                    load->uses().begin(), load->uses().end());
+                for (auto use : uses) { use->reset(lastStore->rhs()); }
+                auto ok = load->removeFromBlock();
+                assert(ok);
                 continue;
             }
         }
     }
 
     //! remove unused alloca
-    std::set<Instruction *> deleteLater;
     for (auto var : promotableVarSet) {
-        auto       alloca    = var->asInstruction()->asAlloca();
-        bool       hasUser   = false;
-        size_t     totalDef  = 0;
-        StoreInst *singleDef = nullptr;
-
-        //! collect use-def information
+        auto alloca  = var->asInstruction()->asAlloca();
+        bool hasUser = false;
         for (auto use : alloca->uses()) {
-            auto user = use->owner()->asInstruction();
-            if (user->id() == InstructionID::Store) {
-                singleDef = user->asStore();
-                ++totalDef;
-            } else {
-                assert(user->id() == InstructionID::Load);
-                hasUser = true;
+            auto inst = use->owner()->asInstruction();
+            if (inst->id() == InstructionID::Load) {
+                auto load = inst->asLoad();
+                if (load->uses().size() > 0) {
+                    hasUser = true;
+                    break;
+                }
             }
         }
-        bool shouldRemove = !hasUser || totalDef == 1;
-
-        //! forward single store
-        if (totalDef == 1) {
-            auto value = singleDef->rhs();
-            auto ok    = singleDef->removeFromBlock();
-            assert(ok);
-            std::vector<Use *> uses;
-            for (auto use : alloca->uses()) {
-                auto load = use->owner()->asInstruction()->asLoad();
-                uses.insert(
-                    uses.end(), load->uses().begin(), load->uses().end());
-            }
-            for (auto use : uses) { use->reset(value); }
-        }
-
-        //! remove no use store/load
-        if (shouldRemove) {
+        if (!hasUser) {
             std::vector<Use *> uses(
                 alloca->uses().begin(), alloca->uses().end());
             for (auto use : uses) {
@@ -160,10 +133,10 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
             deleteLater.insert(alloca);
         }
     }
-    for (auto inst : deleteLater) {
-        auto ok = inst->removeFromBlock();
+    for (auto var : deleteLater) {
+        auto ok = var->removeFromBlock();
         assert(ok);
-        promotableVarSet.erase(inst->unwrap());
+        promotableVarSet.erase(var->unwrap());
     }
     deleteLater.clear();
 
@@ -175,8 +148,8 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
     for (auto &[succ, dominator] : idom) { idomSuccs[dominator].insert(succ); }
 
     //! place phi node
-    std::map<PhiInst *, AllocaInst *>           phiSource;
-    std::map<BasicBlock *, std::set<PhiInst *>> phiNodes;
+    std::map<PhiInst *, AllocaInst *> phiSource;
+    std::set<PhiInst *>               phiSet;
     for (auto var : promotableVarSet) {
         std::set<BasicBlock *>   visted;
         std::stack<BasicBlock *> worklist;
@@ -197,89 +170,60 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
                 auto phi = PhiInst::create(alloca->type()->tryGetElementType());
                 phi->insertToHead(frontier);
                 phiSource[phi] = alloca;
-                phiNodes[frontier].insert(phi);
+                phiSet.insert(phi);
                 visted.insert(frontier);
                 worklist.push(frontier);
             }
         }
     }
 
-    //! compute reaching defines
-    struct ReachDefLink {
-        int         origin = -1;
-        BasicBlock *source = nullptr;
-        Value      *define = nullptr;
-    };
+    //! place non-def load
+    std::set<LoadInst *> nondefSet;
+    for (auto var : promotableVarSet) {
+        auto nondef = LoadInst::create(var);
+        nondefSet.insert(nondef);
+        nondef->insertAfter(var->asInstruction());
+    }
 
-    std::map<Value *, std::vector<ReachDefLink>>   reachDefs;
-    std::map<BasicBlock *, std::map<Value *, int>> incomingDefs;
+    //! compute reach defines
+    using DefineListTable = std::map<Value *, std::set<Instruction *>>;
+    std::map<BasicBlock *, DefineListTable> reachDefines;
+    std::set<StoreInst *>                   storeSet;
+    for (auto block : sortedBlocks) {
+        if (dfn[block] == -1) { continue; }
+        std::map<Value *, Instruction *> defineTable;
 
-    std::stack<BasicBlock *> stack;
-    stack.push(target->front());
-    while (!stack.empty()) {
-        auto block = stack.top();
-        stack.pop();
-
-        auto &incomingDef = incomingDefs[block];
-        for (auto inst : block->instructions()) {
+        auto &incomingValues = reachDefines[block];
+        auto &instrs         = block->instructions();
+        auto  instIter       = instrs.begin();
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+            //! define from phi
             if (inst->id() == InstructionID::Phi) {
-                auto  phi      = inst->asPhi();
-                auto  var      = phiSource[phi];
-                auto &reachDef = reachDefs[var];
-                reachDef.push_back(ReachDefLink{-1, block, phi});
-                incomingDef[var] = reachDef.size() - 1;
+                auto phi    = inst->asPhi();
+                auto target = phiSource[phi];
+                assert(promotableVarSet.count(target));
+                defineTable[target] = phi;
                 continue;
             }
+            //! define from store
             if (inst->id() == InstructionID::Store) {
-                auto store = inst->asStore();
-                auto var   = store->lhs();
-                if (!promotableVarSet.count(var)) { continue; }
-                auto &reachDef = reachDefs[var];
-                //! FIXME: assert failure
-                // assert(
-                //     !store->rhs()->isInstruction()
-                //     || store->rhs()->asInstruction()->id()
-                //            != InstructionID::Load
-                //     || !promotableVarSet.count(
-                //         store->rhs()->asInstruction()->asLoad()->operand()));
-                reachDef.push_back(ReachDefLink{-1, block, store->rhs()});
-                deleteLater.insert(store);
+                auto store  = inst->asStore();
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                defineTable[target] = store;
+                storeSet.insert(store);
                 continue;
             }
+            //! nondef from load
             if (inst->id() == InstructionID::Load) {
-                auto load = inst->asLoad();
-                auto var  = load->operand();
-                if (!promotableVarSet.count(var)) { continue; }
-                auto &reachDef = reachDefs[var];
-                if (incomingDef.count(var)) {
-                    auto originDefIndex = incomingDef[var];
-                    while (reachDef[originDefIndex].origin != -1) {
-                        originDefIndex = reachDef[originDefIndex].origin;
-                    }
-                    auto def = reachDef[originDefIndex].define;
-                    assert(def != load);
-                    std::vector<Use *> uses(
-                        load->uses().begin(), load->uses().end());
-                    for (auto use : uses) { use->reset(def); }
-                    deleteLater.insert(load);
-                } else {
-                    //! FIXME: assert failure
-                    assert(maybeUseBeforeDef.count(var));
-                    //! WARNING: use before def
-                    //! WARNING: uncertain load may be ignored due to single
-                    //! store forward optimize
-                    //! transform load into a def
-                    reachDef.push_back(ReachDefLink{-1, block, load});
-                    incomingDef[var] = reachDef.size() - 1;
-                }
+                auto load   = inst->asLoad();
+                auto target = load->operand();
+                if (!nondefSet.count(load)) { continue; }
+                defineTable[target] = load;
                 continue;
             }
         }
-        for (auto inst : deleteLater) {
-            auto ok = inst->removeFromBlock();
-            assert(ok);
-        }
-        deleteLater.clear();
 
         std::vector<BasicBlock *> succs;
         if (block->isBranched()) {
@@ -289,125 +233,129 @@ void MemoryToRegisterPass::runOnFunction(Function *target) {
             succs.push_back(block->branch());
         }
         for (auto succ : succs) {
-            auto &outcomeDef = incomingDefs[succ];
-            for (auto [var, defIndex] : incomingDef) {
-                auto &reachDef = reachDefs[var];
-                reachDef.push_back(
-                    ReachDefLink{defIndex, succ, reachDef[defIndex].define});
-                outcomeDef[var] = reachDef.size() - 1;
+            auto &incomings = reachDefines[succ];
+            for (auto &[var, def] : defineTable) { incomings[var].insert(def); }
+            for (auto &[var, defs] : incomingValues) {
+                if (!defineTable.count(var)) {
+                    auto &incomings = reachDefines[succ];
+                    incomings[var].insert(defs.begin(), defs.end());
+                }
             }
         }
-
-        for (auto succ : idomSuccs[block]) { stack.push(succ); }
     }
 
-    //! update incoming values for phi nodes
-
-#if 0
-    //! compute reach defines
-    std::vector<std::map<Value *, Value *>> reachDefines(blocks.size());
-    std::map<Value *, BasicBlock *>         defSource;
+    //! apply reach defines
     for (auto block : sortedBlocks) {
-        auto &reachDefine = reachDefines[dfn[block]];
-        for (auto phi : phiNodes[block]) {}
-        auto &instrs = block->instructions();
-        auto  iter   = instrs.begin();
-        while (iter != instrs.end()) {
-            auto inst = *iter++;
+        if (dfn[block] == -1) { continue; }
+        std::map<Value *, Instruction *> defineTable;
+
+        auto &incomingValues = reachDefines[block];
+        auto &instrs         = block->instructions();
+        auto  instIter       = instrs.begin();
+        while (instIter != instrs.end()) {
+            auto inst = *instIter++;
+
             if (inst->id() == InstructionID::Phi) {
-                auto phi                    = inst->asPhi();
-                reachDefine[phiSource[phi]] = phi;
-                defSource[phi]              = block;
+                auto phi    = inst->asPhi();
+                auto target = phiSource[phi];
+                for (auto value : incomingValues[target]) {
+                    auto source = value->parent();
+                    auto define = value->unwrap();
+                    if (value->id() == InstructionID::Store) {
+                        define = value->asStore()->rhs();
+                    }
+                    phi->addIncomingValue(define, source);
+                }
+                defineTable[target] = phi;
                 continue;
             }
+
             if (inst->id() == InstructionID::Store) {
                 auto store  = inst->asStore();
-                auto source = store->lhs();
-                if (!promotableVarSet.count(source)) { continue; }
-                reachDefine[source]     = store->rhs();
-                defSource[store->rhs()] = block;
-                auto ok                 = inst->removeFromBlock();
-                assert(ok);
+                auto target = store->lhs();
+                if (!promotableVarSet.count(target)) { continue; }
+                defineTable[target] = store;
                 continue;
             }
+
             if (inst->id() == InstructionID::Load) {
                 auto load   = inst->asLoad();
-                auto source = load->operand();
-                if (!promotableVarSet.count(source)) { continue; }
-                auto value = reachDefine[source];
+                auto target = load->operand();
+                if (!promotableVarSet.count(target)) { continue; }
+                if (nondefSet.count(load)) {
+                    defineTable[target] = load;
+                    continue;
+                }
+
+                Value *value = nullptr;
+                if (defineTable.count(target)) {
+                    value = defineTable[target]->unwrap();
+                } else if (
+                    incomingValues.count(target)
+                    && incomingValues[target].size() == 1) {
+                    value = (*incomingValues[target].begin())->unwrap();
+                }
+                if (value->asInstruction()->id() == InstructionID::Store) {
+                    value = value->asInstruction()->asStore()->rhs();
+                }
                 assert(value != nullptr);
+
                 std::vector<Use *> uses(
                     load->uses().begin(), load->uses().end());
                 for (auto use : uses) { use->reset(value); }
-                auto ok = inst->removeFromBlock();
+
+                auto ok = load->removeFromBlock();
                 assert(ok);
+
                 continue;
-            }
-        }
-        for (auto [var, def] : reachDefine) {
-            if (var->uses().size() == 0) { continue; }
-            if (block->isBranched()) {
-                reachDefines[dfn[block->branch()]][var]     = def;
-                reachDefines[dfn[block->branchElse()]][var] = def;
-            } else if (block->isLinear() && !block->isTerminal()) {
-                reachDefines[dfn[block->branch()]][var] = def;
             }
         }
     }
 
-    //! add incoming values to phi
-    std::stack<PhiInst *> stack;
-    for (auto &[block, nodes] : phiNodes) {
-        for (auto phi : nodes) {
-            auto              source = phiSource[phi];
-            std::set<Value *> incomings;
-            for (auto pred : block->inBlocks()) {
-                //! FIXME: assert: reachDefines[dfn[pred]][source] != nullptr
-                if (reachDefines[dfn[pred]].count(source)) {
-                    incomings.insert(reachDefines[dfn[pred]][source]);
+    //! clean up insts
+    for (auto phi : phiSet) {
+        bool shouldRemove = phi->uses().size() == 0;
+        if (auto singleIncoming = phi->totalOperands() == 2) {
+            auto source = static_cast<BasicBlock *>(phi->op()[1].value());
+            auto value  = phi->op()[0];
+            std::vector<Use *> uses(phi->uses().begin(), phi->uses().end());
+            for (auto use : uses) {
+                auto owner = use->owner()->asInstruction();
+                use->reset(value);
+                if (owner->id() == InstructionID::Phi) {
+                    (use + 1)->reset(source);
                 }
             }
-            for (auto incoming : incomings) {
-                if (incoming->isInstruction()
-                    && incoming->asInstruction()->id() == InstructionID::Phi) {
-                    auto incomingPhi = incoming->asInstruction()->asPhi();
-                    for (int i = 0; i < incomingPhi->totalOperands(); i += 2) {
-                        phi->addIncomingValue(
-                            incomingPhi->operands()[i],
-                            static_cast<BasicBlock *>(
-                                incomingPhi->operands()[i + 1].value()));
-                    }
-                } else {
-                    phi->addIncomingValue(incoming, defSource[incoming]);
-                }
-            }
-            stack.push(phi);
+            shouldRemove = true;
         }
-    }
-    while (!stack.empty()) {
-        auto phi = stack.top();
-        stack.pop();
-        if (!phi->parent()) { continue; }
-        if (phi->uses().size() == 0) {
-            for (int i = 0; i < phi->totalUse(); i += 2) {
-                auto op = phi->useAt(i);
-                if (op->isInstruction()
-                    && op->asInstruction()->id() == InstructionID::Phi) {
-                    auto incomingPhi = op->asInstruction()->asPhi();
-                    stack.push(incomingPhi);
-                }
-            }
+        if (shouldRemove) {
             auto ok = phi->removeFromBlock();
             assert(ok);
         }
     }
 
-    //! remove allocas
-    for (auto alloca : promotableVarSet) {
-        auto ok = alloca->asInstruction()->removeFromBlock();
+    for (auto load : nondefSet) {
+        if (load->uses().size() == 0) {
+            auto ok = load->removeFromBlock();
+            assert(ok);
+            deleteLater.insert(load);
+        }
+    }
+    for (auto load : deleteLater) { nondefSet.erase(load->asLoad()); }
+    deleteLater.clear();
+
+    for (auto store : storeSet) {
+        auto ok = store->removeFromBlock();
         assert(ok);
     }
-#endif
+
+    for (auto alloca : promotableVarSet) {
+        assert(alloca->uses().size() <= 1);
+        if (alloca->uses().size() == 0) {
+            auto ok = alloca->asInstruction()->asAlloca()->removeFromBlock();
+            assert(ok);
+        }
+    }
 }
 
 void MemoryToRegisterPass::computeDomFrontier(
