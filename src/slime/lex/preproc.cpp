@@ -25,7 +25,7 @@ void InputStreamTransformer::reset(
         source_[0]    = '\0'; //<! input is from stdin
         pathMacro_[0] = '\0';
     } else {
-        realpath(source.data(), source_);
+        (void)realpath(source.data(), source_);
         std::string tmp(source_);
         auto        pos = tmp.find('\\', 0);
         while (pos != tmp.npos) {
@@ -55,7 +55,7 @@ void InputStreamTransformer::transform() {
         char replacement[32 + PATH_MAX]{};
         sprintf(
             replacement,
-            "__slime_starttime(\"%s\", %d)",
+            "__slime_starttime(\"%s\", %zu)",
             pathMacro_,
             lineMacro_);
         auto pos = buffer_.find("starttime()");
@@ -65,7 +65,7 @@ void InputStreamTransformer::transform() {
         }
         sprintf(
             replacement,
-            "__slime_stoptime(\"%s\", %d)",
+            "__slime_stoptime(\"%s\", %zu)",
             pathMacro_,
             lineMacro_);
         pos = buffer_.find("stoptime()");
@@ -75,13 +75,13 @@ void InputStreamTransformer::transform() {
         }
 #else
         char replacement[32]{};
-        sprintf(replacement, "_sysy_starttime(%d)", lineMacro_);
+        sprintf(replacement, "_sysy_starttime(%zu)", lineMacro_);
         auto pos = buffer_.find("starttime()");
         while (pos != buffer_.npos) {
             buffer_.replace(pos, sizeof("starttime()") - 1, replacement);
             pos = buffer_.find("starttime()");
         }
-        sprintf(replacement, "_sysy_stoptime(%d)", lineMacro_);
+        sprintf(replacement, "_sysy_stoptime(%zu)", lineMacro_);
         pos = buffer_.find("stoptime()");
         while (pos != buffer_.npos) {
             buffer_.replace(pos, sizeof("stoptime()") - 1, replacement);
