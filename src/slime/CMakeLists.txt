@@ -5,7 +5,13 @@ file(GLOB_RECURSE SOURCE_FILES *.cpp)
 add_library(${PROJECT_NAME} STATIC ${SOURCE_FILES})
 
 if(STDLIB STREQUAL "libslime")
-    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_LIBSLIME)
+    target_compile_definitions(
+        ${PROJECT_NAME} PRIVATE
+        USE_LIBSLIME
+        SLIMEC_STDLIB="${STDLIB}"
+        SLIMEC_VERSION="${CMAKE_PROJECT_VERSION}"
+        SLIMEC_HOMEPAGEURL="${CMAKE_PROJECT_HOMEPAGE_URL}"
+    )
 endif()
 
 target_include_directories(${PROJECT_NAME} INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
