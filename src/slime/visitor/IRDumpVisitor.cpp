@@ -21,6 +21,7 @@ void IRDumpVisitor::dump(Module* module) {
     assert(module != nullptr);
     pass::ValueNumberingPass{}.run(module);
     currentModule_ = module;
+    os() << "; module = " << currentModule_->name() << std::endl;
     for (auto object : module->globalObjects()) {
         assert(object->isGlobal());
         if (object->isFunction()) {
