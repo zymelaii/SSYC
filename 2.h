@@ -4,7 +4,7 @@
 #include "7.h"
 
 #include "90.h"
-#include "88.def"
+#include "88.h"
 #include "91.h"
 #include <stdint.h>
 #include <string_view>

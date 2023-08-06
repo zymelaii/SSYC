@@ -1,7 +1,7 @@
 #pragma once
 
 #include "90.h"
-#include "88.def"
+#include "88.h"
 #include <vector>
 #include <assert.h>
 
