@@ -141,7 +141,7 @@ void Driver::execute(int argc, char** argv) {
         exit(-1);
     }
 
-    std::string_view OutputFile = optman_.valueOfArgument('o');
+    auto OutputFile = std::string{optman_.valueOfArgument('o')};
     if (!OutputToStdout) {
         if (sourceFiles.size() > 1) {
             fputs(
