@@ -24,7 +24,8 @@ export def FlattenProject [
         | each {|e|
             let id = $e.index
             let source = $e.item
-            let target = $'($id).($source | path parse | get extension)'
+            let ext = ($source | path parse | get extension)
+            let target = $'($id).(if $ext == 'def' { 'h' } else { $ext })'
             { source: $source, target: $target }
         }
         )
