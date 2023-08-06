@@ -21,6 +21,7 @@
 #include <slime/pass/ControlFlowSimplification.h>
 #include <slime/pass/Resort.h>
 #include <slime/pass/MemoryToRegister.h>
+#include <slime/pass/ValueNumbering.h>
 #include <filesystem>
 #include <iostream>
 #include <ostream>
@@ -219,6 +220,9 @@ void Driver::execute(int argc, char** argv) {
             visitor->dump(module);
             goto nextStep;
         }
+
+        //! NOTE: assembler depends on IR Value IDs
+        pass::ValueNumberingPass{}.run(module);
 
         if (DumpAssembly) {
             auto armv7aGen = backend::Generator::generate();
