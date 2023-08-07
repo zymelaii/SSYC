@@ -104,7 +104,10 @@ void Allocator::initVarInterval(Function *func) {
 
     // use R11 as frame point of stack when the num of function arguments is
     // more than 4
-    if (max_funcargs > 4) regAllocatedMap[11] = true;
+    if (max_funcargs > 4) {
+        regAllocatedMap[11] = true;
+        usedRegs.insert(ARMGeneralRegs::R11);
+    }
 
     // release register occupied by unused params
     for (auto it : funcparams) {
@@ -200,7 +203,7 @@ Variable *Allocator::getVarOfAllocatedReg(ARMGeneralRegs reg) {
 
 Variable *Allocator::getMinIntervalRegVar(std::set<Variable *> whitelist) {
     uint32_t  min = UINT32_MAX;
-    Variable *retVar;
+    Variable *retVar = nullptr;
     for (auto e : *liveVars) {
         if (whitelist.find(e) != whitelist.end()) continue;
         if (e->livIntvl->end < min && e->reg != ARMGeneralRegs::None) {

@@ -284,10 +284,10 @@ std::string Generator::genAssembly(Function *func) {
         blockCodeList.insertToTail(blockcodes);
     }
     checkStackChanges(blockCodeList);
-    funccode += saveCallerReg();
     if (func->totalParams() > 4) {
         funccode += cgMov(ARMGeneralRegs::R11, ARMGeneralRegs::SP);
     }
+    funccode += saveCallerReg();
     funccode += unpackBlockCodeList(blockCodeList);
     return funccode;
 }
@@ -363,7 +363,7 @@ void Generator::addUsedGlobalVar(Variable *var) {
 std::string Generator::saveCallerReg() {
     RegList regList;
     auto    usedRegs = generator_.allocator->usedRegs;
-    if (generator_.cur_func->totalParams() > 4)
+    if (generator_.allocator->max_funcargs > 4)
         usedRegs.insert(ARMGeneralRegs::R11);
     usedRegs.erase(ARMGeneralRegs::R0);
     for (auto reg : usedRegs) { regList.insertToTail(reg); }
@@ -374,7 +374,7 @@ std::string Generator::saveCallerReg() {
 std::string Generator::restoreCallerReg() {
     RegList regList;
     auto    usedRegs = generator_.allocator->usedRegs;
-    if (generator_.cur_func->totalParams() > 4)
+    if (generator_.allocator->max_funcargs > 4)
         usedRegs.insert(ARMGeneralRegs::R11);
     usedRegs.erase(ARMGeneralRegs::R0);
     for (auto reg : usedRegs) { regList.insertToTail(reg); }
@@ -607,7 +607,7 @@ InstCode *Generator::genInst(Instruction *inst) {
     }
     generator_.allocator->checkLiveInterval(&instcode->code);
     if (!tmpcode.code.empty()) instcode->code = tmpcode.code + instcode->code;
-    // std::cout << instcode->code;
+    std::cout << instcode->code;
     return instcode;
 }
 
@@ -640,11 +640,16 @@ InstCode *Generator::genLoadInst(LoadInst *inst) {
         auto sourceVar = findVariable(source);
 
         if (sourceVar->is_alloca) {
-            sourceReg = ARMGeneralRegs::SP;
-            offset    = generator_.stack->stackSize - sourceVar->stackpos;
+            if (sourceVar->is_funcparam) {
+                sourceReg = ARMGeneralRegs::R11;
+                offset    = sourceVar->stackpos;
+            } else {
+                sourceReg = ARMGeneralRegs::SP;
+                offset    = generator_.stack->stackSize - sourceVar->stackpos;
+            }
         } else if (sourceVar->is_global) {
             addUsedGlobalVar(sourceVar);
-            offset = 0;
+            offset          = 0;
             loadcode->code += cgLdr(targetVar->reg, sourceVar);
             sourceReg       = targetVar->reg;
             // if (sourceVar->reg == ARMGeneralRegs::None) {
@@ -717,6 +722,8 @@ InstCode *Generator::genStoreInst(StoreInst *inst) {
         }
     } else {
         if (targetVar->is_alloca) {
+            //! NOTE: funcparams can't could reach here
+            assert(!targetVar->is_funcparam);
             targetReg = ARMGeneralRegs::SP;
             offset    = generator_.stack->stackSize - targetVar->stackpos;
         } else {
@@ -840,15 +847,20 @@ InstCode *Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
     if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
-        int offset = generator_.stack->stackSize - var->stackpos;
+        int            offset;
+        ARMGeneralRegs sourceReg;
+        if (var->is_funcparam) {
+            offset    = var->stackpos;
+            sourceReg = ARMGeneralRegs::R11;
+        } else {
+            offset    = generator_.stack->stackSize - var->stackpos;
+            sourceReg = ARMGeneralRegs::SP;
+        }
         if (!isImmediateValid(offset)) {
             getelemcode->code += cgLdr(dest, offset);
-            getelemcode->code += cgAdd(dest, ARMGeneralRegs::SP, dest);
+            getelemcode->code += cgAdd(dest, sourceReg, dest);
         } else {
-            getelemcode->code += cgAdd(
-                dest,
-                ARMGeneralRegs::SP,
-                generator_.stack->stackSize - var->stackpos);
+            getelemcode->code += cgAdd(dest, sourceReg, offset);
         }
     } else if (var->is_global) {
         addUsedGlobalVar(var);
@@ -1440,8 +1452,10 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     if (!isImmediateValid(offset)) {
                         callcode->code += cgLdr(tmpreg, offset);
                         callcode->code += cgAdd(tmpreg, tmpreg, srcReg);
-                    } else {
+                    } else if (var->is_alloca) {
                         callcode->code += cgAdd(tmpreg, srcReg, offset);
+                    } else if (var->is_spilled) {
+                        callcode->code += cgLdr(tmpreg, srcReg, offset);
                     }
                     callcode->code += cgStr(
                         tmpreg,
