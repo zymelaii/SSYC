@@ -285,7 +285,7 @@ std::string Generator::genAssembly(Function *func) {
     }
     checkStackChanges(blockCodeList);
     funccode += saveCallerReg();
-    if (generator_.allocator->max_funcargs > 4) {
+    if (func->totalParams() > 4) {
         funccode += cgMov(ARMGeneralRegs::R11, ARMGeneralRegs::SP);
     }
     funccode += unpackBlockCodeList(blockCodeList);
@@ -645,7 +645,6 @@ InstCode *Generator::genLoadInst(LoadInst *inst) {
         } else if (sourceVar->is_global) {
             addUsedGlobalVar(sourceVar);
             offset = 0;
-            // assert(sourceVar->reg != ARMGeneralRegs::None);
             loadcode->code += cgLdr(targetVar->reg, sourceVar);
             sourceReg       = targetVar->reg;
             // if (sourceVar->reg == ARMGeneralRegs::None) {
@@ -1448,7 +1447,6 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                         tmpreg,
                         ARMGeneralRegs::SP,
                         (inst->totalParams() - (i + 1)) * 4);
-                    generator_.allocator->releaseRegister(tmpreg);
                 } else {
                     assert(var->reg != ARMGeneralRegs::None);
                     callcode->code += cgStr(

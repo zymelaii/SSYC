@@ -256,18 +256,18 @@ ARMGeneralRegs Allocator::allocateRegister(
                 return retreg;
             }
         }
-        if (instcode && instcode->inst
-            && instcode->inst->id() != InstructionID::Call) {
-            for (int i = regAllocBase - 1; i >= 0; i--) {
-                if (!regAllocatedMap[i]) {
-                    retreg             = static_cast<ARMGeneralRegs>(i);
-                    regAllocatedMap[i] = true;
-                    if (usedRegs.find(retreg) == usedRegs.end())
-                        usedRegs.insert(retreg);
-                    return retreg;
-                }
-            }
-        }
+        // if (instcode && instcode->inst
+        //     && instcode->inst->id() != InstructionID::Call) {
+        //     for (int i = regAllocBase - 1; i >= 0; i--) {
+        //         if (!regAllocatedMap[i]) {
+        //             retreg             = static_cast<ARMGeneralRegs>(i);
+        //             regAllocatedMap[i] = true;
+        //             if (usedRegs.find(retreg) == usedRegs.end())
+        //                 usedRegs.insert(retreg);
+        //             return retreg;
+        //         }
+        //     }
+        // }
     }
     if (!force) return ARMGeneralRegs::None;
     assert(instcode && "instcode couldn't be null in this case");
@@ -382,9 +382,9 @@ void Allocator::updateAllocation(
     // register
     for (auto var : *operands) {
         if (var->is_spilled && inst->id() != InstructionID::Call) {
+            var->reg   = allocateRegister(true, operands, gen, instcode);
             int offset = stack->stackSize - var->stackpos;
             stack->releaseOnStackVar(var);
-            var->reg        = allocateRegister(true, operands, gen, instcode);
             instcode->code += Generator::sprintln(
                 "#Load spiiled var %%%d from stack", var->val->id());
             instcode->code  += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);

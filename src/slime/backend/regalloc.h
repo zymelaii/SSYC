@@ -127,16 +127,17 @@ struct Stack {
                     if (tmpvar->var != nullptr)
                         break;
                     else {
-                        auto tmp = *it2;
+                        stackvar->size += tmpvar->size;
+                        sizecnt        += tmpvar->size;
+                        auto tmp        = *it2;
                         it2++;
                         tmp.removeFromList();
-                        stackvar->size += tmpvar->size;
-                        sizecnt        += stackvar->size;
                     }
                 }
                 if (stackvar->size == size) {
                     stackvar->var = var;
                     var->stackpos = sizecnt;
+                    assert(var->stackpos == lookupOnStackVar(var));
                     return false;
                 } else if (stackvar->size > size) {
                     assert(it->value() == stackvar);
@@ -146,6 +147,7 @@ struct Stack {
                     stackvar->var  = var;
                     stackvar->size = size;
                     var->stackpos  = sizecnt;
+                    assert(var->stackpos == lookupOnStackVar(var));
                     return false;
                 }
             }
