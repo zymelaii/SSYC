@@ -108,6 +108,20 @@ struct Stack {
         stackSize += size;
     }
 
+    void popVar(Variable *var, uint32_t size) {
+        auto it  = onStackVars->node_begin();
+        auto end = onStackVars->node_end();
+        auto tmp = it;
+        while (it != end) {
+            tmp = it;
+            it++;
+        }
+        auto stackEnd = tmp->value();
+        assert(var == stackEnd->var && size == stackEnd->size);
+        stackEnd->size  = 0;
+        stackSize      -= size;
+    }
+
     // return true if the space is newly allocated
     bool spillVar(Variable *var, uint32_t size) {
         assert(var->reg == ARMGeneralRegs::None);
