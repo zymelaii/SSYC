@@ -71,18 +71,7 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
             }
         } break;
         case ExprID::Constant: {
-            //! NOTE: constant may be init value of others, must return the
-            //! cloned one
-            auto e = expr->asConstant();
-            if (e->type == ConstantType::i32) {
-                return ConstantExpr::createI32(e->i32);
-            } else if (e->type == ConstantType::f32) {
-                return ConstantExpr::createF32(e->f32);
-            } else if (e->type == ConstantType::str) {
-                return nullptr;
-            } else {
-                unreachable();
-            }
+            return expr;
         } break;
         case ExprID::Unary: {
             return tryEvaluateCompileTimeUnaryExpr(expr->asUnary());
@@ -176,30 +165,32 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
         } break;
         case UnaryOperator::Neg: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
-                auto c = value->asConstant();
+                ConstantExpr* retval = nullptr;
+                auto          c      = value->asConstant();
                 if (builtin->isInt()) {
-                    c->setData(-c->i32);
+                    retval = ConstantExpr::createI32(-c->i32);
                 } else if (builtin->isFloat()) {
-                    c->setData(-c->f32);
+                    retval = ConstantExpr::createF32(-c->f32);
                 } else {
                     return nullptr;
                 }
-                return c;
+                return retval;
             } else {
                 return nullptr;
             }
         }
         case UnaryOperator::Not: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
-                auto c = value->asConstant();
+                ConstantExpr* retval = nullptr;
+                auto          c      = value->asConstant();
                 if (builtin->isInt()) {
-                    c->setData(!c->i32);
+                    retval = ConstantExpr::createI32(!c->i32);
                 } else if (builtin->isFloat()) {
-                    c->setData(!c->f32);
+                    retval = ConstantExpr::createF32(!c->f32);
                 } else {
                     return nullptr;
                 }
-                return value->asConstant();
+                return retval;
             } else {
                 return nullptr;
             }
@@ -207,8 +198,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
         case UnaryOperator::Inv: {
             if (auto builtin = value->valueType->tryIntoBuiltin();
                 builtin->isInt()) {
-                value->asConstant()->setData(~value->asConstant()->i32);
-                return value->asConstant();
+                return ConstantExpr::createI32(~value->asConstant()->i32);
             } else {
                 return nullptr;
             }
