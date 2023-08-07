@@ -32,7 +32,6 @@ std::string Generator::genCode(Module *module) {
     modulecode += sprintln("    .arch armv7a");
     modulecode += sprintln("    .text");
     for (auto e : *module) {
-        
         if (e->type()->isFunction()) {
             generator_.allocator->initAllocator();
             generator_.cur_func = static_cast<Function *>(e);
@@ -1391,6 +1390,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     callcode->code +=
                         cgLdr(static_cast<ARMGeneralRegs>(i), offset);
                     if (var->is_spilled) {
+                        callcode->code += sprintln(
+                            "# Use spilled %%%d as argument", var->val->id());
                         callcode->code += cgLdr(
                             static_cast<ARMGeneralRegs>(i),
                             ARMGeneralRegs::SP,
@@ -1403,6 +1404,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     }
                 } else {
                     if (var->is_spilled) {
+                        callcode->code += sprintln(
+                            "# Use spilled %%%d as argument", var->val->id());
                         callcode->code += cgLdr(
                             static_cast<ARMGeneralRegs>(i), srcReg, offset);
                     } else {
@@ -1421,6 +1424,21 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
     ARMGeneralRegs tmpreg =
         generator_.allocator->allocateRegister(true, whitelist, this, callcode);
+    const char *callee_name = inst->callee()->asFunction()->name().data();
+
+    RegList saveRegs;
+    if (!strncmp(callee_name, "get", 3)
+        && libfunc.find(callee_name) != libfunc.end()) {
+        for (int i = 1; i <= 3 - inst->totalParams(); i++) {
+            auto it = generator_.allocator->usedRegs.find(
+                static_cast<ARMGeneralRegs>(i));
+            if (it != generator_.allocator->usedRegs.end())
+                saveRegs.insertToTail(static_cast<ARMGeneralRegs>(i));
+        }
+    }
+
+    callcode->code += cgPush(saveRegs);
+    
     if (inst->totalParams() > 4) {
         stackParamSize = (inst->totalParams() - 4) * 4;
         callcode->code +=
@@ -1458,6 +1476,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                 } else if (var->is_alloca) {
                     callcode->code += cgAdd(tmpreg, srcReg, offset);
                 } else if (var->is_spilled) {
+                    callcode->code += sprintln(
+                        "# Use spilled %%%d as argument", var->val->id());
                     callcode->code += cgLdr(tmpreg, srcReg, offset);
                 }
                 callcode->code += cgStr(
@@ -1495,20 +1515,9 @@ InstCode *Generator::genCallInst(CallInst *inst) {
             generator_.allocator->releaseRegister(var);
         var->reg = ARMGeneralRegs::R0;
     }
-    callcode->code          += cgBl(inst->callee()->asFunction());
-    const char *callee_name  = inst->callee()->asFunction()->name().data();
-    if (!strncmp(callee_name, "get", 3)
-        && libfunc.find(callee_name) != libfunc.end()) {
-        RegList saveRegs;
-        for (int i = 1; i <= 3 - inst->totalParams(); i++) {
-            auto it = generator_.allocator->usedRegs.find(
-                static_cast<ARMGeneralRegs>(i));
-            if (it != generator_.allocator->usedRegs.end())
-                saveRegs.insertToTail(static_cast<ARMGeneralRegs>(i));
-        }
-        callcode->code = cgPush(saveRegs) + callcode->code;
-        callcode->code = callcode->code + cgPop(saveRegs);
-    }
+    callcode->code += cgBl(inst->callee()->asFunction());
+
+    callcode->code = callcode->code + cgPop(saveRegs);
 
     if (inst->totalParams() > 4) {
         callcode->code +=

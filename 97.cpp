@@ -128,7 +128,8 @@ std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
                     os() << static_cast<char>(ch);
                 } else {
                     os() << "\\" << std::setw(2) << std::setfill('0')
-                         << std::hex << static_cast<uint32_t>(ch) << std::dec;
+                         << std::hex << static_cast<uint32_t>(ch) << std::dec
+                         << std::setfill(' ') << std::setw(1);
                 }
             }
             os() << "\"";
