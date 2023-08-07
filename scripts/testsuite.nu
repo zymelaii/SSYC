@@ -12,6 +12,7 @@ export def "testcase list" [] {
         | each {|e|
             $e.name | path relative-to $dir
         }
+        | flatten
 }
 
 # Get testcases from specific category.
@@ -32,6 +33,7 @@ export def "testcase get" [
             let has_sample_out = ($'($dir)/($e.id)_($e.name).out' | path type) == 'file'
             [[id name sample_in sample_out]; [$e.id $e.name $has_sample_in $has_sample_out]]
         }
+        | flatten
         | sort-by id -n
 }
 

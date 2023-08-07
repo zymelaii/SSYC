@@ -32,6 +32,11 @@ export def decorate [
     --no-reset (-1),    # No reset after decoration
 ] {
     let text = ($in | into string)
+    let text = if ($text | describe) != 'string' {
+        $text.0 | into string
+    } else {
+        $text
+    }
     if ($text | describe) != 'string' {
         throw ArgumentError "decorate only accept string as input" (metadata $text)
     }
