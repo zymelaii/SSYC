@@ -979,7 +979,7 @@ InstCode *Generator::genAddInst(AddInst *inst) {
         uint32_t imm = static_cast<ConstantInt *>(op2->asConstantData())->value;
         if (!isImmediateValid(imm)) {
             addcode->code += cgLdr(rd, imm);
-            addcode->code += cgLdr(rd, rn, rd);
+            addcode->code += cgAdd(rd, rn, rd);
         } else
             addcode->code += cgAdd(rd, rn, imm);
     }
