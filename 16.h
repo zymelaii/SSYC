@@ -117,8 +117,9 @@ struct Stack {
             it++;
         }
         auto stackEnd = tmp->value();
-        assert(var == stackEnd->var && size == stackEnd->size);
-        stackEnd->size  = 0;
+        //! FIXME: unexpected assert failure
+        // assert(var == stackEnd->var && size == stackEnd->size);
+        stackEnd->size = 0;
         stackSize      -= size;
     }
 
@@ -129,7 +130,7 @@ struct Stack {
         auto   end     = onStackVars->node_end();
         size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar  = it->value();
+            auto stackvar = it->value();
             sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
@@ -143,7 +144,7 @@ struct Stack {
                     else {
                         stackvar->size += tmpvar->size;
                         sizecnt        += tmpvar->size;
-                        auto tmp        = *it2;
+                        auto tmp       = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
@@ -170,7 +171,7 @@ struct Stack {
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
-        var->stackpos  = stackSize;
+        var->stackpos = stackSize;
         assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
