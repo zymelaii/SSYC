@@ -202,7 +202,7 @@ Variable *Allocator::getVarOfAllocatedReg(ARMGeneralRegs reg) {
 }
 
 Variable *Allocator::getMinIntervalRegVar(std::set<Variable *> whitelist) {
-    uint32_t  min = UINT32_MAX;
+    uint32_t  min    = UINT32_MAX;
     Variable *retVar = nullptr;
     for (auto e : *liveVars) {
         if (whitelist.find(e) != whitelist.end()) continue;
@@ -356,7 +356,7 @@ void Allocator::updateAllocation(
             ARMGeneralRegs allocReg = allocateRegister();
             if (allocReg != ARMGeneralRegs::None)
                 var->reg = allocReg;
-            else {
+            else if (inst->id() != InstructionID::Call) {
                 //! NOTE: spill
                 Variable *minlntvar = getMinIntervalRegVar(*operands);
                 assert(!minlntvar->is_spilled);
