@@ -65,19 +65,24 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                         return nullptr;
                     }
                 } break;
-                case DeclID::ParamVar: {
-                    return nullptr;
-                } break;
-                case DeclID::Function: {
-                    return expr;
-                }
                 default: {
                     unreachable();
                 } break;
             }
         } break;
         case ExprID::Constant: {
-            return expr;
+            //! NOTE: constant may be init value of others, must return the
+            //! cloned one
+            auto e = expr->asConstant();
+            if (e->type == ConstantType::i32) {
+                return ConstantExpr::createI32(e->i32);
+            } else if (e->type == ConstantType::f32) {
+                return ConstantExpr::createF32(e->f32);
+            } else if (e->type == ConstantType::str) {
+                return nullptr;
+            } else {
+                unreachable();
+            }
         } break;
         case ExprID::Unary: {
             return tryEvaluateCompileTimeUnaryExpr(expr->asUnary());
