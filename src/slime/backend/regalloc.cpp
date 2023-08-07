@@ -129,10 +129,15 @@ void Allocator::checkLiveInterval(std::string *instcode) {
                 releaseRegister(var);
             else if (
                 var->is_spilled || (var->is_alloca && !var->is_funcparam)) {
-                var->is_spilled  = false;
-                *instcode       += Generator::sprintln(
+                var->is_spilled = false;
+                if (stack->releaseOnStackVar(var))
+                    *instcode += Generator::sprintln(
+                        "    add    %s, %s, #%d",
+                        Generator::reg2str(ARMGeneralRegs::SP),
+                        Generator::reg2str(ARMGeneralRegs::SP),
+                        4);
+                *instcode += Generator::sprintln(
                     "# Release spiiled var %%%d", var->val->id());
-                stack->releaseOnStackVar(var);
             }
             tmp->removeFromList();
         } else
@@ -385,13 +390,15 @@ void Allocator::updateAllocation(
     // register
     for (auto var : *operands) {
         if (var->is_spilled && inst->id() != InstructionID::Call) {
-            var->reg   = allocateRegister(true, operands, gen, instcode);
-            int offset = stack->stackSize - var->stackpos;
-            stack->releaseOnStackVar(var);
+            var->reg        = allocateRegister(true, operands, gen, instcode);
+            int offset      = stack->stackSize - var->stackpos;
             instcode->code += Generator::sprintln(
                 "#Load spiiled var %%%d from stack", var->val->id());
-            instcode->code  += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
-            var->is_spilled  = false;
+            instcode->code += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
+            if (stack->releaseOnStackVar(var))
+                instcode->code +=
+                    gen->cgAdd(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+            var->is_spilled = false;
         } else if (
             var->is_global && var->reg == ARMGeneralRegs::None
             && inst->id() != InstructionID::Load) {
