@@ -175,14 +175,26 @@ struct Stack {
         return true;
     }
 
-    void releaseOnStackVar(Variable *var) {
-        for (auto e : *onStackVars) {
-            if (var == e->var) {
-                e->var = nullptr;
-                return;
+    bool releaseOnStackVar(Variable *var) {
+        auto it  = onStackVars->node_begin();
+        auto end = onStackVars->node_end();
+        auto tmp = it;
+        while (it != end) {
+            auto tmpvar = *it->value();
+            tmp         = it;
+            it++;
+            if (tmpvar.var == var) {
+                tmpvar.var = nullptr;
+                if (it == end) {
+                    stackSize -= tmpvar.size;
+                    tmp->removeFromList();
+                    return true;
+                }
+                return false;
             }
         }
         assert(0 && "it must be an error");
+        return false;
     }
 
     uint32_t lookupOnStackVar(Variable *var) {
