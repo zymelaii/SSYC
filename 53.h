@@ -72,8 +72,8 @@ public:
         return user->contains(this);
     }
 
-    inline Type            *type();
-    inline std::string_view name();
+    inline Type            *type() const;
+    inline std::string_view name() const;
     inline uint32_t         tag() const;
     inline int32_t          id() const;
     inline uint32_t         version() const;
@@ -427,11 +427,11 @@ inline bool Value::usedBy(const Use *use) const {
     return false;
 }
 
-inline Type *Value::type() {
+inline Type *Value::type() const {
     return valueType_;
 }
 
-inline std::string_view Value::name() {
+inline std::string_view Value::name() const {
     return name_;
 }
 

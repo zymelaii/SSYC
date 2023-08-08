@@ -132,10 +132,11 @@ void Allocator::checkLiveInterval(std::string *instcode) {
                 uint32_t releaseStackSpaces = stack->releaseOnStackVar(var);
                 if (var->is_spilled) {
                     *instcode += Generator::sprintln(
-                        "# Release spiiled var %%%d", var->val->id());
+                        "# release spilled value %%%d", var->val->id());
                     if (releaseStackSpaces != 0) {
-                        *instcode += Generator::sprintln(
-                            "    add    %s, %s, #%d",
+                        *instcode += Generator::instrln(
+                            "add",
+                            "%s, %s, #%d",
                             Generator::reg2str(ARMGeneralRegs::SP),
                             Generator::reg2str(ARMGeneralRegs::SP),
                             releaseStackSpaces);
@@ -294,7 +295,7 @@ ARMGeneralRegs Allocator::allocateRegister(
     auto ret              = minlntvar->reg;
     minlntvar->reg        = ARMGeneralRegs::None;
     instcode->code +=
-        Generator::sprintln("# Spill %%%d to stack", minlntvar->val->id());
+        Generator::sprintln("# spill value %%%d", minlntvar->val->id());
     if (stack->spillVar(minlntvar, 4))
         instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
     instcode->code += gen->cgStr(
@@ -315,6 +316,12 @@ void Allocator::releaseRegister(ARMGeneralRegs reg) {
     assert(regAllocatedMap[static_cast<int>(reg)] && "It must be a bug here!");
     assert(static_cast<int>(reg) < 12);
     regAllocatedMap[static_cast<int>(reg)] = false;
+}
+
+void Allocator::releaseRegister(ARMFloatRegs reg){
+    assert(floatRegAllocatedMap[static_cast<int>(reg) && "It must be a bug here!"]);
+    assert(static_cast<int>(reg) < 30);
+    floatRegAllocatedMap[static_cast<int>(reg)] = false;
 }
 
 void Allocator::freeAllRegister() {
@@ -378,7 +385,7 @@ void Allocator::updateAllocation(
                     minlntvar->is_spilled = true;
                     if (stack->spillVar(minlntvar, 4))
                         instcode->code += gen->sprintln(
-                            "# Spill %%%d to stack", minlntvar->val->id());
+                            "# spill value %%%d", minlntvar->val->id());
                     instcode->code +=
                         gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
                     instcode->code += gen->cgStr(
@@ -396,10 +403,10 @@ void Allocator::updateAllocation(
     // register
     for (auto var : *operands) {
         if (var->is_spilled && inst->id() != InstructionID::Call) {
-            var->reg        = allocateRegister(true, operands, gen, instcode);
-            int offset      = stack->stackSize - var->stackpos;
+            var->reg       = allocateRegister(true, operands, gen, instcode);
+            int offset     = stack->stackSize - var->stackpos;
             instcode->code += Generator::sprintln(
-                "#Load spiiled var %%%d from stack", var->val->id());
+                "# load spilled value %%%d", var->val->id());
             instcode->code += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
             uint32_t releaseStackSpaces = stack->releaseOnStackVar(var);
             if (releaseStackSpaces != 0)

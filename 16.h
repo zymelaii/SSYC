@@ -43,6 +43,42 @@ enum class ARMGeneralRegs {
     None
 };
 
+enum class ARMFloatRegs {
+    S0,
+    S1,
+    S2,
+    S3,
+    S4,
+    S5,
+    S6,
+    S7,
+    S8,
+    S9,
+    S10,
+    S11,
+    S12,
+    S13,
+    S14,
+    S15,
+    S16,
+    S17,
+    S18,
+    S19,
+    S20,
+    S21,
+    S22,
+    S23,
+    S24,
+    S25,
+    S26,
+    S27,
+    S28,
+    S29,
+    S30,
+    S31,
+    None
+};
+
 using ValVarTable   = std::map<Value *, Variable *>;
 using BlockVarTable = std::map<BasicBlock *, ValVarTable *>;
 using LiveVarible   = utils::ListTrait<Variable *>;
@@ -109,16 +145,14 @@ struct Stack {
     }
 
     void popVar(Variable *var, uint32_t size) {
-        auto it  = onStackVars->node_begin();
-        auto end = onStackVars->node_end();
-        auto tmp = it;
-        while (it != end) {
-            tmp = it;
-            it++;
-        }
-        auto stackEnd = tmp->value();
-        assert(var == stackEnd->var && size == stackEnd->size);
-        tmp->removeFromList();
+        assert(var != nullptr);
+        assert(size > 0);
+        assert(onStackVars->tail() != nullptr);
+        auto stackEnd = onStackVars->tail()->value();
+        assert(var == stackEnd->var);
+        assert(size == stackEnd->size);
+        onStackVars->tail()->removeFromList();
+        assert(stackSize >= size);
         stackSize -= size;
     }
 
@@ -187,11 +221,12 @@ struct Stack {
                 auto tmp      = it;
                 it++;
                 if (it == end) {
-                    auto     prevar     = pre->value();
-                    uint32_t fragments  = prevar->var ? 0 : prevar->size;
-                    stackSize          -= stackvar->size + fragments;
-                    if (fragments != 0) pre->removeFromList();
+                    auto     prevar = pre->value();
+                    uint32_t fragments =
+                        prevar->var || pre == tmp ? 0 : prevar->size;
+                    stackSize -= stackvar->size + fragments;
                     tmp->removeFromList();
+                    if (fragments != 0) pre->removeFromList();
                     return stackvar->size + fragments;
                 }
                 return 0;
@@ -205,7 +240,7 @@ struct Stack {
                         break;
                     else {
                         stackvar->size += tmpvar->size;
-                        auto tmp        = *it2;
+                        auto tmp       = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
@@ -263,6 +298,7 @@ public:
     //! TODO: 针对有函数调用时的寄存器分配进行优化
     bool                     has_funccall;
     bool                     regAllocatedMap[12];
+    bool                     floatRegAllocatedMap[32];
     bool                     strImmFlag;
     std::set<ARMGeneralRegs> usedRegs;
 
@@ -286,6 +322,7 @@ public:
         InstCode             *instcode  = nullptr);
     void releaseRegister(Variable *var);
     void releaseRegister(ARMGeneralRegs reg);
+    void releaseRegister(ARMFloatRegs reg);
     void freeAllRegister();
 
     void initAllocator();
