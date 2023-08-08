@@ -527,6 +527,113 @@ Instruction *Generator::getNextInst(Instruction *inst) {
     return nullptr;
 }
 
+void Generator::attachIRInformation(InstCode *instcode) {
+    assert(instcode != nullptr);
+    assert(instcode->inst != nullptr);
+    if (instcode->code.empty()) { return; }
+
+    auto       inst = instcode->inst;
+    const auto id   = inst->unwrap()->id();
+
+    constexpr auto align = 40;
+    char           ident[32]{};
+
+    do {
+        if (id != 0) {
+            sprintf(ident, "%%%d", id);
+            break;
+        }
+
+        assert(inst->unwrap()->type()->isVoid());
+        const char *name = getInstructionName(inst).data();
+
+        if (inst->id() == InstructionID::Store) {
+            sprintf(ident, "%s %%%d", name, inst->asStore()->lhs()->id());
+            break;
+        }
+
+        if (inst->id() == InstructionID::Ret) {
+            if (auto retval = inst->asRet()->operand(); !retval) {
+                sprintf(ident, "%s", name);
+            } else if (retval->isImmediate()) {
+                sprintf(ident, "%s $", name);
+            } else {
+                sprintf(ident, "%s %%%d", name, retval->id());
+            }
+            break;
+        }
+
+        if (inst->id() == InstructionID::Br) {
+            auto block = inst->asBr()->parent();
+            assert(!block->isTerminal());
+            assert(block->isLinear() || block->isBranched());
+            if (block->isLinear()) {
+                sprintf(ident, "%s <%%%d>", name, block->branch()->id());
+            } else if (auto control = block->control();
+                       control->isImmediate()) {
+                sprintf(
+                    ident,
+                    "%s $, <%%%d>, <%%%d>",
+                    name,
+                    block->branch()->id(),
+                    block->branchElse()->id());
+            } else {
+                sprintf(
+                    ident,
+                    "%s %%%d, <%%%d>, <%%%d>",
+                    name,
+                    block->control()->id(),
+                    block->branch()->id(),
+                    block->branchElse()->id());
+            }
+            break;
+        }
+
+        if (inst->id() == InstructionID::Call) {
+            auto fn = inst->asCall()->callee();
+            assert(fn->isFunction());
+            sprintf(ident, "%s %s", name, fn->name().data());
+            break;
+        }
+
+        unreachable();
+    } while (0);
+
+    auto            &code = instcode->code;
+    std::vector<int> linePos{0};
+    auto             pos = code.find_first_of('\n');
+    assert(pos != code.npos);
+    while (pos + 1 != code.size()) {
+        linePos.push_back(pos + 1);
+        pos = code.find_first_of('\n', pos + 1);
+    }
+
+    int lineInIndex = -1;
+    int lineOut     = linePos.back();
+    for (int i = 0; i < linePos.size(); ++i) {
+        if (code[linePos[i]] != '#') {
+            lineInIndex = i;
+            break;
+        }
+    }
+    assert(lineInIndex != -1);
+    assert(linePos[lineInIndex] <= lineOut);
+
+    auto lineOutOpcode = code.substr(lineOut, code.size() - lineOut - 1);
+    code.erase(lineOut);
+    code += sprintln("%-*s# --> %s", align, lineOutOpcode.c_str(), ident);
+
+    if (auto lineIn = linePos[lineInIndex]; lineIn != lineOut) {
+        assert(lineInIndex + 1 < linePos.size());
+        auto endpos       = linePos[lineInIndex + 1] - 1;
+        auto lineInOpcode = code.substr(lineIn, endpos - lineIn);
+        code.erase(lineIn, endpos - lineIn + 1);
+        code.insert(
+            lineIn,
+            sprintln("%-*s# <-- %s", align, lineInOpcode.c_str(), ident));
+    }
+}
+
 InstCodeList *Generator::genInstList(InstructionList *instlist) {
     InstCodeList *instCodeList = new InstCodeList();
     int           allocaSize   = 0;
@@ -686,94 +793,7 @@ InstCode *Generator::genInst(Instruction *inst) {
         instcode->code = tmpcode.code + instcode->code;
     }
 
-    //! insert comment for ir -> instrs
-    if (!instcode->code.empty()) {
-        const auto id = inst->unwrap()->id();
-        char       ident[32]{};
-        if (id != 0) {
-            sprintf(ident, "%%%d", id);
-        } else if (inst->unwrap()->type()->isVoid()) {
-            const char *name = getInstructionName(inst).data();
-            switch (inst->id()) {
-                case ir::InstructionID::Store: {
-                    sprintf(ident, "%s %%%d", name, id);
-                } break;
-                case ir::InstructionID::Ret: {
-                    if (auto retval = inst->asRet()->operand()) {
-                        if (retval->isImmediate()) {
-                            sprintf(ident, "%s $", name);
-                        } else {
-                            sprintf(ident, "%s %%%d", name, retval->id());
-                        }
-                    } else {
-                        sprintf(ident, "%s", name);
-                    }
-                } break;
-                case ir::InstructionID::Br: {
-                    auto block = inst->asBr()->parent();
-                    if (block->isBranched()) {
-                        if (auto control = block->control();
-                            control->isImmediate()) {
-                            sprintf(
-                                ident,
-                                "%s $, <%%%d>, <%%%d>",
-                                name,
-                                block->branch()->id(),
-                                block->branchElse()->id());
-                        } else {
-                            sprintf(
-                                ident,
-                                "%s %%%d, <%%%d>, <%%%d>",
-                                name,
-                                block->control()->id(),
-                                block->branch()->id(),
-                                block->branchElse()->id());
-                        }
-                    } else if (block->isLinear() && !block->isTerminal()) {
-                        sprintf(
-                            ident, "%s <%%%d>", name, block->branch()->id());
-                    } else {
-                        unreachable();
-                    }
-                } break;
-                case ir::InstructionID::Call: {
-                    sprintf(
-                        ident,
-                        "%s %s",
-                        name,
-                        inst->asCall()->callee()->name().data());
-                } break;
-                default: {
-                    unreachable();
-                } break;
-            }
-        } else {
-            unreachable();
-        }
-
-        constexpr auto align = 28;
-        auto          &code  = instcode->code;
-        auto           pos   = code.find_first_of('\n');
-        auto           rpos  = code.find_last_of('\n');
-        auto           r2pos = code.find_last_of('\n', rpos - 1);
-        if (r2pos == code.npos) {
-            r2pos = 0;
-        } else {
-            ++r2pos;
-        }
-        assert(pos != code.npos);
-        assert(rpos + 1 == code.size());
-        auto opcode = code.substr(r2pos, rpos - r2pos);
-        code.erase(r2pos);
-        code += sprintln("%-*s# --> %s", align, opcode.c_str(), ident);
-        if (pos != rpos) {
-            opcode = code.substr(0, pos);
-            code.erase(0, pos + 1);
-            code =
-                sprintln("%-*s# <-- %s", align, opcode.c_str(), ident) + code;
-        }
-    }
-
+    attachIRInformation(instcode);
     return instcode;
 }
 

@@ -97,13 +97,17 @@ public:
             "%*s%-*s%*s%s",
             indent,
             "",
-            strlen(instr) > opcodeWidth ? opcodeWidth : longOpcodeWidth,
+            strlen(instr) <= opcodeWidth ? opcodeWidth : longOpcodeWidth,
             instr,
             space,
             "",
             args);
     }
 
+protected:
+    void attachIRInformation(InstCode *instcode);
+
+public:
     std::string cgMov(
         ARMGeneralRegs         rd,
         ARMGeneralRegs         rs,
