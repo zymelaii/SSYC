@@ -2,6 +2,7 @@
 #include "user.h"
 #include "instruction.h"
 
+#include <string>
 #include <string.h>
 
 namespace slime::ir {
