@@ -53,6 +53,7 @@ enum class ARMFloatRegs;
 using RegList        = utils::ListTrait<ARMGeneralRegs>;
 using BlockCodeList  = slime::LinkedList<BlockCode *>;
 using UsedGlobalVars = std::map<Variable *, std::string>;
+using FloatConstants = LinkedList<float>;
 
 class Generator {
     Generator(){};
@@ -62,6 +63,7 @@ public:
     std::string       genCode(Module *module);
     std::string       genGlobalArrayInitData(
               ConstantArray *globarr, uint32_t baseSize);
+    std::string genFloatConstant();
     std::string genGlobalDef(GlobalObject *obj);
     std::string genUsedGlobVars();
     std::string genAssembly(Function *func);
@@ -156,6 +158,7 @@ public:
         ARMFloatRegs           rd,
         ARMFloatRegs           rs,
         ComparePredicationType cond = ComparePredicationType::TRUE);
+    std::string cgVmov(ARMFloatRegs rd, ARMGeneralRegs rs);
     std::string cgVldr(ARMFloatRegs dst, ARMGeneralRegs src, int32_t offset);
     std::string cgVldr(ARMGeneralRegs dst, Variable *var);
     std::string cgVstr(ARMFloatRegs src, ARMFloatRegs dst, int32_t offset);
@@ -176,6 +179,7 @@ public:
 protected:
     std::string            saveCallerReg();
     std::string            restoreCallerReg();
+    std::string            loadFloatConstant(ARMFloatRegs rd, float imm);
     std::string            unpackInstCodeList(InstCodeList &instCodeList);
     std::string            unpackBlockCodeList(BlockCodeList &blockCodeList);
     void                   checkStackChanges(BlockCodeList &blockCodeList);
@@ -255,6 +259,7 @@ private:
         Allocator      *allocator      = nullptr;
         Stack          *stack          = nullptr;
         UsedGlobalVars *usedGlobalVars = nullptr;
+        FloatConstants *floatConstants = nullptr;
     };
 
     // std::ostream    os;

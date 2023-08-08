@@ -40,7 +40,7 @@ enum class ARMGeneralRegs {
     SP,
     LR,
     PC,
-    None
+    None = 77
 };
 
 enum class ARMFloatRegs {
@@ -76,8 +76,36 @@ enum class ARMFloatRegs {
     S29,
     S30,
     S31,
-    None
+    None = 77 // Magic num
 };
+
+struct ARMRegister {
+    ARMRegister(Variable *var)
+        : holder(var)
+        , gpr{ARMGeneralRegs::None} {};
+
+    ARMRegister &operator=(const ARMFloatRegs reg) {
+        this->fpr = reg;
+        return *this;
+    }
+
+    ARMRegister &operator=(const ARMGeneralRegs reg) {
+        this->gpr = reg;
+        return *this;
+    }
+
+    Variable *holder;
+
+    union {
+        ARMGeneralRegs gpr;
+        ARMFloatRegs   fpr;
+    };
+};
+
+bool operator!=(const ARMRegister &a, const ARMFloatRegs &b);
+bool operator!=(const ARMRegister &a, const ARMGeneralRegs &b);
+bool operator==(const ARMRegister &a, const ARMFloatRegs &b);
+bool operator==(const ARMRegister &a, const ARMGeneralRegs &b);
 
 using ValVarTable   = std::map<Value *, Variable *>;
 using BlockVarTable = std::map<BasicBlock *, ValVarTable *>;
@@ -101,20 +129,23 @@ struct Variable {
         : val(val)
         , is_spilled(0)
         , is_alloca(0)
+        , is_general(0)
         , is_funcparam(0)
         , is_global(val->isGlobal())
+        , reg(this)
         , stackpos(0)
-        , reg(ARMGeneralRegs::None)
         , livIntvl(new LiveInterval()) {}
 
-    Value         *val;
-    ARMGeneralRegs reg;
-    bool           is_spilled;
-    bool           is_alloca;
-    bool           is_global;
-    bool           is_funcparam;
-    size_t         stackpos; // only valid when is_spiiled or is_alloca is true
-    LiveInterval  *livIntvl;
+    Value      *val;
+    ARMRegister reg;
+
+    bool          is_spilled;
+    bool          is_alloca;
+    bool          is_global;
+    bool          is_funcparam;
+    bool          is_general; // true if allocated with a general register
+    size_t        stackpos;   // only valid when is_spiiled or is_alloca is true
+    LiveInterval *livIntvl;
 
     static Variable *create(Value *val) {
         return new Variable(val);
@@ -158,12 +189,12 @@ struct Stack {
 
     // return true if the space is newly allocated
     bool spillVar(Variable *var, uint32_t size) {
-        assert(var->reg == ARMGeneralRegs::None);
+        assert(var->reg.gpr == ARMGeneralRegs::None);
         auto   it      = onStackVars->node_begin();
         auto   end     = onStackVars->node_end();
         size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar = it->value();
+            auto stackvar  = it->value();
             sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
@@ -177,7 +208,7 @@ struct Stack {
                     else {
                         stackvar->size += tmpvar->size;
                         sizecnt        += tmpvar->size;
-                        auto tmp       = *it2;
+                        auto tmp        = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
@@ -204,7 +235,7 @@ struct Stack {
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
-        var->stackpos = stackSize;
+        var->stackpos  = stackSize;
         assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
@@ -240,7 +271,7 @@ struct Stack {
                         break;
                     else {
                         stackvar->size += tmpvar->size;
-                        auto tmp       = *it2;
+                        auto tmp        = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
@@ -294,13 +325,14 @@ public:
     LiveVarible   *liveVars;
     Stack         *stack;
     // 当前函数将会调用的函数中参数个数的最大值
-    size_t max_funcargs;
+    size_t maxIntegerArgs, maxFloatArgs;
     //! TODO: 针对有函数调用时的寄存器分配进行优化
     bool                     has_funccall;
     bool                     regAllocatedMap[12];
     bool                     floatRegAllocatedMap[32];
     bool                     strImmFlag;
-    std::set<ARMGeneralRegs> usedRegs;
+    std::set<ARMGeneralRegs> usedGeneralRegs;
+    std::set<ARMFloatRegs>   usedFloatRegs;
 
     void initVarInterval(Function *func);
     void computeInterval(Function *func);
@@ -312,10 +344,16 @@ public:
         Instruction *inst);
     std::set<Variable *> *getInstOperands(Instruction *inst);
     Variable             *getVarOfAllocatedReg(ARMGeneralRegs reg);
+    Variable             *getVarOfAllocatedReg(ARMFloatRegs reg);
     Variable             *getMinIntervalRegVar(std::set<Variable *>);
     Variable             *createVariable(Value *val);
 
-    ARMGeneralRegs allocateRegister(
+    ARMGeneralRegs allocateGeneralRegister(
+        bool                  force     = false,
+        std::set<Variable *> *whitelist = nullptr,
+        Generator            *gen       = nullptr,
+        InstCode             *instcode  = nullptr);
+    ARMFloatRegs allocateFloatRegister(
         bool                  force     = false,
         std::set<Variable *> *whitelist = nullptr,
         Generator            *gen       = nullptr,
