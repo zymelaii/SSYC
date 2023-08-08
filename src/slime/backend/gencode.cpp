@@ -496,118 +496,209 @@ InstCodeList *Generator::genInstList(InstructionList *instlist) {
 InstCode *Generator::genInst(Instruction *inst) {
     InstructionID instID = inst->id();
     assert(instID != InstructionID::Alloca);
-    InstCode *instcode;
+    InstCode *instcode = nullptr;
     InstCode  tmpcode(nullptr);
     generator_.allocator->updateAllocation(
         this, &tmpcode, generator_.cur_block, inst);
 
     switch (instID) {
-        case InstructionID::Alloca:
-            assert(0);
-            break;
-        case InstructionID::Load:
+        case InstructionID::Alloca: {
+            assert(false && "unexpected alloca");
+            unreachable();
+        } break;
+        case InstructionID::Load: {
             instcode = genLoadInst(inst->asLoad());
-            break;
-        case InstructionID::Store:
+        } break;
+        case InstructionID::Store: {
             instcode = genStoreInst(inst->asStore());
-            break;
-        case InstructionID::Ret:
+        } break;
+        case InstructionID::Ret: {
             instcode = genRetInst(inst->asRet());
-            break;
-        case InstructionID::Br:
+        } break;
+        case InstructionID::Br: {
             instcode = genBrInst(inst->asBr());
-            break;
-        case InstructionID::GetElementPtr:
+        } break;
+        case InstructionID::GetElementPtr: {
             instcode = genGetElemPtrInst(inst->asGetElementPtr());
-            break;
-        case InstructionID::Add:
+        } break;
+        case InstructionID::Add: {
             instcode = genAddInst(inst->asAdd());
-            break;
-        case InstructionID::Sub:
+        } break;
+        case InstructionID::Sub: {
             instcode = genSubInst(inst->asSub());
-            break;
-        case InstructionID::Mul:
+        } break;
+        case InstructionID::Mul: {
             instcode = genMulInst(inst->asMul());
-            break;
-        case InstructionID::UDiv:
+        } break;
+        case InstructionID::UDiv: {
             instcode = genUDivInst(inst->asUDiv());
-            break;
-        case InstructionID::SDiv:
+        } break;
+        case InstructionID::SDiv: {
             instcode = genSDivInst(inst->asSDiv());
-            break;
-        case InstructionID::URem:
+        } break;
+        case InstructionID::URem: {
             instcode = genURemInst(inst->asURem());
-            break;
-        case InstructionID::SRem:
+        } break;
+        case InstructionID::SRem: {
             instcode = genSRemInst(inst->asSRem());
-            break;
-        case InstructionID::FNeg:
+        } break;
+        case InstructionID::FNeg: {
             instcode = genFNegInst(inst->asFNeg());
-            break;
-        case InstructionID::FAdd:
+        } break;
+        case InstructionID::FAdd: {
             instcode = genFAddInst(inst->asFAdd());
-            break;
-        case InstructionID::FSub:
+        } break;
+        case InstructionID::FSub: {
             instcode = genFSubInst(inst->asFSub());
-            break;
-        case InstructionID::FMul:
+        } break;
+        case InstructionID::FMul: {
             instcode = genFMulInst(inst->asFMul());
-            break;
-        case InstructionID::FDiv:
+        } break;
+        case InstructionID::FDiv: {
             instcode = genFDivInst(inst->asFDiv());
-            break;
-        case InstructionID::FRem:
+        } break;
+        case InstructionID::FRem: {
             instcode = genFRemInst(inst->asFRem());
-            break;
-        case InstructionID::Shl:
+        } break;
+        case InstructionID::Shl: {
             instcode = genShlInst(inst->asShl());
-            break;
-        case InstructionID::LShr:
+        } break;
+        case InstructionID::LShr: {
             instcode = genLShrInst(inst->asLShr());
-            break;
-        case InstructionID::AShr:
+        } break;
+        case InstructionID::AShr: {
             instcode = genAShrInst(inst->asAShr());
-            break;
-        case InstructionID::And:
+        } break;
+        case InstructionID::And: {
             instcode = genAndInst(inst->asAnd());
-            break;
-        case InstructionID::Or:
+        } break;
+        case InstructionID::Or: {
             instcode = genOrInst(inst->asOr());
-            break;
-        case InstructionID::Xor:
+        } break;
+        case InstructionID::Xor: {
             instcode = genXorInst(inst->asXor());
-            break;
-        case InstructionID::FPToUI:
+        } break;
+        case InstructionID::FPToUI: {
             instcode = genFPToUIInst(inst->asFPToUI());
-            break;
-        case InstructionID::FPToSI:
+        } break;
+        case InstructionID::FPToSI: {
             instcode = genFPToSIInst(inst->asFPToSI());
-            break;
-        case InstructionID::UIToFP:
+        } break;
+        case InstructionID::UIToFP: {
             instcode = genUIToFPInst(inst->asUIToFP());
-            break;
-        case InstructionID::SIToFP:
+        } break;
+        case InstructionID::SIToFP: {
             instcode = genSIToFPInst(inst->asSIToFP());
-            break;
-        case InstructionID::ICmp:
+        } break;
+        case InstructionID::ICmp: {
             instcode = genICmpInst(inst->asICmp());
-            break;
-        case InstructionID::FCmp:
+        } break;
+        case InstructionID::FCmp: {
             instcode = genFCmpInst(inst->asFCmp());
-            break;
-        case InstructionID::ZExt:
+        } break;
+        case InstructionID::ZExt: {
             instcode = genZExtInst(inst->asZExt());
-            break;
-        case InstructionID::Call:
+        } break;
+        case InstructionID::Call: {
             instcode = genCallInst(inst->asCall());
-            break;
-        default:
+        } break;
+        default: {
             fprintf(stderr, "Unkown ir inst type:%d!\n", instID);
-            exit(-1);
+            unreachable();
+        } break;
     }
+    assert(instcode != nullptr);
+
     generator_.allocator->checkLiveInterval(&instcode->code);
-    if (!tmpcode.code.empty()) instcode->code = tmpcode.code + instcode->code;
-    std::cout << instcode->code;
+    if (!tmpcode.code.empty()) {
+        instcode->code = tmpcode.code + instcode->code;
+    }
+
+    //! insert comment for ir -> instrs
+    if (!instcode->code.empty()) {
+        const auto id = inst->unwrap()->id();
+        char       ident[32]{};
+        if (id != 0) {
+            sprintf(ident, "%%%d", id);
+        } else if (inst->unwrap()->type()->isVoid()) {
+            const char *name = getInstructionName(inst).data();
+            switch (inst->id()) {
+                case ir::InstructionID::Store: {
+                    sprintf(ident, "%s %%%d", name, id);
+                } break;
+                case ir::InstructionID::Ret: {
+                    if (auto retval = inst->asRet()->operand()) {
+                        if (retval->isImmediate()) {
+                            sprintf(ident, "%s $", name);
+                        } else {
+                            sprintf(ident, "%s %%%d", name, retval->id());
+                        }
+                    } else {
+                        sprintf(ident, "%s", name);
+                    }
+                } break;
+                case ir::InstructionID::Br: {
+                    auto block = inst->asBr()->parent();
+                    if (block->isBranched()) {
+                        if (auto control = block->control();
+                            control->isImmediate()) {
+                            sprintf(
+                                ident,
+                                "%s $, <%%%d>, <%%%d>",
+                                name,
+                                block->branch()->id(),
+                                block->branchElse()->id());
+                        } else {
+                            sprintf(
+                                ident,
+                                "%s %%%d, <%%%d>, <%%%d>",
+                                name,
+                                block->control()->id(),
+                                block->branch()->id(),
+                                block->branchElse()->id());
+                        }
+                    } else if (block->isLinear() && !block->isTerminal()) {
+                        sprintf(
+                            ident, "%s <%%%d>", name, block->branch()->id());
+                    } else {
+                        unreachable();
+                    }
+                } break;
+                case ir::InstructionID::Call: {
+                    sprintf(
+                        ident, "%s %s", name, inst->asCall()->callee()->name());
+                } break;
+                default: {
+                    unreachable();
+                } break;
+            }
+        } else {
+            unreachable();
+        }
+
+        constexpr auto align = 28;
+        auto          &code  = instcode->code;
+        auto           pos   = code.find_first_of('\n');
+        auto           rpos  = code.find_last_of('\n');
+        auto           r2pos = code.find_last_of('\n', rpos - 1);
+        if (r2pos == code.npos) {
+            r2pos = 0;
+        } else {
+            ++r2pos;
+        }
+        assert(pos != code.npos);
+        assert(rpos + 1 == code.size());
+        auto opcode = code.substr(r2pos, rpos - r2pos);
+        code.erase(r2pos);
+        code += sprintln("%-*s# --> %s", align, opcode.c_str(), ident);
+        if (pos != rpos) {
+            opcode = code.substr(0, pos);
+            code.erase(0, pos + 1);
+            code =
+                sprintln("%-*s# <-- %s", align, opcode.c_str(), ident) + code;
+        }
+    }
+
     return instcode;
 }
 
@@ -631,8 +722,6 @@ InstCode *Generator::genLoadInst(LoadInst *inst) {
     int            offset;
     InstCode      *loadcode = new InstCode(inst);
     ARMGeneralRegs sourceReg, tmpreg = ARMGeneralRegs::None;
-    loadcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (source->isLabel()) {
         //! TODO: label
         assert(0);
@@ -843,8 +932,6 @@ InstCode *Generator::genGetElemPtrInst(GetElementPtrInst *inst) {
     //! addr = base + i[0] * sizeof(type) + i[1] * sizeof(*type) + ...
     auto      baseType    = inst->op<0>()->type()->tryGetElementType();
     InstCode *getelemcode = new InstCode(inst);
-    getelemcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     //! dest is initially assign to base addr
     auto dest = findVariable(inst->unwrap())->reg;
     if (auto var = findVariable(inst->op<0>()); var->is_alloca) {
@@ -961,8 +1048,6 @@ InstCode *Generator::genAddInst(AddInst *inst) {
     InstCode      *addcode = new InstCode(inst);
     auto           op1     = inst->useAt(0);
     auto           op2     = inst->useAt(1);
-    addcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
 
     if (Allocator::isVariable(op1)) {
         rn = findVariable(op1)->reg;
@@ -991,8 +1076,6 @@ InstCode *Generator::genSubInst(SubInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
     InstCode      *subcode = new InstCode(inst);
-    subcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -1018,8 +1101,6 @@ InstCode *Generator::genMulInst(MulInst *inst) {
     InstCode      *mulcode = new InstCode(inst);
     auto           op1 = inst->useAt(0), op2 = inst->useAt(1);
 
-    mulcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (!Allocator::isVariable(op1)) {
         uint32_t imm = static_cast<ConstantInt *>(op1->asConstantData())->value;
         mulcode->code += cgLdr(rd, imm);
@@ -1060,8 +1141,6 @@ InstCode *Generator::genSDivInst(SDivInst *inst) {
     assert(!generator_.allocator->regAllocatedMap[0]);
     assert(!generator_.allocator->regAllocatedMap[1]);
     InstCode *sdivcode = new InstCode(inst);
-    sdivcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalOperands(); i++) {
         generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
         if (inst->useAt(i)->isConstant()) {
@@ -1090,8 +1169,6 @@ InstCode *Generator::genURemInst(URemInst *inst) {
 InstCode *Generator::genSRemInst(SRemInst *inst) {
     auto      targetReg = findVariable(inst->unwrap())->reg;
     InstCode *sremcode  = new InstCode(inst);
-    sremcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     for (int i = 0; i < inst->totalOperands(); i++) {
         generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
         if (inst->useAt(i)->isConstant()) {
@@ -1165,8 +1242,6 @@ InstCode *Generator::genShlInst(ShlInst *inst) {
     ARMGeneralRegs rs;
     InstCode      *shlcode = new InstCode(inst);
 
-    shlcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -1197,8 +1272,6 @@ InstCode *Generator::genAShrInst(AShrInst *inst) {
     ARMGeneralRegs rs;
     InstCode      *ashrcode = new InstCode(inst);
 
-    ashrcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -1223,8 +1296,6 @@ InstCode *Generator::genAndInst(AndInst *inst) {
     ARMGeneralRegs rd = findVariable(inst->unwrap())->reg;
     ARMGeneralRegs rs;
     InstCode      *andcode = new InstCode(inst);
-    andcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (!Allocator::isVariable(inst->useAt(0))) {
         uint32_t imm =
             static_cast<ConstantInt *>(inst->useAt(0)->asConstantData())->value;
@@ -1280,8 +1351,6 @@ InstCode *Generator::genICmpInst(ICmpInst *inst) {
     InstCode *icmpcode  = new InstCode(inst);
     auto      whitelist = generator_.allocator->getInstOperands(inst);
 
-    icmpcode->code +=
-        sprintln("# value %%%d generation begin:", inst->unwrap()->id());
     if (Allocator::isVariable(op2)) {
         if (!Allocator::isVariable(op1)) {
             auto tmpreg = generator_.allocator->allocateRegister(
@@ -1614,245 +1683,244 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
 std::string Generator::cgMov(
     ARMGeneralRegs rd, ARMGeneralRegs rs, ComparePredicationType cond) {
+    const char *instr = nullptr;
     switch (cond) {
-        case ComparePredicationType::TRUE:
-            return sprintln("    mov    %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::EQ:
-            return sprintln("    moveq  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::NE:
-            return sprintln("    movne  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SLE:
-            return sprintln("    movle  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SLT:
-            return sprintln("    movlt  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SGT:
-            return sprintln("    movgt  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SGE:
-            return sprintln("    movge  %s, %s", reg2str(rd), reg2str(rs));
+        case ComparePredicationType::TRUE: {
+            instr = "mov";
+        } break;
+        case ComparePredicationType::EQ: {
+            instr = "moveq";
+        } break;
+        case ComparePredicationType::NE: {
+            instr = "movne";
+        } break;
+        case ComparePredicationType::SLE: {
+            instr = "movle";
+        } break;
+        case ComparePredicationType::SLT: {
+            instr = "movlt";
+        } break;
+        case ComparePredicationType::SGE: {
+            instr = "movge";
+        } break;
+        case ComparePredicationType::SGT: {
+            instr = "movgt";
+        } break;
         default: {
             assert(0 && "unfinished comparative type");
             unreachable();
-        }
+        } break;
     }
+    assert(instr != nullptr);
+    return instrln(instr, "%s, %s", reg2str(rd), reg2str(rs));
 }
 
 std::string Generator::cgMov(
     ARMGeneralRegs rd, int32_t imm, ComparePredicationType cond) {
+    const char *instr = nullptr;
     switch (cond) {
-        case ComparePredicationType::TRUE:
-            return sprintln("    mov    %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::EQ:
-            return sprintln("    moveq  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::NE:
-            return sprintln("    movne  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SLE:
-            return sprintln("    movle  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SLT:
-            return sprintln("    movlt  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SGE:
-            return sprintln("    movge  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SGT:
-            return sprintln("    movgt  %s, #%d", reg2str(rd), imm);
+        case ComparePredicationType::TRUE: {
+            instr = "mov";
+        } break;
+        case ComparePredicationType::EQ: {
+            instr = "moveq";
+        } break;
+        case ComparePredicationType::NE: {
+            instr = "movne";
+        } break;
+        case ComparePredicationType::SLE: {
+            instr = "movle";
+        } break;
+        case ComparePredicationType::SLT: {
+            instr = "movlt";
+        } break;
+        case ComparePredicationType::SGE: {
+            instr = "movge";
+        } break;
+        case ComparePredicationType::SGT: {
+            instr = "movgt";
+        } break;
         default: {
             assert(0 && "unfinished comparative type");
             unreachable();
-        }
+        } break;
     }
+    assert(instr != nullptr);
+    return instrln(instr, "%s, #%d", reg2str(rd), imm);
 }
 
 std::string Generator::cgLdr(
     ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
-    static char tmpStr[10];
-    if (offset != 0)
-        sprintf(tmpStr, "[%s, #%d]", reg2str(src), offset);
-    else
-        sprintf(tmpStr, "[%s]", reg2str(src));
-    return sprintln("    ldr    %s, %s", reg2str(dst), tmpStr);
+    if (offset != 0) {
+        return instrln(
+            "ldr", "%s, [%s, #%d]", reg2str(src), reg2str(dst), offset);
+    } else {
+        return instrln("ldr", "%s, [%s]", reg2str(src), reg2str(dst));
+    }
 }
 
 std::string Generator::cgLdr(
     ARMGeneralRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset) {
-    static char tmpStr[10];
-    sprintf(tmpStr, "[%s, %s]", reg2str(src), reg2str(offset));
-    return sprintln("    ldr    %s, %s", reg2str(dst), tmpStr);
+    return instrln(
+        "ldr", "%s, [%s, %s]", reg2str(dst), reg2str(src), reg2str(offset));
 }
 
 std::string Generator::cgLdr(ARMGeneralRegs dst, int32_t imm) {
-    return sprintln("    ldr    %s, =%d", reg2str(dst), imm);
+    return instrln("ldr", "%s, =%d", reg2str(dst), imm);
 }
 
 std::string Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
     assert(var->is_global);
-    auto it = generator_.usedGlobalVars->find(var);
-    if (it == generator_.usedGlobalVars->end())
-        assert(0 && "it must be an error here.");
-    return sprintln("    ldr    %s, %s", reg2str(dst), it->second.data());
+    assert(generator_.usedGlobalVars->count(var));
+    const auto &source = generator_.usedGlobalVars->at(var);
+    return instrln("ldr", "%s, %s", reg2str(dst), source.c_str());
 }
 
 std::string Generator::cgStr(
     ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset) {
-    static char tmpStr[10];
-    if (offset != 0)
-        sprintf(tmpStr, "[%s, #%d]", reg2str(dst), offset);
-    else
-        sprintf(tmpStr, "[%s]", reg2str(dst));
-    return sprintln("    str    %s, %s", reg2str(src), tmpStr);
+    if (offset != 0) {
+        return instrln(
+            "str", "%s, [%s, #%d]", reg2str(src), reg2str(dst), offset);
+    } else {
+        return instrln("str", "%s, [%s]", reg2str(src), reg2str(dst));
+    }
 }
 
 std::string Generator::cgStr(
     ARMGeneralRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset) {
-    static char tmpStr[10];
-    sprintf(tmpStr, "[%s, %s]", reg2str(dst), reg2str(offset));
-    return sprintln("    str    %s, %s", reg2str(src), tmpStr);
+    return sprintln(
+        "str", "%s, [%s, %s]", reg2str(src), reg2str(dst), reg2str(offset));
 }
 
 std::string Generator::cgAdd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    add    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln("add", "%s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgAdd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    add    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("add", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgSub(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    sub    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln("sub", "%s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgSub(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    sub    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("sub", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgMul(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    mul    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln("mul", "%s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgMul(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    mul    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("mul", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgAnd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    and    %s, %s, #%d", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln(
+        "and", "%s, %s, #%d", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgAnd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    and    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("and", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgLsl(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    lsl    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("lsl", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgAsr(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    asr    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("asr", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2) {
-    return sprintln("    cmp    %s, %s", reg2str(op1), reg2str(op2));
+    return instrln("cmp", "%s, %s", reg2str(op1), reg2str(op2));
 }
 
 std::string Generator::cgCmp(ARMGeneralRegs op1, int32_t op2) {
-    return sprintln("    cmp    %s, #%d", reg2str(op1), op2);
+    return instrln("cmp", "%s, #%d", reg2str(op1), op2);
 }
 
 std::string Generator::cgTst(ARMGeneralRegs op1, int32_t op2) {
-    return sprintln("    tst    %s, #%d", reg2str(op1), op2);
+    return instrln("tst", "%s, #%d", reg2str(op1), op2);
 }
 
 std::string Generator::cgB(Value *brTarget, ComparePredicationType cond) {
     assert(brTarget->isLabel());
-    size_t blockid = brTarget->id();
+    size_t      blockid = brTarget->id();
+    const char *instr   = nullptr;
     switch (cond) {
-        case ComparePredicationType::TRUE:
-            return sprintln(
-                "    b       .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::EQ:
-            return sprintln(
-                "    beq     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::NE:
-            return sprintln(
-                "    bne     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SLT:
-            // case ComparePredicationType::ULT:
-            return sprintln(
-                "    blt     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SGT:
-            return sprintln(
-                "    bgt     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SLE:
-            return sprintln(
-                "    ble     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SGE:
-            return sprintln(
-                "    bge     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
+        case ComparePredicationType::TRUE: {
+            instr = "b";
+        } break;
+        case ComparePredicationType::EQ: {
+            instr = "beq";
+        } break;
+        case ComparePredicationType::NE: {
+            instr = "bne";
+        } break;
+        case ComparePredicationType::SLT: {
+            instr = "blt";
+        } break;
+        case ComparePredicationType::SGT: {
+            instr = "bgt";
+        } break;
+        case ComparePredicationType::SLE: {
+            instr = "ble";
+        } break;
+        case ComparePredicationType::SGE: {
+            instr = "bge";
+        } break;
         default: {
             unreachable();
-        }
+        } break;
     }
+    assert(instr != nullptr);
+    return instrln(
+        instr, ".F%dBB.%d", generator_.cur_funcnum, getBlockNum(blockid));
 }
 
 std::string Generator::cgBx(ARMGeneralRegs rd) {
-    return sprintln("    bx     %s", reg2str(rd));
+    return instrln("bx", "%s", reg2str(rd));
 }
 
 std::string Generator::cgBl(Function *callee) {
-    return sprintln("    bl     %s", callee->name().data());
+    return instrln("bl", "%s", callee->name().data());
 }
 
 std::string Generator::cgBl(const char *libfuncname) {
-    assert(libfunc.find(libfuncname) != libfunc.end());
-    return sprintln("    bl     %s", libfuncname);
+    assert(libfunc.count(libfuncname));
+    return instrln("bl", "%s", libfuncname);
 }
 
 std::string Generator::cgPush(RegList &reglist) {
-    std::string pushcode;
-    if (reglist.size() == 0) return "";
-    pushcode += "    push   {";
+    if (reglist.size() == 0) { return ""; }
+    std::string regs;
     for (auto reg : reglist) {
-        pushcode += std::string(reg2str(reg));
-        if (reg != reglist.tail()->value()) pushcode += std::string(",");
+        regs += reg2str(reg);
+        if (reg != reglist.tail()->value()) { regs.push_back(','); };
     }
-    pushcode += sprintln("}");
-    return pushcode;
+    return instrln("push", "{%s}", regs.c_str());
 }
 
 std::string Generator::cgPop(RegList &reglist) {
-    std::string popcode;
-    if (reglist.size() == 0) return "";
-    popcode += std::string("    pop    {");
+    if (reglist.size() == 0) { return ""; }
+    std::string regs;
     for (auto reg : reglist) {
-        popcode += std::string(reg2str(reg));
-        if (reg != reglist.tail()->value()) popcode += std::string(",");
+        regs += reg2str(reg);
+        if (reg != reglist.tail()->value()) { regs.push_back(','); };
     }
-    popcode += sprintln("}");
-    return popcode;
+    return instrln("pop", "{%s}", regs.c_str());
 }
 
 } // namespace slime::backend
