@@ -1614,245 +1614,244 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
 std::string Generator::cgMov(
     ARMGeneralRegs rd, ARMGeneralRegs rs, ComparePredicationType cond) {
+    const char *instr = nullptr;
     switch (cond) {
-        case ComparePredicationType::TRUE:
-            return sprintln("    mov    %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::EQ:
-            return sprintln("    moveq  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::NE:
-            return sprintln("    movne  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SLE:
-            return sprintln("    movle  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SLT:
-            return sprintln("    movlt  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SGT:
-            return sprintln("    movgt  %s, %s", reg2str(rd), reg2str(rs));
-        case ComparePredicationType::SGE:
-            return sprintln("    movge  %s, %s", reg2str(rd), reg2str(rs));
+        case ComparePredicationType::TRUE: {
+            instr = "mov";
+        } break;
+        case ComparePredicationType::EQ: {
+            instr = "moveq";
+        } break;
+        case ComparePredicationType::NE: {
+            instr = "movne";
+        } break;
+        case ComparePredicationType::SLE: {
+            instr = "movle";
+        } break;
+        case ComparePredicationType::SLT: {
+            instr = "movlt";
+        } break;
+        case ComparePredicationType::SGE: {
+            instr = "movge";
+        } break;
+        case ComparePredicationType::SGT: {
+            instr = "movgt";
+        } break;
         default: {
             assert(0 && "unfinished comparative type");
             unreachable();
-        }
+        } break;
     }
+    assert(instr != nullptr);
+    return instrln(instr, "%s, #%d", reg2str(rd), reg2str(rs));
 }
 
 std::string Generator::cgMov(
     ARMGeneralRegs rd, int32_t imm, ComparePredicationType cond) {
+    const char *instr = nullptr;
     switch (cond) {
-        case ComparePredicationType::TRUE:
-            return sprintln("    mov    %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::EQ:
-            return sprintln("    moveq  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::NE:
-            return sprintln("    movne  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SLE:
-            return sprintln("    movle  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SLT:
-            return sprintln("    movlt  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SGE:
-            return sprintln("    movge  %s, #%d", reg2str(rd), imm);
-        case ComparePredicationType::SGT:
-            return sprintln("    movgt  %s, #%d", reg2str(rd), imm);
+        case ComparePredicationType::TRUE: {
+            instr = "mov";
+        } break;
+        case ComparePredicationType::EQ: {
+            instr = "moveq";
+        } break;
+        case ComparePredicationType::NE: {
+            instr = "movne";
+        } break;
+        case ComparePredicationType::SLE: {
+            instr = "movle";
+        } break;
+        case ComparePredicationType::SLT: {
+            instr = "movlt";
+        } break;
+        case ComparePredicationType::SGE: {
+            instr = "movge";
+        } break;
+        case ComparePredicationType::SGT: {
+            instr = "movgt";
+        } break;
         default: {
             assert(0 && "unfinished comparative type");
             unreachable();
-        }
+        } break;
     }
+    assert(instr != nullptr);
+    return instrln(instr, "%s, #%d", reg2str(rd), imm);
 }
 
 std::string Generator::cgLdr(
     ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
-    static char tmpStr[10];
-    if (offset != 0)
-        sprintf(tmpStr, "[%s, #%d]", reg2str(src), offset);
-    else
-        sprintf(tmpStr, "[%s]", reg2str(src));
-    return sprintln("    ldr    %s, %s", reg2str(dst), tmpStr);
+    if (offset != 0) {
+        return instrln(
+            "ldr", "%s, [%s, #%d]", reg2str(src), reg2str(dst), offset);
+    } else {
+        return instrln("ldr", "%s, [%s]", reg2str(src), reg2str(dst));
+    }
 }
 
 std::string Generator::cgLdr(
     ARMGeneralRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset) {
-    static char tmpStr[10];
-    sprintf(tmpStr, "[%s, %s]", reg2str(src), reg2str(offset));
-    return sprintln("    ldr    %s, %s", reg2str(dst), tmpStr);
+    return instrln(
+        "ldr", "%s, [%s, %s]", reg2str(dst), reg2str(src), reg2str(offset));
 }
 
 std::string Generator::cgLdr(ARMGeneralRegs dst, int32_t imm) {
-    return sprintln("    ldr    %s, =%d", reg2str(dst), imm);
+    return sprintln("ldr", "%s, =%d", reg2str(dst), imm);
 }
 
 std::string Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
     assert(var->is_global);
-    auto it = generator_.usedGlobalVars->find(var);
-    if (it == generator_.usedGlobalVars->end())
-        assert(0 && "it must be an error here.");
-    return sprintln("    ldr    %s, %s", reg2str(dst), it->second.data());
+    assert(generator_.usedGlobalVars->count(var));
+    const auto &source = generator_.usedGlobalVars->at(var);
+    return instrln("ldr", "%s, %s", reg2str(dst), source.c_str());
 }
 
 std::string Generator::cgStr(
     ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset) {
-    static char tmpStr[10];
-    if (offset != 0)
-        sprintf(tmpStr, "[%s, #%d]", reg2str(dst), offset);
-    else
-        sprintf(tmpStr, "[%s]", reg2str(dst));
-    return sprintln("    str    %s, %s", reg2str(src), tmpStr);
+    if (offset != 0) {
+        return instrln(
+            "str", "%s, [%s, #%d]", reg2str(src), reg2str(dst), offset);
+    } else {
+        return instrln("str", "%s, [%s]", reg2str(src), reg2str(dst));
+    }
 }
 
 std::string Generator::cgStr(
     ARMGeneralRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset) {
-    static char tmpStr[10];
-    sprintf(tmpStr, "[%s, %s]", reg2str(dst), reg2str(offset));
-    return sprintln("    str    %s, %s", reg2str(src), tmpStr);
+    return sprintln(
+        "str", "%s, [%s, %s]", reg2str(src), reg2str(dst), reg2str(offset));
 }
 
 std::string Generator::cgAdd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    add    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln("add", "%s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgAdd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    add    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("add", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgSub(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    sub    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln("sub", "%s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgSub(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    sub    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("sub", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgMul(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    mul    %s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln("mul", "%s, %s, %s", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgMul(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    mul    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("mul", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgAnd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, ARMGeneralRegs op2) {
-    return sprintln(
-        "    and    %s, %s, #%d", reg2str(rd), reg2str(rn), reg2str(op2));
+    return instrln(
+        "and", "%s, %s, #%d", reg2str(rd), reg2str(rn), reg2str(op2));
 }
 
 std::string Generator::cgAnd(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    and    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("and", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgLsl(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    lsl    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("lsl", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgAsr(
     ARMGeneralRegs rd, ARMGeneralRegs rn, int32_t op2) {
-    return sprintln("    asr    %s, %s, #%d", reg2str(rd), reg2str(rn), op2);
+    return instrln("asr", "%s, %s, #%d", reg2str(rd), reg2str(rn), op2);
 }
 
 std::string Generator::cgCmp(ARMGeneralRegs op1, ARMGeneralRegs op2) {
-    return sprintln("    cmp    %s, %s", reg2str(op1), reg2str(op2));
+    return instrln("cmp", "%s, %s", reg2str(op1), reg2str(op2));
 }
 
 std::string Generator::cgCmp(ARMGeneralRegs op1, int32_t op2) {
-    return sprintln("    cmp    %s, #%d", reg2str(op1), op2);
+    return instrln("cmp", "%s, #%d", reg2str(op1), op2);
 }
 
 std::string Generator::cgTst(ARMGeneralRegs op1, int32_t op2) {
-    return sprintln("    tst    %s, #%d", reg2str(op1), op2);
+    return instrln("tst", "%s, #%d", reg2str(op1), op2);
 }
 
 std::string Generator::cgB(Value *brTarget, ComparePredicationType cond) {
     assert(brTarget->isLabel());
-    size_t blockid = brTarget->id();
+    size_t      blockid = brTarget->id();
+    const char *instr   = nullptr;
     switch (cond) {
-        case ComparePredicationType::TRUE:
-            return sprintln(
-                "    b       .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::EQ:
-            return sprintln(
-                "    beq     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::NE:
-            return sprintln(
-                "    bne     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SLT:
-            // case ComparePredicationType::ULT:
-            return sprintln(
-                "    blt     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SGT:
-            return sprintln(
-                "    bgt     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SLE:
-            return sprintln(
-                "    ble     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
-        case ComparePredicationType::SGE:
-            return sprintln(
-                "    bge     .F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
+        case ComparePredicationType::TRUE: {
+            instr = "b";
+        } break;
+        case ComparePredicationType::EQ: {
+            instr = "beq";
+        } break;
+        case ComparePredicationType::NE: {
+            instr = "bne";
+        } break;
+        case ComparePredicationType::SLT: {
+            instr = "blt";
+        } break;
+        case ComparePredicationType::SGT: {
+            instr = "bgt";
+        } break;
+        case ComparePredicationType::SLE: {
+            instr = "ble";
+        } break;
+        case ComparePredicationType::SGE: {
+            instr = "bge";
+        } break;
         default: {
             unreachable();
-        }
+        } break;
     }
+    assert(instr != nullptr);
+    return instrln(
+        instr, ".F%dBB.%d", generator_.cur_funcnum, getBlockNum(blockid));
 }
 
 std::string Generator::cgBx(ARMGeneralRegs rd) {
-    return sprintln("    bx     %s", reg2str(rd));
+    return instrln("bx", "%s", reg2str(rd));
 }
 
 std::string Generator::cgBl(Function *callee) {
-    return sprintln("    bl     %s", callee->name().data());
+    return instrln("bl", "%s", callee->name().data());
 }
 
 std::string Generator::cgBl(const char *libfuncname) {
-    assert(libfunc.find(libfuncname) != libfunc.end());
-    return sprintln("    bl     %s", libfuncname);
+    assert(libfunc.count(libfuncname));
+    return instrln("bl", "%s", libfuncname);
 }
 
 std::string Generator::cgPush(RegList &reglist) {
-    std::string pushcode;
-    if (reglist.size() == 0) return "";
-    pushcode += "    push   {";
+    if (reglist.size() == 0) { return ""; }
+    std::string regs;
     for (auto reg : reglist) {
-        pushcode += std::string(reg2str(reg));
-        if (reg != reglist.tail()->value()) pushcode += std::string(",");
+        regs += reg2str(reg);
+        if (reg != reglist.tail()->value()) { regs.push_back(','); };
     }
-    pushcode += sprintln("}");
-    return pushcode;
+    return instrln("push", "{%s}", regs.c_str());
 }
 
 std::string Generator::cgPop(RegList &reglist) {
-    std::string popcode;
-    if (reglist.size() == 0) return "";
-    popcode += std::string("    pop    {");
+    if (reglist.size() == 0) { return ""; }
+    std::string regs;
     for (auto reg : reglist) {
-        popcode += std::string(reg2str(reg));
-        if (reg != reglist.tail()->value()) popcode += std::string(",");
+        regs += reg2str(reg);
+        if (reg != reglist.tail()->value()) { regs.push_back(','); };
     }
-    popcode += sprintln("}");
-    return popcode;
+    return instrln("pop", "{%s}", regs.c_str());
 }
 
 } // namespace slime::backend

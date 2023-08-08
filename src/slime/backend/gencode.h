@@ -81,6 +81,17 @@ public:
         return std::string(strbuf);
     }
 
+    static std::string instrln(const char *instr, const char *fmt, ...) {
+        const auto indent = 4;
+        const auto space  = 4;
+        char       args[32]{};
+        va_list    ap;
+        va_start(ap, fmt);
+        vsprintf(args, fmt, ap);
+        va_end(ap);
+        return sprintln("%*s%s%*s%s", indent, "", instr, space, "", args);
+    }
+
     std::string cgMov(
         ARMGeneralRegs         rd,
         ARMGeneralRegs         rs,
