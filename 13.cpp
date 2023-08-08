@@ -1642,12 +1642,14 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     //! be save
     RegList savedRegList;
     assert(inst->callee()->isFunction());
-    //! skip r0 since it will be used to store retval
-    //! save r1, r2, r3 if is alive
-    for (int i = 1; i < 4 - inst->totalParams(); ++i) {
-        auto reg = static_cast<ARMGeneralRegs>(i);
-        if (generator_.allocator->usedRegs.count(reg)) {
-            savedRegList.insertToTail(reg);
+    if (libfunc.count(inst->callee()->name().data())) {
+        //! skip r0 since it will be used to store retval
+        //! save r1, r2, r3 if is alive
+        for (int i = 1; i < 4 - inst->totalParams(); ++i) {
+            auto reg = static_cast<ARMGeneralRegs>(i);
+            if (generator_.allocator->usedRegs.count(reg)) {
+                savedRegList.insertToTail(reg);
+            }
         }
     }
     callcode->code += cgPush(savedRegList);

@@ -5,6 +5,7 @@
 #include "46.h"
 
 #include "89.h"
+#include <iostream>
 #include <assert.h>
 #include <stdarg.h>
 
@@ -75,11 +76,6 @@ protected:
         , totalOperandsPtr_{totalOperandsPtr}
         , operandsPtr_{operandsPtr} {
         instruction->setPatch(reinterpret_cast<void *>(this));
-
-        //! ATTENTION: with O2 option, instruction->patch() will be optmized,
-        //! e.g. reset patch_ to nullptr, etc.
-        //! here ensure() is a magic function to prevent similar issues, no
-        //! optmize with side-effects will be applied then
         ensure(0, instruction->patch());
     }
 
