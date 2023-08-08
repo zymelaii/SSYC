@@ -117,10 +117,9 @@ struct Stack {
             it++;
         }
         auto stackEnd = tmp->value();
-        //! FIXME: unexpected assert failure
-        // assert(var == stackEnd->var && size == stackEnd->size);
-        stackEnd->size = 0;
-        stackSize      -= size;
+        assert(var == stackEnd->var && size == stackEnd->size);
+        tmp->removeFromList();
+        stackSize -= size;
     }
 
     // return true if the space is newly allocated
@@ -176,23 +175,44 @@ struct Stack {
         return true;
     }
 
-    bool releaseOnStackVar(Variable *var) {
+    // returen size of released spaces
+    uint32_t releaseOnStackVar(Variable *var) {
         auto it  = onStackVars->node_begin();
         auto end = onStackVars->node_end();
-        auto tmp = it;
+        auto pre = it;
         while (it != end) {
-            auto tmpvar = *it->value();
-            tmp         = it;
-            it++;
-            if (tmpvar.var == var) {
-                tmpvar.var = nullptr;
+            auto stackvar = it->value();
+            if (stackvar->var == var) {
+                stackvar->var = nullptr;
+                auto tmp      = it;
+                it++;
                 if (it == end) {
-                    stackSize -= tmpvar.size;
+                    auto     prevar     = pre->value();
+                    uint32_t fragments  = prevar->var ? 0 : prevar->size;
+                    stackSize          -= stackvar->size + fragments;
+                    if (fragments != 0) pre->removeFromList();
                     tmp->removeFromList();
-                    return true;
+                    return stackvar->size + fragments;
                 }
-                return false;
+                return 0;
+            } else if (stackvar->var == nullptr) {
+                auto tmp = it++;
+                auto it2 = it;
+                it       = tmp;
+                while (it2 != end) {
+                    auto tmpvar = it2->value();
+                    if (tmpvar->var != nullptr)
+                        break;
+                    else {
+                        stackvar->size += tmpvar->size;
+                        auto tmp        = *it2;
+                        it2++;
+                        tmp.removeFromList();
+                    }
+                }
             }
+            pre = it;
+            it++;
         }
         assert(0 && "it must be an error");
         return false;

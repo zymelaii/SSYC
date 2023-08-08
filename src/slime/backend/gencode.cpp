@@ -775,7 +775,6 @@ InstCode *Generator::genRetInst(RetInst *inst) {
                 ARMGeneralRegs::SP,
                 generator_.stack->stackSize);
     }
-
     // caller registers' restoration will be handled in funciton 'genAssembly'
     return retcode;
 }
@@ -1438,7 +1437,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     }
 
     callcode->code += cgPush(saveRegs);
-    
+
     if (inst->totalParams() > 4) {
         stackParamSize = (inst->totalParams() - 4) * 4;
         callcode->code +=

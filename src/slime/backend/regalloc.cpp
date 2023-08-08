@@ -129,15 +129,19 @@ void Allocator::checkLiveInterval(std::string *instcode) {
                 releaseRegister(var);
             else if (
                 var->is_spilled || (var->is_alloca && !var->is_funcparam)) {
-                var->is_spilled = false;
-                if (stack->releaseOnStackVar(var))
+                uint32_t releaseStackSpaces = stack->releaseOnStackVar(var);
+                if (var->is_spilled) {
                     *instcode += Generator::sprintln(
-                        "    add    %s, %s, #%d",
-                        Generator::reg2str(ARMGeneralRegs::SP),
-                        Generator::reg2str(ARMGeneralRegs::SP),
-                        4);
-                *instcode += Generator::sprintln(
-                    "# Release spiiled var %%%d", var->val->id());
+                        "# Release spiiled var %%%d", var->val->id());
+                    if (releaseStackSpaces != 0) {
+                        *instcode += Generator::sprintln(
+                            "    add    %s, %s, #%d",
+                            Generator::reg2str(ARMGeneralRegs::SP),
+                            Generator::reg2str(ARMGeneralRegs::SP),
+                            releaseStackSpaces);
+                    }
+                }
+                var->is_spilled = false;
             }
             tmp->removeFromList();
         } else
@@ -329,14 +333,16 @@ void Allocator::updateAllocation(
 
         // if (inst->id() == InstructionID::GetElementPtr
         //     && inst->unwrap() == var->val) {
-        //     auto arrbase = valVarTable->find(inst->useAt(0).value())->second;
-        //     if (arrbase->is_global) {
+        //     auto arrbase =
+        //     valVarTable->find(inst->useAt(0).value())->second; if
+        //     (arrbase->is_global) {
         //         assert(0 && "global array unsupported yet");
         //     } else if(arrbase->is_alloca){
         //         size_t arrsize = 1;
         //         size_t offset = 0;
-        //         auto   e       = inst->unwrap()->type()->tryGetElementType();
-        //         while (e != nullptr && e->isArray()) {
+        //         auto   e       =
+        //         inst->unwrap()->type()->tryGetElementType(); while (e !=
+        //         nullptr && e->isArray()) {
         //             arrsize *= e->asArrayType()->size();
         //             e     = e->tryGetElementType();
         //         }
@@ -371,10 +377,10 @@ void Allocator::updateAllocation(
                 if (!minlntvar->is_global) {
                     minlntvar->is_spilled = true;
                     if (stack->spillVar(minlntvar, 4))
-                        instcode->code += gen->cgSub(
-                            ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-                    instcode->code += gen->sprintln(
-                        "# Spill %%%d to stack", minlntvar->val->id());
+                        instcode->code += gen->sprintln(
+                            "# Spill %%%d to stack", minlntvar->val->id());
+                    instcode->code +=
+                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
                     instcode->code += gen->cgStr(
                         var->reg,
                         ARMGeneralRegs::SP,
@@ -395,9 +401,10 @@ void Allocator::updateAllocation(
             instcode->code += Generator::sprintln(
                 "#Load spiiled var %%%d from stack", var->val->id());
             instcode->code += gen->cgLdr(var->reg, ARMGeneralRegs::SP, offset);
-            if (stack->releaseOnStackVar(var))
-                instcode->code +=
-                    gen->cgAdd(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+            uint32_t releaseStackSpaces = stack->releaseOnStackVar(var);
+            if (releaseStackSpaces != 0)
+                instcode->code += gen->cgAdd(
+                    ARMGeneralRegs::SP, ARMGeneralRegs::SP, releaseStackSpaces);
             var->is_spilled = false;
         } else if (
             var->is_global && var->reg == ARMGeneralRegs::None
