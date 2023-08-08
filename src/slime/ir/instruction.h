@@ -5,8 +5,8 @@
 #include "instruction.def"
 
 #include <slime/utils/traits.h>
-#include <iostream>
 #include <assert.h>
+#include <stdarg.h>
 
 namespace slime::ir {
 
@@ -75,6 +75,18 @@ protected:
         , totalOperandsPtr_{totalOperandsPtr}
         , operandsPtr_{operandsPtr} {
         instruction->setPatch(reinterpret_cast<void *>(this));
+
+        //! ATTENTION: with O2 option, instruction->patch() will be optmized,
+        //! e.g. reset patch_ to nullptr, etc.
+        //! here ensure() is a magic function to prevent similar issues, no
+        //! optmize with side-effects will be applied then
+        ensure(0, instruction->patch());
+    }
+
+    void ensure(int t, ...) {
+        va_list ap;
+        va_start(ap, t);
+        va_end(ap);
     }
 
 public:
