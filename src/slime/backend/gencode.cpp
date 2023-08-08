@@ -1850,9 +1850,9 @@ std::string Generator::cgLdr(
     ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
     if (offset != 0) {
         return instrln(
-            "ldr", "%s, [%s, #%d]", reg2str(src), reg2str(dst), offset);
+            "ldr", "%s, [%s, #%d]", reg2str(dst), reg2str(src), offset);
     } else {
-        return instrln("ldr", "%s, [%s]", reg2str(src), reg2str(dst));
+        return instrln("ldr", "%s, [%s]", reg2str(dst), reg2str(src));
     }
 }
 
