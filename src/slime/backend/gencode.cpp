@@ -621,7 +621,7 @@ void Generator::attachIRInformation(InstCode *instcode) {
 
     auto lineOutOpcode = code.substr(lineOut, code.size() - lineOut - 1);
     code.erase(lineOut);
-    code += sprintln("%-*s# --> %s", align, lineOutOpcode.c_str(), ident);
+    code += sprintln("%-*s@ --> %s", align, lineOutOpcode.c_str(), ident);
 
     if (auto lineIn = linePos[lineInIndex]; lineIn != lineOut) {
         assert(lineInIndex + 1 < linePos.size());
@@ -630,7 +630,7 @@ void Generator::attachIRInformation(InstCode *instcode) {
         code.erase(lineIn, endpos - lineIn + 1);
         code.insert(
             lineIn,
-            sprintln("%-*s# <-- %s", align, lineInOpcode.c_str(), ident));
+            sprintln("%-*s@ <-- %s", align, lineInOpcode.c_str(), ident));
     }
 }
 
