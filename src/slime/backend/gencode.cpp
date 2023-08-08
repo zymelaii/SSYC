@@ -1734,24 +1734,31 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
     //! use r0 reg to store retval only if is used
     if (inst->unwrap()->uses().size() > 0) {
-        //! r0 is occupied
-        if (generator_.allocator->regAllocatedMap[0]) {
-            auto var =
-                generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
-            assert(var != nullptr);
-            assert(var->reg == ARMGeneralRegs::R0);
-            auto reg = generator_.allocator->allocateRegister(
-                true, whitelist, this, callcode);
-            callcode->code += cgMov(reg, var->reg);
-            generator_.allocator->releaseRegister(var->reg);
-            var->reg = reg;
-        }
-        assert(!generator_.allocator->regAllocatedMap[0]);
         auto var = findVariable(inst->unwrap());
         assert(var != nullptr);
-        assert(var->reg == ARMGeneralRegs::None);
-        var->reg                                 = ARMGeneralRegs::R0;
-        generator_.allocator->regAllocatedMap[0] = true;
+        do {
+            if (!generator_.allocator->regAllocatedMap[0]) { break; }
+            auto occupiedVar =
+                generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
+            if (occupiedVar == var) { break; }
+            assert(occupiedVar != nullptr);
+            auto reg = generator_.allocator->allocateRegister(
+                true, whitelist, this, callcode);
+            callcode->code += cgMov(reg, occupiedVar->reg);
+            generator_.allocator->releaseRegister(occupiedVar->reg);
+            occupiedVar->reg = reg;
+            assert(!generator_.allocator->regAllocatedMap[0]);
+        } while (0);
+        if (var->reg != ARMGeneralRegs::R0) {
+            assert(!generator_.allocator->regAllocatedMap[0]);
+            if (var->reg != ARMGeneralRegs::None) {
+                generator_.allocator->releaseRegister(var);
+            }
+            var->reg                                 = ARMGeneralRegs::R0;
+            generator_.allocator->regAllocatedMap[0] = true;
+        }
+        assert(var->reg == ARMGeneralRegs::R0);
+        assert(generator_.allocator->regAllocatedMap[0]);
     }
 
     //! generate fncall
