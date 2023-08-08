@@ -109,16 +109,16 @@ struct Stack {
     }
 
     void popVar(Variable *var, uint32_t size) {
-        auto it  = onStackVars->node_begin();
-        auto end = onStackVars->node_end();
-        auto tmp = it;
-        while (it != end) {
-            tmp = it;
-            it++;
-        }
-        auto stackEnd = tmp->value();
-        assert(var == stackEnd->var && size == stackEnd->size);
-        tmp->removeFromList();
+        assert(var != nullptr);
+        assert(size > 0);
+        assert(onStackVars->tail() != nullptr);
+        auto stackEnd = onStackVars->tail()->value();
+        assert(stackEnd->var != nullptr);
+        assert(stackEnd->var->val == nullptr);
+        assert(var == stackEnd->var);
+        assert(size == stackEnd->size);
+        onStackVars->tail()->removeFromList();
+        assert(stackSize >= size);
         stackSize -= size;
     }
 
@@ -187,11 +187,12 @@ struct Stack {
                 auto tmp      = it;
                 it++;
                 if (it == end) {
-                    auto     prevar     = pre->value();
-                    uint32_t fragments  = prevar->var ? 0 : prevar->size;
-                    stackSize          -= stackvar->size + fragments;
-                    if (fragments != 0) pre->removeFromList();
+                    auto     prevar = pre->value();
+                    uint32_t fragments =
+                        prevar->var || pre == tmp ? 0 : prevar->size;
+                    stackSize -= stackvar->size + fragments;
                     tmp->removeFromList();
+                    if (fragments != 0) pre->removeFromList();
                     return stackvar->size + fragments;
                 }
                 return 0;
@@ -205,7 +206,7 @@ struct Stack {
                         break;
                     else {
                         stackvar->size += tmpvar->size;
-                        auto tmp        = *it2;
+                        auto tmp       = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
