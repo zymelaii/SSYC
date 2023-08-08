@@ -48,6 +48,7 @@ struct BlockCode {
 
 class Allocator;
 enum class ARMGeneralRegs;
+enum class ARMFloatRegs;
 
 using RegList        = utils::ListTrait<ARMGeneralRegs>;
 using BlockCodeList  = slime::LinkedList<BlockCode *>;
@@ -67,6 +68,7 @@ public:
 
     Variable          *findVariable(Value *val);
     static const char *reg2str(ARMGeneralRegs reg);
+    static const char *reg2str(ARMFloatRegs reg);
     Instruction       *getNextInst(Instruction *inst);
     int                sizeOfType(ir::Type *type);
     bool               isImmediateValid(uint32_t imm);
@@ -82,16 +84,24 @@ public:
     }
 
     static std::string instrln(const char *instr, const char *fmt, ...) {
-        const auto indent      = 4;
-        const auto space       = 2;
-        const auto opcodeWidth = 5;
+        const auto opcodeWidth     = 5;
+        const auto longOpcodeWidth = 14;
+        const auto indent          = 4;
+        const auto space           = 2;
         char       args[32]{};
         va_list    ap;
         va_start(ap, fmt);
         vsprintf(args, fmt, ap);
         va_end(ap);
         return sprintln(
-            "%*s%-*s%*s%s", indent, "", opcodeWidth, instr, space, "", args);
+            "%*s%-*s%*s%s",
+            indent,
+            "",
+            strlen(instr) > opcodeWidth ? opcodeWidth : longOpcodeWidth,
+            instr,
+            space,
+            "",
+            args);
     }
 
     std::string cgMov(
@@ -133,6 +143,31 @@ public:
     std::string cgBl(Function *callee);
     std::string cgBl(const char *libfuncname);
     std::string cgBx(ARMGeneralRegs rd);
+
+    std::string cgVmov(
+        ARMFloatRegs           rd,
+        float                  imm,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
+    std::string cgVmov(
+        ARMFloatRegs           rd,
+        ARMFloatRegs           rs,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
+    std::string cgVldr(ARMFloatRegs dst, ARMGeneralRegs src, int32_t offset);
+    std::string cgVldr(ARMGeneralRegs dst, Variable *var);
+    std::string cgVstr(ARMFloatRegs src, ARMFloatRegs dst, int32_t offset);
+    std::string cgVcvt(
+        ARMFloatRegs fltreg,
+        ARMFloatRegs intreg,
+        bool         direction,
+        bool         sextflag);
+    std::string cgVcvt(ARMGeneralRegs intreg, float fltval, bool sextflag);
+    std::string cgVcvt(ARMFloatRegs intreg, int intval, bool sextflag);
+    std::string cgVadd(ARMFloatRegs rd, ARMFloatRegs op1, ARMFloatRegs op2);
+    std::string cgVsub(ARMFloatRegs rd, ARMFloatRegs op1, ARMFloatRegs op2);
+    std::string cgVcmp(ARMFloatRegs op1, ARMFloatRegs op2);
+    std::string cgVneg(ARMFloatRegs rd, ARMFloatRegs rs);
+    std::string cgVmul(ARMFloatRegs rd, ARMFloatRegs op1, ARMFloatRegs op2);
+    std::string cgVdiv(ARMFloatRegs rd, ARMFloatRegs op1, ARMFloatRegs op2);
 
 protected:
     std::string            saveCallerReg();
@@ -209,6 +244,7 @@ private:
     };
 
     struct GeneratorState {
+        bool            longfunc       = false;
         BasicBlock     *cur_block      = nullptr;
         Function       *cur_func       = nullptr;
         size_t          cur_funcnum    = 0;

@@ -89,6 +89,78 @@ const char *Generator::reg2str(ARMGeneralRegs reg) {
     }
 }
 
+const char *Generator::reg2str(ARMFloatRegs reg) {
+    switch (reg) {
+        case ARMFloatRegs::S0:
+            return "s0";
+        case ARMFloatRegs::S1:
+            return "s1";
+        case ARMFloatRegs::S2:
+            return "s2";
+        case ARMFloatRegs::S3:
+            return "s3";
+        case ARMFloatRegs::S4:
+            return "s4";
+        case ARMFloatRegs::S5:
+            return "s5";
+        case ARMFloatRegs::S6:
+            return "s6";
+        case ARMFloatRegs::S7:
+            return "s7";
+        case ARMFloatRegs::S8:
+            return "s8";
+        case ARMFloatRegs::S9:
+            return "s9";
+        case ARMFloatRegs::S10:
+            return "s10";
+        case ARMFloatRegs::S11:
+            return "s11";
+        case ARMFloatRegs::S12:
+            return "s12";
+        case ARMFloatRegs::S13:
+            return "s13";
+        case ARMFloatRegs::S14:
+            return "s14";
+        case ARMFloatRegs::S15:
+            return "s15";
+        case ARMFloatRegs::S16:
+            return "s16";
+        case ARMFloatRegs::S17:
+            return "s17";
+        case ARMFloatRegs::S18:
+            return "s18";
+        case ARMFloatRegs::S19:
+            return "s19";
+        case ARMFloatRegs::S20:
+            return "s20";
+        case ARMFloatRegs::S21:
+            return "s21";
+        case ARMFloatRegs::S22:
+            return "s22";
+        case ARMFloatRegs::S23:
+            return "s23";
+        case ARMFloatRegs::S24:
+            return "s24";
+        case ARMFloatRegs::S25:
+            return "s25";
+        case ARMFloatRegs::S26:
+            return "s26";
+        case ARMFloatRegs::S27:
+            return "s27";
+        case ARMFloatRegs::S28:
+            return "s28";
+        case ARMFloatRegs::S29:
+            return "s29";
+        case ARMFloatRegs::S30:
+            return "s30";
+        case ARMFloatRegs::S31:
+            return "s31";
+        case ARMFloatRegs::None:
+            fprintf(stderr, "Invalid Register!");
+            exit(-1);
+    }
+}
+
 std::string Generator::genGlobalArrayInitData(
     ConstantArray *globarr, uint32_t baseSize) {
     std::string body;
@@ -812,10 +884,11 @@ InstCode *Generator::genStoreInst(StoreInst *inst) {
             addUsedGlobalVar(targetVar);
             storecode->code += cgLdr(targetReg, targetVar);
             storecode->code += cgStr(sourceReg, targetReg, 0);
+            generator_.allocator->releaseRegister(targetVar);
         }
     } else {
         if (targetVar->is_alloca) {
-            //! NOTE: funcparams can't could reach here
+            //! NOTE: funcparams can't reach here
             assert(!targetVar->is_funcparam);
             targetReg = ARMGeneralRegs::SP;
             offset    = generator_.stack->stackSize - targetVar->stackpos;
@@ -824,11 +897,11 @@ InstCode *Generator::genStoreInst(StoreInst *inst) {
             offset    = 0;
         }
         if (!isImmediateValid(offset)) {
-            assert(tmpreg == ARMGeneralRegs::None);
-            tmpreg = generator_.allocator->allocateRegister(
+            auto tmpreg2 = generator_.allocator->allocateRegister(
                 true, whitelist, this, storecode);
-            storecode->code += cgLdr(tmpreg, offset);
-            storecode->code += cgStr(sourceReg, targetReg, tmpreg);
+            storecode->code += cgLdr(tmpreg2, offset);
+            storecode->code += cgStr(sourceReg, targetReg, tmpreg2);
+            generator_.allocator->releaseRegister(tmpreg2);
         } else
             storecode->code += cgStr(sourceReg, targetReg, offset);
     }
@@ -1785,7 +1858,7 @@ std::string Generator::cgStr(
 
 std::string Generator::cgStr(
     ARMGeneralRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset) {
-    return sprintln(
+    return instrln(
         "str", "%s, [%s, %s]", reg2str(src), reg2str(dst), reg2str(offset));
 }
 
@@ -1850,6 +1923,72 @@ std::string Generator::cgCmp(ARMGeneralRegs op1, int32_t op2) {
 
 std::string Generator::cgTst(ARMGeneralRegs op1, int32_t op2) {
     return instrln("tst", "%s, #%d", reg2str(op1), op2);
+}
+
+std::string Generator::cgVmov(
+    ARMFloatRegs rd, float imm, ComparePredicationType cond) {
+    return instrln("vcmp.f32", "%s, %s", reg2str(rd), imm);
+}
+
+std::string Generator::cgVadd(
+    ARMFloatRegs sd, ARMFloatRegs sn, ARMFloatRegs sm) {
+    return instrln("vadd.f32", "%s, %s", reg2str(sd), reg2str(sn), reg2str(sm));
+}
+
+std::string Generator::cgVsub(
+    ARMFloatRegs sd, ARMFloatRegs sn, ARMFloatRegs sm) {
+    return instrln("vsub.f32", "%s, %s", reg2str(sd), reg2str(sn), reg2str(sm));
+}
+
+std::string Generator::cgVldr(
+    ARMFloatRegs dst, ARMGeneralRegs src, int32_t offset) {
+    if (offset != 0) {
+        return instrln("vldr", "%s, [%s]", reg2str(dst), reg2str(src));
+    } else {
+        return instrln(
+            "vldr", "%s, [%s, %d]", reg2str(dst), reg2str(src), offset);
+    }
+}
+
+std::string Generator::cgVstr(
+    ARMFloatRegs src, ARMFloatRegs dst, int32_t offset) {
+    if (offset != 0) {
+        return instrln("vstr", "%s, [%s]", reg2str(dst), reg2str(src));
+    } else {
+        return instrln(
+            "vstr", "%s, [%s, %d]", reg2str(dst), reg2str(src), offset);
+    }
+}
+
+std::string Generator::cgVmul(
+    ARMFloatRegs sd, ARMFloatRegs sn, ARMFloatRegs sm) {
+    return instrln("vmul.f32", "%s, %s", reg2str(sd), reg2str(sn), reg2str(sm));
+}
+
+std::string Generator::cgVcmp(ARMFloatRegs op1, ARMFloatRegs op2) {
+    return instrln("vcmp.fa2", "%s, %s", reg2str(op1), reg2str(op2));
+}
+
+// direction 1:float to int/uint 0: int/uint to float
+std::string Generator::cgVcvt(
+    ARMFloatRegs sd, ARMFloatRegs sm, bool direction, bool sextflag) {
+    if (direction) {
+        if (sextflag) {
+            return instrln("vcvt.f32.s32", "%s, %s", reg2str(sd), reg2str(sm));
+        } else {
+            return instrln("vcvt.f32.u32", "%s, %s", reg2str(sd), reg2str(sm));
+        }
+    } else {
+        if (sextflag) {
+            return instrln("vcvt.s32.f32", "%s, %s", reg2str(sd), reg2str(sm));
+        } else {
+            return instrln("vcvt.u32.f32", "%s, %s", reg2str(sd), reg2str(sm));
+        }
+    }
+}
+
+std::string Generator::cgVneg(ARMFloatRegs sd, ARMFloatRegs sm) {
+    return instrln("vneg.f32", "%s, %s", reg2str(sd), reg2str(sm));
 }
 
 std::string Generator::cgB(Value *brTarget, ComparePredicationType cond) {

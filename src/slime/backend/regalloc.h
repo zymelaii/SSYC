@@ -43,6 +43,42 @@ enum class ARMGeneralRegs {
     None
 };
 
+enum class ARMFloatRegs {
+    S0,
+    S1,
+    S2,
+    S3,
+    S4,
+    S5,
+    S6,
+    S7,
+    S8,
+    S9,
+    S10,
+    S11,
+    S12,
+    S13,
+    S14,
+    S15,
+    S16,
+    S17,
+    S18,
+    S19,
+    S20,
+    S21,
+    S22,
+    S23,
+    S24,
+    S25,
+    S26,
+    S27,
+    S28,
+    S29,
+    S30,
+    S31,
+    None
+};
+
 using ValVarTable   = std::map<Value *, Variable *>;
 using BlockVarTable = std::map<BasicBlock *, ValVarTable *>;
 using LiveVarible   = utils::ListTrait<Variable *>;
@@ -262,6 +298,7 @@ public:
     //! TODO: 针对有函数调用时的寄存器分配进行优化
     bool                     has_funccall;
     bool                     regAllocatedMap[12];
+    bool                     floatRegAllocatedMap[32];
     bool                     strImmFlag;
     std::set<ARMGeneralRegs> usedRegs;
 
@@ -285,6 +322,7 @@ public:
         InstCode             *instcode  = nullptr);
     void releaseRegister(Variable *var);
     void releaseRegister(ARMGeneralRegs reg);
+    void releaseRegister(ARMFloatRegs reg);
     void freeAllRegister();
 
     void initAllocator();

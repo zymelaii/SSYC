@@ -318,6 +318,12 @@ void Allocator::releaseRegister(ARMGeneralRegs reg) {
     regAllocatedMap[static_cast<int>(reg)] = false;
 }
 
+void Allocator::releaseRegister(ARMFloatRegs reg){
+    assert(floatRegAllocatedMap[static_cast<int>(reg) && "It must be a bug here!"]);
+    assert(static_cast<int>(reg) < 30);
+    floatRegAllocatedMap[static_cast<int>(reg)] = false;
+}
+
 void Allocator::freeAllRegister() {
     memset(regAllocatedMap, false, 12);
 }
