@@ -113,8 +113,6 @@ struct Stack {
         assert(size > 0);
         assert(onStackVars->tail() != nullptr);
         auto stackEnd = onStackVars->tail()->value();
-        assert(stackEnd->var != nullptr);
-        assert(stackEnd->var->val == nullptr);
         assert(var == stackEnd->var);
         assert(size == stackEnd->size);
         onStackVars->tail()->removeFromList();

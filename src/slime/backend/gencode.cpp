@@ -666,7 +666,10 @@ InstCode *Generator::genInst(Instruction *inst) {
                 } break;
                 case ir::InstructionID::Call: {
                     sprintf(
-                        ident, "%s %s", name, inst->asCall()->callee()->name());
+                        ident,
+                        "%s %s",
+                        name,
+                        inst->asCall()->callee()->name().data());
                 } break;
                 default: {
                     unreachable();
@@ -1428,11 +1431,6 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     size_t frameOffset         = totalParamsInStack * frameSize;
     bool   stackPointerChanged = frameOffset > 0;
 
-    if (!inst->type()->isVoid()) {
-        callcode->code +=
-            sprintln("# value %%%d generation begin:", inst->unwrap()->id());
-    }
-
     //! handle in-reg params
     for (int i = 0; i < totalParamsInReg; ++i) {
         auto param = inst->paramAt(i);
@@ -1459,6 +1457,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
         assert(
             !generator_.allocator->regAllocatedMap[static_cast<int>(destReg)]);
+        generator_.allocator->regAllocatedMap[static_cast<int>(destReg)] = true;
+
         if (auto value = param->tryIntoConstantData()) {
             //! TODO: handle float imm
             assert(value->type()->isInteger());
@@ -1488,7 +1488,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
             assert(srcReg != ARMGeneralRegs::None);
             assert(offset != -1);
 
-            //! spilled var must from reg sp
+            //! spilled value must from reg sp
             assert(!var->is_spilled || srcReg == ARMGeneralRegs::SP);
 
             std::string spilledDebugMsg;
@@ -1498,7 +1498,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     "# pass spilled value %%%d to %dth argument of %s(...)",
                     var->val->id(),
                     i,
-                    inst->callee()->name());
+                    inst->callee()->name().data());
             }
 
             if (isImmediateValid(offset)) {
@@ -1526,10 +1526,14 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         callcode->code += cgMov(destReg, var->reg);
     }
 
+    //! WARNING: allocating tmpReg must before the sp
+    auto tmpReg =
+        generator_.allocator->allocateRegister(true, whitelist, this, callcode);
+
     //! NOTE: This variable is only use to avoid stack spaces allocated to
     //! params being treated as fragment by stack
-    Variable placeholder(nullptr);
-    auto     onStackParamsBoundary = &placeholder;
+    uint8_t placeholder[sizeof(Variable)]{};
+    auto    onStackParamsBoundary = reinterpret_cast<Variable *>(placeholder);
 
     //! handle on-stack params
     //! FIXME: consider float params
@@ -1557,8 +1561,6 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     }
     callcode->code += cgPush(savedRegList);
 
-    auto tmpReg =
-        generator_.allocator->allocateRegister(true, whitelist, this, callcode);
     for (int i = 4; i < inst->totalParams(); ++i) {
         auto param   = inst->paramAt(i);
         auto destReg = ARMGeneralRegs::None;
@@ -1601,7 +1603,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                         "%s(...)",
                         var->val->id(),
                         i,
-                        inst->callee()->name());
+                        inst->callee()->name().data());
                     callcode->code += spilledDebugMsg;
                 }
 
@@ -1654,14 +1656,9 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         assert(!generator_.allocator->regAllocatedMap[0]);
         auto var = findVariable(inst->unwrap());
         assert(var != nullptr);
-        assert(var->reg != ARMGeneralRegs::None);
-        if (var->reg != ARMGeneralRegs::R0) {
-            generator_.allocator->releaseRegister(var);
-            var->reg                                 = ARMGeneralRegs::R0;
-            generator_.allocator->regAllocatedMap[0] = true;
-        }
-        assert(var->reg == ARMGeneralRegs::R0);
-        assert(generator_.allocator->regAllocatedMap[0]);
+        assert(var->reg == ARMGeneralRegs::None);
+        var->reg                                 = ARMGeneralRegs::R0;
+        generator_.allocator->regAllocatedMap[0] = true;
     }
 
     //! generate fncall
