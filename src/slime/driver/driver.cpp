@@ -135,9 +135,10 @@ void Driver::execute(int argc, char** argv) {
     bool EmitIR         = optman_.valueOfSwitch("emit-ir");
     bool DumpAssembly   = optman_.valueOfSwitch('S');
     bool ForcePipe      = optman_.valueOfSwitch('p');
+    bool FrontendStage  = PreprocessOnly || LexOnly || DumpAST || DumpAssembly;
     bool OutputToStdout = !optman_.provided('o') || ForcePipe;
 
-    if (!DumpAssembly) {
+    if (!FrontendStage) {
         fputs("error: objects generation is not supported", stderr);
         exit(-1);
     }
@@ -216,9 +217,14 @@ void Driver::execute(int argc, char** argv) {
         pass::ResortPass{}.run(module);
 
         if (EmitIR) {
-            auto visitor = visitor::IRDumpVisitor::createWithOstream(ostream);
-            visitor->dump(module);
-            goto nextStep;
+            if (DumpAssembly) {
+                auto visitor =
+                    visitor::IRDumpVisitor::createWithOstream(ostream);
+                visitor->dump(module);
+                goto nextStep;
+            } else {
+                unreachable();
+            }
         }
 
         //! NOTE: assembler depends on IR Value IDs
