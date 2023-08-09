@@ -338,19 +338,16 @@ std::string Generator::genGlobalDef(GlobalObject *obj) {
 
 std::string Generator::genFloatConstants() {
     std::string constants;
-    auto        it  = generator_.floatConstants->node_begin();
-    auto        end = generator_.floatConstants->node_end();
-    int         cnt = 0;
-    while (it != end) {
-        constants += sprintln("    .globl .FloatConstant%d", cnt);
-        constants += sprintln("    .type .FloatConstant%d, %%object", cnt);
+    auto       &fpc = *generator_.floatConstants;
+    for (auto &[id, imm] : fpc) {
+        constants += sprintln("    .globl .FloatConstant%d", id);
+        constants += sprintln("    .type .FloatConstant%d, %%object", id);
         constants += sprintln("    .p2align 2");
-        constants += sprintln(".FloatConstant%d:", cnt);
+        constants += sprintln(".FloatConstant%d:", id);
         constants += sprintln(
-            "    .long    0x%08x", *reinterpret_cast<uint32_t *>(&it->value()));
-        constants += sprintln("    .size .FloatConstant%d, 4", cnt++);
+            "    .long    0x%08x", *reinterpret_cast<uint32_t *>(&imm));
+        constants += sprintln("    .size .FloatConstant%d, 4", id);
         constants += sprintln("");
-        it++;
     }
     return constants;
 }
@@ -2746,10 +2743,17 @@ std::string Generator::cgPush(RegList &reglist) {
 std::string Generator::cgPush(FpRegList &reglist) {
     if (reglist.size() == 0) { return ""; }
     std::string regs;
+    int         first = 256;
+    int         last  = -1;
     for (auto reg : reglist) {
-        regs += reg2str(reg);
-        if (reg != reglist.tail()->value()) { regs.push_back(','); };
+        first = std::min<int>(first, static_cast<int>(reg));
+        last  = std::max<int>(last, static_cast<int>(reg));
     }
+    for (int i = first; i < last; ++i) {
+        regs += reg2str(static_cast<ARMFloatRegs>(i));
+        regs.push_back(',');
+    }
+    regs += reg2str(static_cast<ARMFloatRegs>(last));
     return instrln("vpush", "{%s}", regs.c_str());
 }
 
@@ -2766,10 +2770,17 @@ std::string Generator::cgPop(RegList &reglist) {
 std::string Generator::cgPop(FpRegList &reglist) {
     if (reglist.size() == 0) { return ""; }
     std::string regs;
+    int         first = 256;
+    int         last  = -1;
     for (auto reg : reglist) {
-        regs += reg2str(reg);
-        if (reg != reglist.tail()->value()) { regs.push_back(','); };
+        first = std::min<int>(first, static_cast<int>(reg));
+        last  = std::max<int>(last, static_cast<int>(reg));
     }
+    for (int i = first; i < last; ++i) {
+        regs += reg2str(static_cast<ARMFloatRegs>(i));
+        regs.push_back(',');
+    }
+    regs += reg2str(static_cast<ARMFloatRegs>(last));
     return instrln("vpop", "{%s}", regs.c_str());
 }
 
