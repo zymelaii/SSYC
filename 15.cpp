@@ -272,7 +272,7 @@ Variable *Allocator::getVarOfAllocatedReg(ARMGeneralRegs reg) {
 }
 
 Variable *Allocator::getVarOfAllocatedReg(ARMFloatRegs reg) {
-    assert(regAllocatedMap[static_cast<int>(reg)] == true);
+    assert(floatRegAllocatedMap[static_cast<int>(reg)] == true);
     for (auto e : *liveVars) {
         if (!e->is_general && e->reg.fpr == reg) { return e; }
     }
