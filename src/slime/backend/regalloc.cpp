@@ -73,23 +73,38 @@ Variable *monitor = nullptr;
 
 void Allocator::initVarInterval(Function *func) {
     ValVarTable funcparams;
-    for (int i = 0; i < func->totalParams(); i++) {
-        Variable *var =
-            Variable::create(const_cast<Parameter *>(func->paramAt(i)));
+
+    const auto           maxGenRegs  = 4;
+    const auto           maxFpRegs   = 16;
+    int                  usedGenRegs = 0;
+    int                  usedFpRegs  = 0;
+    std::vector<Value *> onStackParams;
+    for (int i = 0; i < func->totalParams(); ++i) {
+        auto param        = const_cast<Parameter *>(func->paramAt(i));
+        auto var          = Variable::create(param);
         var->is_funcparam = true;
-        var->is_general =
-            !const_cast<Parameter *>(func->paramAt(i))->type()->isFloat();
-        if (i < 4) {
-            if (!monitor) monitor = var;
-            var->reg           = static_cast<ARMGeneralRegs>(i);
-            regAllocatedMap[i] = true;
+
+        if (var->is_general && usedGenRegs < maxGenRegs) {
+            var->reg = static_cast<ARMGeneralRegs>(usedGenRegs);
+            regAllocatedMap[usedGenRegs] = true;
+            ++usedGenRegs;
+        } else if (!var->is_general && usedFpRegs < maxFpRegs) {
+            var->reg = static_cast<ARMFloatRegs>(usedFpRegs);
+            floatRegAllocatedMap[usedFpRegs] = true;
+            ++usedFpRegs;
         } else {
-            var->is_alloca = true;
-            //! NOTE: stackpos here is related with caller's stack, not callee's
-            var->stackpos = 4 * (func->totalParams() - (i + 1));
+            onStackParams.push_back(param);
         }
-        funcparams.insert({const_cast<Parameter *>(func->paramAt(i)), var});
+        if (!var->is_alloca && !monitor) { monitor = var; }
+        funcparams.insert({param, var});
     }
+    for (int i = 0; i < onStackParams.size(); ++i) {
+        auto param    = onStackParams[i];
+        auto var      = funcparams.at(param);
+        int  offset   = 4 * (onStackParams.size() - (i + 1));
+        var->stackpos = offset;
+    }
+
     for (auto block : func->basicBlocks()) {
         auto valVarTable = new ValVarTable;
         blockVarTable->insert({block, valVarTable});
@@ -103,20 +118,22 @@ void Allocator::initVarInterval(Function *func) {
                     size_t intArgNum = 0, fltArgNum = 0;
                     auto   callee = inst->asCall()->callee()->asFunction();
                     for (int i = 0; i < callee->totalParams(); i++) {
-                        auto paramtype =
-                            const_cast<Parameter *>(callee->paramAt(i))->type();
-                        if (paramtype->isFloat())
-                            fltArgNum++;
-                        else
-                            intArgNum++;
+                        auto paramtype = callee->paramAt(i)->type();
+                        if (paramtype->isFloat()) {
+                            ++fltArgNum;
+                        } else
+                            ++intArgNum;
+                        {}
                         maxIntegerArgs = std::max(maxIntegerArgs, intArgNum);
                         maxFloatArgs   = std::max(maxFloatArgs, fltArgNum);
                     }
                 } else {
-                    maxIntegerArgs = std::max(maxIntegerArgs, (size_t)4);
+                    maxIntegerArgs = std::max<size_t>(maxIntegerArgs, 4);
                 }
             } else if (!strImmFlag && inst->id() == InstructionID::Store) {
-                if (inst->asStore()->useAt(0)->isImmediate()) strImmFlag = true;
+                if (inst->asStore()->useAt(0)->isImmediate()) {
+                    strImmFlag = true;
+                }
             }
             for (int i = 0; i < inst->totalOperands(); i++) {
                 if (inst->useAt(i) && isVariable(inst->useAt(i))) {
@@ -128,15 +145,13 @@ void Allocator::initVarInterval(Function *func) {
                         liveVars->insertToTail(it->second);
                         funcparams.erase(it);
                     }
-                    auto var        = createVariable(val);
-                    var->is_general = !inst->useAt(i)->type()->isFloat();
+                    auto var = createVariable(val);
                     valVarTable->insert({val, var});
                 }
             }
 
             if (!inst->unwrap()->type()->isVoid()) {
-                auto var        = createVariable(inst->unwrap());
-                var->is_general = !inst->unwrap()->type()->isFloat();
+                auto var = createVariable(inst->unwrap());
                 valVarTable->insert({inst->unwrap(), var});
             }
         }
@@ -150,9 +165,11 @@ void Allocator::initVarInterval(Function *func) {
     }
 
     // release register occupied by unused params
-    for (auto it : funcparams) {
-        if (it.second->reg != ARMGeneralRegs::None) {
-            Allocator::releaseRegister(it.second);
+    for (auto &[param, var] : funcparams) {
+        if (var->is_general && var->reg != ARMGeneralRegs::None) {
+            Allocator::releaseRegister(var);
+        } else if (!var->is_general && var->reg != ARMFloatRegs::None) {
+            Allocator::releaseRegister(var);
         }
     }
 }
@@ -383,6 +400,7 @@ ARMFloatRegs Allocator::allocateFloatRegister(
 
     if (!force) return ARMFloatRegs::None;
     assert(0 && "unfinished yet");
+    unreachable();
 }
 
 void Allocator::releaseRegister(Variable *var) {
@@ -411,6 +429,7 @@ void Allocator::releaseRegister(ARMFloatRegs reg) {
 
 void Allocator::freeAllRegister() {
     memset(regAllocatedMap, false, 12);
+    memset(floatRegAllocatedMap, false, 30);
 }
 
 void Allocator::updateAllocation(

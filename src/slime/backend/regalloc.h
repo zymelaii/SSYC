@@ -81,7 +81,8 @@ enum class ARMFloatRegs {
 
 struct ARMRegister {
     ARMRegister()
-        : gpr{ARMGeneralRegs::None} {}
+        : holder(nullptr)
+        , gpr{ARMGeneralRegs::None} {}
 
     ARMRegister(Variable *var)
         : holder(var)
@@ -132,7 +133,7 @@ struct Variable {
         : val(val)
         , is_spilled(0)
         , is_alloca(0)
-        , is_general(0)
+        , is_general(!val->type()->isFloat())
         , is_funcparam(0)
         , is_global(val->isGlobal())
         , reg(this)
@@ -197,7 +198,7 @@ struct Stack {
         auto   end     = onStackVars->node_end();
         size_t sizecnt = 0;
         while (it != end) {
-            auto stackvar  = it->value();
+            auto stackvar = it->value();
             sizecnt       += stackvar->size;
             // merge fragments
             if (stackvar->var == nullptr) {
@@ -211,7 +212,7 @@ struct Stack {
                     else {
                         stackvar->size += tmpvar->size;
                         sizecnt        += tmpvar->size;
-                        auto tmp        = *it2;
+                        auto tmp       = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
@@ -238,7 +239,7 @@ struct Stack {
         // not found enough space in fragment
         onStackVars->insertToTail(new OnStackVar(var, size));
         stackSize     += size;
-        var->stackpos  = stackSize;
+        var->stackpos = stackSize;
         assert(var->stackpos == lookupOnStackVar(var));
         return true;
     }
@@ -274,7 +275,7 @@ struct Stack {
                         break;
                     else {
                         stackvar->size += tmpvar->size;
-                        auto tmp        = *it2;
+                        auto tmp       = *it2;
                         it2++;
                         tmp.removeFromList();
                     }
