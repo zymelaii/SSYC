@@ -2673,6 +2673,7 @@ std::string Generator::cgB(Value *brTarget, ComparePredicationType cond) {
                 generator_.cur_funcnum,
                 getBlockNum(blockid));
             instr = "bvs";
+            break;
         }
         default: {
             unreachable();
