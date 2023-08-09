@@ -1,7 +1,7 @@
 #include "regalloc.h"
 #include "gencode.h"
-#include "slime/experimental/utils/Unreachable.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/ir/instruction.def>
 #include <slime/ir/value.h>
 #include <slime/ir/instruction.h>

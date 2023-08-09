@@ -1,7 +1,6 @@
 #include "gencode.h"
 #include "regalloc.h"
 
-#include <algorithm>
 #include <slime/experimental/Utility.h>
 #include <slime/ir/instruction.def>
 #include <slime/ir/module.h>
@@ -9,6 +8,7 @@
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <slime/utils/list.h>
+#include <algorithm>
 #include <set>
 #include <stddef.h>
 #include <assert.h>
