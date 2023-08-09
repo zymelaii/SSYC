@@ -1860,36 +1860,36 @@ InstCode *Generator::genFCmpInst(FCmpInst *inst) {
         switch (inst->predicate()) {
             case ComparePredicationType::OLT: {
                 fcmpcode->code +=
-                    instrln("movmi", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movmi", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OLE: {
                 fcmpcode->code +=
-                    instrln("movls", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movls", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OGT: {
                 fcmpcode->code +=
-                    instrln("movgt", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movgt", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OGE: {
                 fcmpcode->code +=
-                    instrln("movge", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movge", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OEQ: {
                 fcmpcode->code +=
-                    instrln("moveq", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("moveq", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::ONE: {
                 fcmpcode->code +=
-                    instrln("movmi", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movmi", "%s, #%d", reg2str(result->reg.gpr), 1);
                 fcmpcode->code += instrln("vmrs", "APSR_nzcv, fpscr");
                 fcmpcode->code += cgVcmp(rd, rm);
                 fcmpcode->code +=
-                    instrln("movgt", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movgt", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             default:
