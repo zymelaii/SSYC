@@ -39,6 +39,8 @@ std::string Generator::genCode(Module *module) {
             generator_.cur_func = static_cast<Function *>(e);
             if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             modulecode += genAssembly(static_cast<Function *>(e));
+            modulecode += genUsedGlobVars();
+            refreshUsedGlobalVar();
             generator_.cur_funcnum++;
             modulecode += sprintln("    .pool\n");
         } else {
@@ -48,7 +50,6 @@ std::string Generator::genCode(Module *module) {
     }
     // generator constant pool
     modulecode += genFloatConstants();
-    modulecode += genUsedGlobVars();
     for (auto e : *global_var) { modulecode += genGlobalDef(e); }
     return modulecode;
 }
@@ -358,7 +359,7 @@ std::string Generator::genUsedGlobVars() {
         globvars += sprintln("%s:", e.second.data());
         globvars += sprintln("    .long %s", e.first->val->name().data());
     }
-    globvars += sprintln("");
+    if (!globvars.empty()) { globvars += sprintln(""); }
     return globvars;
 }
 
@@ -447,12 +448,22 @@ void Generator::checkStackChanges(BlockCodeList &blockCodeList) {
 void Generator::addUsedGlobalVar(Variable *var) {
     assert(var->is_global);
     static uint32_t nrGlobVar = 0;
-    static char     str[10];
+    static char     str[16];
     if (generator_.usedGlobalVars->find(var)
         != generator_.usedGlobalVars->end())
         return;
-    sprintf(str, "GlobAddr%d", nrGlobVar++);
+    sprintf(str, "GlobAddr%d.0", nrGlobVar++);
     generator_.usedGlobalVars->insert({var, str});
+}
+
+void Generator::refreshUsedGlobalVar() {
+    for (auto &[var, name] : *generator_.usedGlobalVars) {
+        auto pos = name.find_last_of('.');
+        assert(pos != name.npos);
+        auto nextId = std::stoi(name.substr(pos + 1)) + 1;
+        name.erase(pos + 1);
+        name += std::to_string(nextId);
+    }
 }
 
 std::string Generator::loadFloatConstant(ARMFloatRegs rd, float imm) {

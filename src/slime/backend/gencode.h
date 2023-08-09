@@ -195,6 +195,7 @@ protected:
     std::string            unpackBlockCodeList(BlockCodeList &blockCodeList);
     void                   checkStackChanges(BlockCodeList &blockCodeList);
     void                   addUsedGlobalVar(Variable *var);
+    void                   refreshUsedGlobalVar();
     BasicBlock            *getNextBlock();
     int                    getBlockNum(int blockid);
     ComparePredicationType reversePredict(ComparePredicationType predict);
