@@ -165,7 +165,8 @@ void Allocator::checkLiveInterval(std::string *instcode) {
         auto interval = var->livIntvl;
         if (interval->end <= cur_inst) {
             auto tmp = it++;
-            if (var->reg != ARMGeneralRegs::None)
+            if ((var->is_general && var->reg != ARMGeneralRegs::None)
+                || (!var->is_general && var->reg != ARMFloatRegs::None))
                 releaseRegister(var);
             else if (
                 var->is_spilled || (var->is_alloca && !var->is_funcparam)) {
@@ -401,8 +402,9 @@ void Allocator::releaseRegister(ARMGeneralRegs reg) {
 }
 
 void Allocator::releaseRegister(ARMFloatRegs reg) {
-    assert(floatRegAllocatedMap
-               [static_cast<int>(reg) && "It must be a bug here!"]);
+    assert(
+        floatRegAllocatedMap[static_cast<int>(reg)]
+        && "It must be a bug here!");
     assert(static_cast<int>(reg) < 30);
     floatRegAllocatedMap[static_cast<int>(reg)] = false;
 }

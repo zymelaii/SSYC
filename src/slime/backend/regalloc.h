@@ -80,6 +80,9 @@ enum class ARMFloatRegs {
 };
 
 struct ARMRegister {
+    ARMRegister()
+        : gpr{ARMGeneralRegs::None} {}
+
     ARMRegister(Variable *var)
         : holder(var)
         , gpr{ARMGeneralRegs::None} {};

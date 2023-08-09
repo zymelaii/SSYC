@@ -63,8 +63,9 @@ public:
     std::string       genCode(Module *module);
     std::string       genGlobalArrayInitData(
               ConstantArray *globarr, uint32_t baseSize);
-    std::string genFloatConstant();
+    std::string genFloatConstants();
     std::string genGlobalDef(GlobalObject *obj);
+    std::string genFloatConstans();
     std::string genUsedGlobVars();
     std::string genAssembly(Function *func);
 
@@ -118,6 +119,10 @@ public:
         ARMGeneralRegs         rd,
         int32_t                imm,
         ComparePredicationType cond = ComparePredicationType::TRUE);
+    std::string cgMov(
+        ARMGeneralRegs         rd,
+        ARMFloatRegs           rs,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
     std::string cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
     std::string cgLdr(
         ARMGeneralRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset);
@@ -159,9 +164,14 @@ public:
         ARMFloatRegs           rs,
         ComparePredicationType cond = ComparePredicationType::TRUE);
     std::string cgVmov(ARMFloatRegs rd, ARMGeneralRegs rs);
+    std::string cgVmov(ARMGeneralRegs rd, ARMFloatRegs rs);
     std::string cgVldr(ARMFloatRegs dst, ARMGeneralRegs src, int32_t offset);
+    std::string cgVldr(
+        ARMFloatRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset);
     std::string cgVldr(ARMGeneralRegs dst, Variable *var);
-    std::string cgVstr(ARMFloatRegs src, ARMFloatRegs dst, int32_t offset);
+    std::string cgVstr(ARMFloatRegs src, ARMGeneralRegs dst, int32_t offset);
+    std::string cgVstr(
+        ARMFloatRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset);
     std::string cgVcvt(
         ARMFloatRegs fltreg,
         ARMFloatRegs intreg,
