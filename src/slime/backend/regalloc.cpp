@@ -121,9 +121,10 @@ void Allocator::initVarInterval(Function *func) {
                         auto paramtype = callee->paramAt(i)->type();
                         if (paramtype->isFloat()) {
                             ++fltArgNum;
-                        } else
+                        } else {
                             ++intArgNum;
-                        {}
+                        }
+
                         maxIntegerArgs = std::max(maxIntegerArgs, intArgNum);
                         maxFloatArgs   = std::max(maxFloatArgs, fltArgNum);
                     }
