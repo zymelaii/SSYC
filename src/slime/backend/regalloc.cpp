@@ -93,6 +93,7 @@ void Allocator::initVarInterval(Function *func) {
             floatRegAllocatedMap[usedFpRegs] = true;
             ++usedFpRegs;
         } else {
+            var->is_alloca = true;
             onStackParams.push_back(param);
         }
         if (!var->is_alloca && !monitor) { monitor = var; }
