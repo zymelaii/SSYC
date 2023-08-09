@@ -447,7 +447,8 @@ void Allocator::updateAllocation(
 
         if (cur_inst == start) {
             liveVars->insertToTail(var);
-            if (inst->id() == InstructionID::ICmp
+            if ((inst->id() == InstructionID::ICmp
+                 || inst->id() == InstructionID::FCmp)
                 && inst->unwrap() == var->val) {
                 Instruction *nextinst = gen->getNextInst(inst);
                 if (nextinst->id() == InstructionID::Br && end == cur_inst + 1)

@@ -339,10 +339,12 @@ std::string Generator::genFloatConstants() {
     auto        it  = generator_.floatConstants->node_begin();
     auto        end = generator_.floatConstants->node_end();
     int         cnt = 0;
+    constants += sprintln("    .p2align 2");
     while (it != end) {
         constants += sprintln(".FloatConstant%d:", cnt++);
         constants += sprintln(
             "    .long    0x%08x", *reinterpret_cast<uint32_t *>(&it->value()));
+        it++;
     }
     return constants;
 }
@@ -458,9 +460,10 @@ std::string Generator::loadFloatConstant(ARMFloatRegs rd, float imm) {
         float tmp = it->value();
         if (tmp == imm) return instrln("vldr", "FloatConstant%d", offset);
         offset++;
+        it++;
     }
     generator_.floatConstants->insertToTail(imm);
-    return instrln("vldr", "FloatConstant:%d", offset + 1);
+    return instrln("vldr", "%s, .FloatConstant%d", reg2str(rd), offset + 1);
 }
 
 std::string Generator::saveCallerReg() {
@@ -1028,7 +1031,7 @@ InstCode *Generator::genStoreInst(StoreInst *inst) {
         }
     }
 
-    if (source.value()->isConstant())
+    if (source.value()->isConstant() && !storeFloatFlag)
         generator_.allocator->releaseRegister(generalSource);
     if (generalTmpReg != ARMGeneralRegs::None)
         generator_.allocator->releaseRegister(generalTmpReg);
@@ -1086,7 +1089,8 @@ InstCode *Generator::genBrInst(BrInst *inst) {
         } else if (control->id() == InstructionID::Load) {
             predict = ComparePredicationType::EQ;
         } else {
-            assert(0 && "FCMP");
+            assert(control->id() == InstructionID::FCmp);
+            predict = control->asFCmp()->predicate();
         }
 
         Variable *cond    = findVariable(inst->useAt(0));
@@ -1097,14 +1101,8 @@ InstCode *Generator::genBrInst(BrInst *inst) {
             brcode->code += cgB(target1);
             return brcode;
         }
-        // if (nextblock->id() == target1->id()) {
-        //     cgB(target2, ComparePredicationType::EQ);
-        // } else if (nextblock->id() == target2->id()) {
-        //     cgB(target1, ComparePredicationType::NE);
-        // } else {
         brcode->code += cgB(target1, predict);
         brcode->code += cgB(target2);
-        // }
     }
     return brcode;
 }
@@ -1416,8 +1414,19 @@ InstCode *Generator::genSRemInst(SRemInst *inst) {
 }
 
 InstCode *Generator::genFNegInst(FNegInst *inst) {
-    assert(0 && "unfinished yet!\n");
-    unreachable();
+    InstCode *fnegcode = new InstCode(inst);
+    auto      src      = inst->useAt(0);
+    auto      dst      = findVariable(inst->unwrap());
+    if (!Allocator::isVariable(src)) {
+        fnegcode->code += loadFloatConstant(
+            dst->reg.fpr,
+            static_cast<ConstantFloat *>(src->asConstantData())->value);
+        fnegcode->code += cgVneg(dst->reg.fpr, dst->reg.fpr);
+    } else {
+        auto var        = findVariable(src);
+        fnegcode->code += cgVneg(dst->reg.fpr, var->reg.fpr);
+    }
+    return fnegcode;
 }
 
 InstCode *Generator::genFAddInst(FAddInst *inst) {
@@ -1796,8 +1805,78 @@ InstCode *Generator::genICmpInst(ICmpInst *inst) {
 }
 
 InstCode *Generator::genFCmpInst(FCmpInst *inst) {
-    assert(0 && "unfinished yet!\n");
-    unreachable();
+    auto      op1 = inst->useAt(0), op2 = inst->useAt(1);
+    InstCode *fcmpcode  = new InstCode(inst);
+    auto      whitelist = generator_.allocator->getInstOperands(inst);
+
+    ARMFloatRegs rd = ARMFloatRegs::None, rm = ARMFloatRegs::None;
+    if (!Allocator::isVariable(op1)) {
+        rd = generator_.allocator->allocateFloatRegister(
+            true, whitelist, this, fcmpcode);
+        fcmpcode->code += loadFloatConstant(
+            rd, static_cast<ConstantFloat *>(op1->asConstantData())->value);
+    } else {
+        auto var = findVariable(op1);
+        rd       = var->reg.fpr;
+    }
+    if (!Allocator::isVariable(op2)) {
+        rm = generator_.allocator->allocateFloatRegister(
+            true, whitelist, this, fcmpcode);
+        fcmpcode->code += loadFloatConstant(
+            rm, static_cast<ConstantFloat *>(op2->asConstantData())->value);
+    } else {
+        auto var = findVariable(op2);
+        rm       = var->reg.fpr;
+    }
+    fcmpcode->code += cgVcmp(rd, rm);
+    auto result     = findVariable(inst->unwrap());
+    fcmpcode->code += instrln("vmrs", "APSR_nzcv, fpscr");
+    if (result->reg != ARMGeneralRegs::None) {
+        fcmpcode->code += cgMov(result->reg.gpr, 0);
+        switch (inst->predicate()) {
+            case ComparePredicationType::OLT: {
+                fcmpcode->code +=
+                    instrln("movmi", "%s, %d", reg2str(result->reg.gpr), 1);
+                break;
+            }
+            case ComparePredicationType::OLE: {
+                fcmpcode->code +=
+                    instrln("movls", "%s, %d", reg2str(result->reg.gpr), 1);
+                break;
+            }
+            case ComparePredicationType::OGT: {
+                fcmpcode->code +=
+                    instrln("movgt", "%s, %d", reg2str(result->reg.gpr), 1);
+                break;
+            }
+            case ComparePredicationType::OGE: {
+                fcmpcode->code +=
+                    instrln("movge", "%s, %d", reg2str(result->reg.gpr), 1);
+                break;
+            }
+            case ComparePredicationType::OEQ: {
+                fcmpcode->code +=
+                    instrln("moveq", "%s, %d", reg2str(result->reg.gpr), 1);
+                break;
+            }
+            case ComparePredicationType::ONE: {
+                fcmpcode->code +=
+                    instrln("movmi", "%s, %d", reg2str(result->reg.gpr), 1);
+                fcmpcode->code += instrln("vmrs", "APSR_nzcv, fpscr");
+                fcmpcode->code += cgVcmp(rd, rm);
+                fcmpcode->code +=
+                    instrln("movgt", "%s, %d", reg2str(result->reg.gpr), 1);
+                break;
+            }
+            default:
+                assert(0);
+        }
+        fcmpcode->code += cgAnd(result->reg.gpr, result->reg.gpr, 1);
+    }
+
+    if (!Allocator::isVariable(op1)) generator_.allocator->releaseRegister(rd);
+    if (!Allocator::isVariable(op2)) generator_.allocator->releaseRegister(rm);
+    return fcmpcode;
 }
 
 //! TODO: optimize
@@ -2395,21 +2474,38 @@ std::string Generator::cgB(Value *brTarget, ComparePredicationType cond) {
         case ComparePredicationType::EQ: {
             instr = "beq";
         } break;
+        case ComparePredicationType::OEQ:
         case ComparePredicationType::NE: {
             instr = "bne";
         } break;
         case ComparePredicationType::SLT: {
             instr = "blt";
         } break;
+        case ComparePredicationType::OGE:
         case ComparePredicationType::SGT: {
             instr = "bgt";
         } break;
+        case ComparePredicationType::OGT:
         case ComparePredicationType::SLE: {
             instr = "ble";
         } break;
         case ComparePredicationType::SGE: {
             instr = "bge";
         } break;
+        case ComparePredicationType::OLT: {
+            instr = "bpl";
+        } break;
+        case ComparePredicationType::OLE: {
+            instr = "bhi";
+        } break;
+        case ComparePredicationType::ONE: {
+            instrln(
+                "beq",
+                ".F%dBB.%d",
+                generator_.cur_funcnum,
+                getBlockNum(blockid));
+            instr = "bvs";
+        }
         default: {
             unreachable();
         } break;
