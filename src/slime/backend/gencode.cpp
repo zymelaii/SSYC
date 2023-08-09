@@ -1797,23 +1797,20 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     var->val->id(),
                     i,
                     inst->callee()->name().data());
+                callcode->code += spilledDebugMsg;
             }
 
-            if (isImmediateValid(offset)) {
+            if (!isImmediateValid(offset)) {
                 callcode->code += cgLdr(destReg, offset);
                 if (var->is_spilled) {
-                    callcode->code += spilledDebugMsg;
                     callcode->code += cgLdr(destReg, srcReg, destReg);
                 } else {
                     callcode->code += cgAdd(destReg, srcReg, destReg);
                 }
+            } else if (var->is_alloca) {
+                callcode->code += cgAdd(destReg, srcReg, offset);
             } else {
-                if (var->is_spilled) {
-                    callcode->code += spilledDebugMsg;
-                    callcode->code += cgLdr(destReg, srcReg, offset);
-                } else {
-                    callcode->code += cgAdd(destReg, srcReg, offset);
-                }
+                callcode->code += cgLdr(destReg, srcReg, offset);
             }
             continue;
         }
@@ -1905,7 +1902,11 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
                 if (!isImmediateValid(offset)) {
                     callcode->code += cgLdr(tmpReg, offset);
-                    callcode->code += cgAdd(tmpReg, tmpReg, srcReg);
+                    if (var->is_spilled) {
+                        callcode->code += cgLdr(tmpReg, srcReg, tmpReg);
+                    } else {
+                        callcode->code += cgAdd(tmpReg, srcReg, tmpReg);
+                    }
                 } else if (var->is_alloca) {
                     callcode->code += cgAdd(tmpReg, srcReg, offset);
                 } else if (var->is_spilled) {
