@@ -22,6 +22,11 @@
 #include "80.h"
 #include "76.h"
 #include "84.h"
+#include "70.h"
+#include "66.h"
+#include "74.h"
+#include "72.h"
+#include "78.h"
 #include <filesystem>
 #include <iostream>
 #include <ostream>
@@ -215,6 +220,23 @@ void Driver::execute(int argc, char** argv) {
             currentSource_.empty() ? "<stdin>" : currentSource_.c_str(), unit);
         pass::ControlFlowSimplificationPass{}.run(module);
         pass::ResortPass{}.run(module);
+
+        pass::DeadCodeEliminationPass{}.run(module);
+        pass::PeekholePass{}.run(module);
+        pass::CSEPass{}.run(module);
+        pass::CopyPropagationPass{}.run(module);
+        pass::CSEPass{}.run(module);
+        pass::CopyPropagationPass{}.run(module);
+        pass::CSEPass{}.run(module);
+        pass::CopyPropagationPass{}.run(module);
+        pass::FunctionInliningPass{}.run(module);
+        for (int i = 0; i < 4; ++i) {
+            pass::PeekholePass{}.run(module);
+            pass::CopyPropagationPass{}.run(module);
+            pass::CSEPass{}.run(module);
+        }
+        pass::PeekholePass{}.run(module);
+        pass::DeadCodeEliminationPass{}.run(module);
 
         if (EmitIR) {
             if (DumpAssembly) {
