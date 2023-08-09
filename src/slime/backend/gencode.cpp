@@ -29,6 +29,7 @@ std::string Generator::genCode(Module *module) {
     generator_.stack             = generator_.allocator->stack;
     generator_.usedGlobalVars    = new UsedGlobalVars;
     generator_.floatConstants    = new FloatConstants;
+    generator_.fpVersions        = new FpConstVersoins;
     GlobalObjectList *global_var = new GlobalObjectList;
     std::string       modulecode;
     modulecode += sprintln("    .arch armv7a");
@@ -39,6 +40,7 @@ std::string Generator::genCode(Module *module) {
             generator_.cur_func = static_cast<Function *>(e);
             if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             modulecode += genAssembly(static_cast<Function *>(e));
+            modulecode += genIndirectFpConstantAddrs();
             modulecode += genUsedGlobVars();
             refreshUsedGlobalVar();
             generator_.cur_funcnum++;
@@ -467,18 +469,41 @@ void Generator::refreshUsedGlobalVar() {
 }
 
 std::string Generator::loadFloatConstant(ARMFloatRegs rd, float imm) {
-    auto it     = generator_.floatConstants->node_begin();
-    auto end    = generator_.floatConstants->node_end();
-    int  offset = 0;
-    while (it != end) {
-        float tmp = it->value();
-        if (tmp == imm)
-            return instrln("vldr", "%s, .FloatConstant%d", reg2str(rd), offset);
-        offset++;
-        it++;
+    auto &fps      = *generator_.floatConstants;
+    int   targetId = -1;
+    for (auto [id, tmp] : fps) {
+        if (tmp == imm) { targetId = id; }
     }
-    generator_.floatConstants->insertToTail(imm);
-    return instrln("vldr", "%s, .FloatConstant%d", reg2str(rd), offset);
+    if (targetId == -1) {
+        targetId = fps.size();
+        fps.insertToTail(std::pair{targetId, imm});
+        (*generator_.fpVersions)[targetId] = 0;
+    }
+    return indirectLoadFpConstant(rd, targetId);
+}
+
+std::string Generator::indirectLoadFpConstant(ARMFloatRegs rd, int index) {
+    std::string fetch;
+    auto        fpv = *generator_.fpVersions;
+    assert(fpv.count(index));
+    auto version = fpv.at(index);
+    auto tmpReg  = generator_.allocator->allocateGeneralRegister(true);
+    assert(tmpReg != ARMGeneralRegs::None);
+    fetch += instrln("ldr", "%s, .J_FP%d_%d", reg2str(tmpReg), index, version);
+    fetch += cgVldr(rd, tmpReg, 0);
+    generator_.allocator->releaseRegister(tmpReg);
+    return fetch;
+}
+
+std::string Generator::genIndirectFpConstantAddrs() {
+    std::string code;
+    auto       &fpv = *generator_.fpVersions;
+    for (auto &[id, version] : fpv) {
+        code += sprintln(".J_FP%d_%d:", id, version);
+        code += sprintln("    .long .FloatConstant%d", id);
+        ++version;
+    }
+    return code;
 }
 
 std::string Generator::saveCallerReg() {
