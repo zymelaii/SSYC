@@ -1719,6 +1719,7 @@ InstCode *Generator::genZExtInst(ZExtInst *inst) {
 }
 
 InstCode *Generator::genCallInst(CallInst *inst) {
+    std::string           inRegParamsCode{};
     auto                  callcode  = new InstCode(inst);
     std::set<Variable *> *whitelist = nullptr;
 
@@ -1748,7 +1749,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                 generator_.allocator->getVarOfAllocatedReg(destReg);
             assert(lastOccupiedVar != nullptr);
             assert(lastOccupiedVar->reg == destReg);
-            callcode->code       += cgMov(reg, destReg);
+            inRegParamsCode      += cgMov(reg, destReg);
             lastOccupiedVar->reg = reg;
             generator_.allocator->releaseRegister(destReg);
         }
@@ -1760,8 +1761,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         if (auto value = param->tryIntoConstantData()) {
             //! TODO: handle float imm
             assert(value->type()->isInteger());
-            const auto imm = static_cast<ConstantInt *>(value)->value;
-            callcode->code += cgLdr(destReg, imm);
+            const auto imm  = static_cast<ConstantInt *>(value)->value;
+            inRegParamsCode += cgLdr(destReg, imm);
             continue;
         }
 
@@ -1797,20 +1798,20 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     var->val->id(),
                     i,
                     inst->callee()->name().data());
-                callcode->code += spilledDebugMsg;
+                inRegParamsCode += spilledDebugMsg;
             }
 
             if (!isImmediateValid(offset)) {
-                callcode->code += cgLdr(destReg, offset);
+                inRegParamsCode += cgLdr(destReg, offset);
                 if (var->is_spilled) {
-                    callcode->code += cgLdr(destReg, srcReg, destReg);
+                    inRegParamsCode += cgLdr(destReg, srcReg, destReg);
                 } else {
-                    callcode->code += cgAdd(destReg, srcReg, destReg);
+                    inRegParamsCode += cgAdd(destReg, srcReg, destReg);
                 }
             } else if (var->is_alloca) {
-                callcode->code += cgAdd(destReg, srcReg, offset);
+                inRegParamsCode += cgAdd(destReg, srcReg, offset);
             } else {
-                callcode->code += cgLdr(destReg, srcReg, offset);
+                inRegParamsCode += cgLdr(destReg, srcReg, offset);
             }
             continue;
         }
@@ -1818,7 +1819,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         //! value of variable is from reg
         assert(var->reg != destReg);
         assert(var->reg != ARMGeneralRegs::None);
-        callcode->code += cgMov(destReg, var->reg.gpr);
+        inRegParamsCode += cgMov(destReg, var->reg.gpr);
     }
 
     //! WARNING: allocating tmpReg must before the sp
@@ -1948,7 +1949,8 @@ InstCode *Generator::genCallInst(CallInst *inst) {
             assert(occupiedVar != nullptr);
             auto reg = generator_.allocator->allocateGeneralRegister(
                 true, whitelist, this, callcode);
-            callcode->code += cgMov(reg, occupiedVar->reg.gpr);
+            //! NOTE: R0 reg must be saved before push/pop
+            inRegParamsCode += cgMov(reg, occupiedVar->reg.gpr);
             generator_.allocator->releaseRegister(occupiedVar->reg.gpr);
             occupiedVar->reg = reg;
             assert(!generator_.allocator->regAllocatedMap[0]);
@@ -1979,6 +1981,7 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         generator_.stack->popVar(onStackParamsBoundary, frameOffset);
     }
 
+    callcode->code = inRegParamsCode + callcode->code;
     return callcode;
 }
 
