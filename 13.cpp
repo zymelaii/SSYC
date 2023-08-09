@@ -1514,167 +1514,45 @@ InstCode *Generator::genZExtInst(ZExtInst *inst) {
 }
 
 InstCode *Generator::genCallInst(CallInst *inst) {
-    auto                  callcode  = new InstCode(inst);
+    InstCode             *callcode = new InstCode(inst);
+    std::string           commentCode;
     std::set<Variable *> *whitelist = nullptr;
-
-    constexpr auto frameSize = 4; //<! 32-bit arch
-
-    int    totalParamsInReg    = std::min<int>(4, inst->totalParams());
-    int    totalParamsInStack  = inst->totalParams() - totalParamsInReg;
-    size_t frameOffset         = totalParamsInStack * frameSize;
-    bool   stackPointerChanged = frameOffset > 0;
-
-    //! handle in-reg params
-    for (int i = 0; i < totalParamsInReg; ++i) {
-        auto param = inst->paramAt(i);
-
-        //! NOTE: reg for param is always reserved
-        auto destReg = static_cast<ARMGeneralRegs>(i);
-        generator_.allocator->usedRegs.insert(destReg);
-
-        //! register is used by current function scope
-        //! backup occupied reg to another one
-        Variable *lastOccupiedVar = nullptr;
-        if (generator_.allocator->regAllocatedMap[i]) {
-            auto reg = generator_.allocator->allocateRegister(
-                true, whitelist, this, callcode);
-            assert(reg != ARMGeneralRegs::None);
-            lastOccupiedVar =
-                generator_.allocator->getVarOfAllocatedReg(destReg);
-            assert(lastOccupiedVar != nullptr);
-            assert(lastOccupiedVar->reg == destReg);
-            callcode->code       += cgMov(reg, destReg);
-            lastOccupiedVar->reg = reg;
-            generator_.allocator->releaseRegister(destReg);
-        }
-
-        assert(
-            !generator_.allocator->regAllocatedMap[static_cast<int>(destReg)]);
-        generator_.allocator->regAllocatedMap[static_cast<int>(destReg)] = true;
-
-        if (auto value = param->tryIntoConstantData()) {
-            //! TODO: handle float imm
-            assert(value->type()->isInteger());
-            const auto imm = static_cast<ConstantInt *>(value)->value;
-            callcode->code += cgLdr(destReg, imm);
-            continue;
-        }
-
-        assert(Allocator::isVariable(param));
-        auto var = findVariable(param);
-
-        //! value of param is already store into the dest reg
-        if (lastOccupiedVar == var) { continue; }
-
-        //! value of variable is from memory
-        if (var->is_alloca || var->is_spilled) {
-            //! compute stack pos of value
-            ARMGeneralRegs srcReg = ARMGeneralRegs::None;
-            int            offset = -1;
-            if (var->is_funcparam) {
-                srcReg = ARMGeneralRegs::R11;
-                offset = var->stackpos;
-            } else {
-                srcReg = ARMGeneralRegs::SP;
-                offset = generator_.allocator->stack->stackSize - var->stackpos;
-            }
-            assert(srcReg != ARMGeneralRegs::None);
-            assert(offset != -1);
-
-            //! spilled value must from reg sp
-            assert(!var->is_spilled || srcReg == ARMGeneralRegs::SP);
-
-            std::string spilledDebugMsg;
-            if (var->is_spilled) {
-                assert(inst->callee()->isFunction());
-                spilledDebugMsg = sprintln(
-                    "# pass spilled value %%%d to %dth argument of %s(...)",
-                    var->val->id(),
-                    i,
-                    inst->callee()->name().data());
-            }
-
-            if (isImmediateValid(offset)) {
-                callcode->code += cgLdr(destReg, offset);
-                if (var->is_spilled) {
-                    callcode->code += spilledDebugMsg;
-                    callcode->code += cgLdr(destReg, srcReg, destReg);
-                } else {
-                    callcode->code += cgAdd(destReg, srcReg, destReg);
-                }
-            } else {
-                if (var->is_spilled) {
-                    callcode->code += spilledDebugMsg;
-                    callcode->code += cgLdr(destReg, srcReg, offset);
-                } else {
-                    callcode->code += cgAdd(destReg, srcReg, offset);
-                }
-            }
-            continue;
-        }
-
-        //! value of variable is from reg
-        assert(var->reg != destReg);
-        assert(var->reg != ARMGeneralRegs::None);
-        callcode->code += cgMov(destReg, var->reg);
-    }
-
-    //! WARNING: allocating tmpReg must before the sp
-    auto tmpReg =
-        generator_.allocator->allocateRegister(true, whitelist, this, callcode);
+    if (!inst->unwrap()->type()->isVoid())
+        commentCode += sprintln("@ %%%d:", inst->unwrap()->id());
 
     //! NOTE: This variable is only use to avoid stack spaces allocated to
-    //! params being treated as fragment by stack
-    uint8_t placeholder[sizeof(Variable)]{};
-    auto    onStackParamsBoundary = reinterpret_cast<Variable *>(placeholder);
+    //! params being treated as fragment by Stack
+    Variable *onStackParams;
+    int       stackParamSize = 0;
+    int       regArgNum = inst->totalParams() > 4 ? 4 : inst->totalParams();
 
-    //! handle on-stack params
-    //! FIXME: consider float params
-    if (stackPointerChanged) {
-        assert(isImmediateValid(frameOffset));
-        callcode->code +=
-            cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, frameOffset);
-        generator_.stack->pushVar(onStackParamsBoundary, frameOffset);
-    }
-
-    //! NOTE: fncall rule in ARM is not the same with ours, the former will use
-    //! r0..r3 without save and restore, so these used regs in our fncall must
-    //! be save
-    RegList savedRegList;
-    assert(inst->callee()->isFunction());
-    if (libfunc.count(inst->callee()->name().data())) {
-        //! skip r0 since it will be used to store retval
-        //! save r1, r2, r3 if is alive
-        for (int i = 1; i < 4 - inst->totalParams(); ++i) {
-            auto reg = static_cast<ARMGeneralRegs>(i);
-            if (generator_.allocator->usedRegs.count(reg)) {
-                savedRegList.insertToTail(reg);
-            }
+    for (int i = 0; i < regArgNum; i++) {
+        // param register has already been allocated
+        generator_.allocator->usedRegs.insert(static_cast<ARMGeneralRegs>(i));
+        if (generator_.allocator->regAllocatedMap[i]) {
+            // allocate a new one
+            ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
+                true, whitelist, this, callcode);
+            auto var = generator_.allocator->getVarOfAllocatedReg(
+                static_cast<ARMGeneralRegs>(i));
+            callcode->code += cgMov(newreg, var->reg);
+            var->reg        = newreg;
+            generator_.allocator->releaseRegister(
+                static_cast<ARMGeneralRegs>(i));
         }
-    }
-    callcode->code += cgPush(savedRegList);
-
-    for (int i = 4; i < inst->totalParams(); ++i) {
-        auto param   = inst->paramAt(i);
-        auto destReg = ARMGeneralRegs::None;
-        do {
-            if (auto value = param->tryIntoConstantData()) {
-                //! TODO: handle float imm
-                assert(value->type()->isInteger());
-                const auto imm = static_cast<ConstantInt *>(value)->value;
-                callcode->code += cgLdr(tmpReg, imm);
-                destReg        = tmpReg;
-                break;
-            }
-
-            assert(Allocator::isVariable(param));
-            auto var = findVariable(param);
-
-            //! value of variable is from memory
+        generator_.allocator->regAllocatedMap[i] = true;
+        if (inst->paramAt(i)->tryIntoConstantData() != nullptr) {
+            assert(!inst->paramAt(i)->type()->isFloat());
+            auto constant   = inst->paramAt(i)->asConstantData();
+            callcode->code += cgLdr(
+                static_cast<ARMGeneralRegs>(i),
+                static_cast<ConstantInt *>(constant)->value);
+        } else {
+            assert(Allocator::isVariable(inst->paramAt(i)));
+            Variable *var = findVariable(inst->paramAt(i));
             if (var->is_alloca || var->is_spilled) {
-                //! compute stack pos of value
-                ARMGeneralRegs srcReg = ARMGeneralRegs::None;
-                int            offset = -1;
+                int            offset;
+                ARMGeneralRegs srcReg;
                 if (var->is_funcparam) {
                     srcReg = ARMGeneralRegs::R11;
                     offset = var->stackpos;
@@ -1683,97 +1561,145 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     offset =
                         generator_.allocator->stack->stackSize - var->stackpos;
                 }
-                assert(srcReg != ARMGeneralRegs::None);
-                assert(offset != -1);
-
-                assert(!var->is_spilled || srcReg == ARMGeneralRegs::SP);
-
-                std::string spilledDebugMsg;
-                if (var->is_spilled) {
-                    assert(inst->callee()->isFunction());
-                    spilledDebugMsg = sprintln(
-                        "# pass spilled value %%%d to %dth argument of "
-                        "%s(...)",
-                        var->val->id(),
-                        i,
-                        inst->callee()->name().data());
-                    callcode->code += spilledDebugMsg;
-                }
-
                 if (!isImmediateValid(offset)) {
-                    callcode->code += cgLdr(tmpReg, offset);
-                    callcode->code += cgAdd(tmpReg, tmpReg, srcReg);
-                } else if (var->is_alloca) {
-                    callcode->code += cgAdd(tmpReg, srcReg, offset);
-                } else if (var->is_spilled) {
-                    callcode->code += cgLdr(tmpReg, srcReg, offset);
+                    callcode->code +=
+                        cgLdr(static_cast<ARMGeneralRegs>(i), offset);
+                    if (var->is_spilled) {
+                        callcode->code += sprintln(
+                            "# Use spilled %%%d as argument", var->val->id());
+                        callcode->code += cgLdr(
+                            static_cast<ARMGeneralRegs>(i),
+                            ARMGeneralRegs::SP,
+                            static_cast<ARMGeneralRegs>(i));
+                    } else {
+                        callcode->code += cgAdd(
+                            static_cast<ARMGeneralRegs>(i),
+                            srcReg,
+                            static_cast<ARMGeneralRegs>(i));
+                    }
                 } else {
-                    unreachable();
+                    if (var->is_spilled) {
+                        callcode->code += sprintln(
+                            "# Use spilled %%%d as argument", var->val->id());
+                        callcode->code += cgLdr(
+                            static_cast<ARMGeneralRegs>(i), srcReg, offset);
+                    } else {
+                        callcode->code += cgAdd(
+                            static_cast<ARMGeneralRegs>(i), srcReg, offset);
+                    }
                 }
-                destReg = tmpReg;
-                break;
+
+            } else if (var->reg != static_cast<ARMGeneralRegs>(i)) {
+                assert(var->reg != ARMGeneralRegs::None);
+                callcode->code +=
+                    cgMov(static_cast<ARMGeneralRegs>(i), var->reg);
             }
-
-            //! value of variable is from reg
-            assert(var->reg != ARMGeneralRegs::None);
-            destReg = var->reg;
-        } while (0);
-        assert(destReg != ARMGeneralRegs::None);
-        assert(inst->totalParams() >= i + 1);
-        callcode->code += cgStr(
-            destReg,
-            ARMGeneralRegs::SP,
-            (inst->totalParams() - (i + 1)) * frameSize);
-    }
-    generator_.allocator->releaseRegister(tmpReg);
-
-    for (int i = 0; i < totalParamsInReg; ++i) {
-        auto reg = static_cast<ARMGeneralRegs>(i);
-        generator_.allocator->releaseRegister(reg);
-    }
-
-    //! use r0 reg to store retval only if is used
-    if (inst->unwrap()->uses().size() > 0) {
-        auto var = findVariable(inst->unwrap());
-        assert(var != nullptr);
-        do {
-            if (!generator_.allocator->regAllocatedMap[0]) { break; }
-            auto occupiedVar =
-                generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
-            if (occupiedVar == var) { break; }
-            assert(occupiedVar != nullptr);
-            auto reg = generator_.allocator->allocateRegister(
-                true, whitelist, this, callcode);
-            callcode->code += cgMov(reg, occupiedVar->reg);
-            generator_.allocator->releaseRegister(occupiedVar->reg);
-            occupiedVar->reg = reg;
-            assert(!generator_.allocator->regAllocatedMap[0]);
-        } while (0);
-        if (var->reg != ARMGeneralRegs::R0) {
-            assert(!generator_.allocator->regAllocatedMap[0]);
-            if (var->reg != ARMGeneralRegs::None) {
-                generator_.allocator->releaseRegister(var);
-            }
-            var->reg                                 = ARMGeneralRegs::R0;
-            generator_.allocator->regAllocatedMap[0] = true;
         }
-        assert(var->reg == ARMGeneralRegs::R0);
-        assert(generator_.allocator->regAllocatedMap[0]);
     }
 
-    //! generate fncall
+    ARMGeneralRegs tmpreg =
+        generator_.allocator->allocateRegister(true, whitelist, this, callcode);
+    const char *callee_name = inst->callee()->asFunction()->name().data();
+
+    RegList saveRegs;
+    //if (!strncmp(callee_name, "get", 3)
+    //    && libfunc.find(callee_name) != libfunc.end()) {
+        for (int i = 1; i <= 3 - inst->totalParams(); i++) {
+            auto it = generator_.allocator->usedRegs.find(
+                static_cast<ARMGeneralRegs>(i));
+            if (it != generator_.allocator->usedRegs.end())
+                saveRegs.insertToTail(static_cast<ARMGeneralRegs>(i));
+        }
+    //}
+
+    callcode->code += cgPush(saveRegs);
+
+    if (inst->totalParams() > 4) {
+        stackParamSize = (inst->totalParams() - 4) * 4;
+        callcode->code +=
+            cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, stackParamSize);
+        generator_.stack->pushVar(onStackParams, stackParamSize);
+    }
+    for (int i = 4; i < inst->totalParams(); i++) {
+        //! NOTE: untested code
+        if (inst->paramAt(i)->tryIntoConstantData() != nullptr) {
+            assert(!inst->paramAt(i)->type()->isFloat());
+            uint32_t imm =
+                static_cast<ConstantInt *>(inst->paramAt(i)->asConstantData())
+                    ->value;
+            callcode->code += cgLdr(tmpreg, imm);
+            callcode->code += cgStr(
+                tmpreg,
+                ARMGeneralRegs::SP,
+                (inst->totalParams() - (i + 1)) * 4);
+        } else {
+            assert(Allocator::isVariable(inst->paramAt(i)));
+            Variable *var = findVariable(inst->paramAt(i).value());
+            if (var->is_alloca || var->is_spilled) {
+                int            offset;
+                ARMGeneralRegs srcReg;
+                if (var->is_funcparam) {
+                    offset = var->stackpos;
+                    srcReg = ARMGeneralRegs::R11;
+                } else {
+                    offset = generator_.stack->stackSize - var->stackpos;
+                    srcReg = ARMGeneralRegs::SP;
+                }
+                if (!isImmediateValid(offset)) {
+                    callcode->code += cgLdr(tmpreg, offset);
+                    callcode->code += cgAdd(tmpreg, tmpreg, srcReg);
+                } else if (var->is_alloca) {
+                    callcode->code += cgAdd(tmpreg, srcReg, offset);
+                } else if (var->is_spilled) {
+                    callcode->code += sprintln(
+                        "# Use spilled %%%d as argument", var->val->id());
+                    callcode->code += cgLdr(tmpreg, srcReg, offset);
+                }
+                callcode->code += cgStr(
+                    tmpreg,
+                    ARMGeneralRegs::SP,
+                    (inst->totalParams() - (i + 1)) * 4);
+            } else {
+                assert(var->reg != ARMGeneralRegs::None);
+                callcode->code += cgStr(
+                    var->reg,
+                    ARMGeneralRegs::SP,
+                    (inst->totalParams() - (i + 1)) * 4);
+            }
+        }
+    }
+    generator_.allocator->releaseRegister(tmpreg);
+
+    int usedRegNum = inst->totalParams() > 4 ? 4 : inst->totalParams();
+    for (int i = 0; i < usedRegNum; i++) {
+        generator_.allocator->releaseRegister(static_cast<ARMGeneralRegs>(i));
+    }
+    if (inst->unwrap()->uses().size() != 0) {
+        if (generator_.allocator->regAllocatedMap[0]) {
+            auto var =
+                generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
+            // assert(var->val->asInstruction()->id() == InstructionID::Call);
+            ARMGeneralRegs newreg = generator_.allocator->allocateRegister(
+                true, whitelist, this, callcode);
+            callcode->code += cgMov(newreg, var->reg);
+            var->reg        = newreg;
+        }
+        generator_.allocator->regAllocatedMap[0] = true;
+        auto var                                 = findVariable(inst->unwrap());
+        if (var->reg != ARMGeneralRegs::None && var->reg != ARMGeneralRegs::R0)
+            generator_.allocator->releaseRegister(var);
+        var->reg = ARMGeneralRegs::R0;
+    }
     callcode->code += cgBl(inst->callee()->asFunction());
 
-    //! restore saved regs
-    callcode->code += cgPop(savedRegList);
+    callcode->code = callcode->code + cgPop(saveRegs);
 
-    //! restore stack pointer
-    if (stackPointerChanged) {
-        assert(isImmediateValid(frameOffset));
+    if (inst->totalParams() > 4) {
         callcode->code +=
-            cgAdd(ARMGeneralRegs::SP, ARMGeneralRegs::SP, frameOffset);
-        generator_.stack->popVar(onStackParamsBoundary, frameOffset);
+            cgAdd(ARMGeneralRegs::SP, ARMGeneralRegs::SP, stackParamSize);
+        generator_.stack->popVar(onStackParams, stackParamSize);
     }
+    callcode->code = commentCode + callcode->code;
 
     return callcode;
 }
