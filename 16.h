@@ -349,7 +349,7 @@ public:
     std::set<Variable *> *getInstOperands(Instruction *inst);
     Variable             *getVarOfAllocatedReg(ARMGeneralRegs reg);
     Variable             *getVarOfAllocatedReg(ARMFloatRegs reg);
-    Variable             *getMinIntervalRegVar(std::set<Variable *>);
+    Variable             *getMinIntervalRegVar(std::set<Variable *>, bool is_general);
     Variable             *createVariable(Value *val);
 
     ARMGeneralRegs allocateGeneralRegister(

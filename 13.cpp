@@ -2154,12 +2154,12 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         do {
             if (auto value = param->tryIntoConstantData()) {
                 if (value->type()->isFloat()) {
-                    const auto imm  = value->asConstantFloat()->value;
-                    inRegParamsCode += loadFloatConstant(tmpFpReg, imm);
-                    inRegParamsCode += cgVmov(tmpGenReg, tmpFpReg);
+                    const auto imm = value->asConstantFloat()->value;
+                    callcode->code += loadFloatConstant(tmpFpReg, imm);
+                    callcode->code += cgVmov(tmpGenReg, tmpFpReg);
                 } else {
-                    const auto imm  = value->asConstantInt()->value;
-                    inRegParamsCode += cgLdr(tmpGenReg, imm);
+                    const auto imm = value->asConstantInt()->value;
+                    callcode->code += cgLdr(tmpGenReg, imm);
                 }
                 destReg = tmpGenReg;
                 break;
