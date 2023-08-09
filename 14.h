@@ -51,6 +51,7 @@ enum class ARMGeneralRegs;
 enum class ARMFloatRegs;
 
 using RegList        = utils::ListTrait<ARMGeneralRegs>;
+using FpRegList      = utils::ListTrait<ARMFloatRegs>;
 using BlockCodeList  = slime::LinkedList<BlockCode *>;
 using UsedGlobalVars = std::map<Variable *, std::string>;
 using FloatConstants = LinkedList<float>;
@@ -63,8 +64,9 @@ public:
     std::string       genCode(Module *module);
     std::string       genGlobalArrayInitData(
               ConstantArray *globarr, uint32_t baseSize);
-    std::string genFloatConstant();
+    std::string genFloatConstants();
     std::string genGlobalDef(GlobalObject *obj);
+    std::string genFloatConstans();
     std::string genUsedGlobVars();
     std::string genAssembly(Function *func);
 
@@ -118,6 +120,10 @@ public:
         ARMGeneralRegs         rd,
         int32_t                imm,
         ComparePredicationType cond = ComparePredicationType::TRUE);
+    std::string cgMov(
+        ARMGeneralRegs         rd,
+        ARMFloatRegs           rs,
+        ComparePredicationType cond = ComparePredicationType::TRUE);
     std::string cgLdr(ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset);
     std::string cgLdr(
         ARMGeneralRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset);
@@ -142,7 +148,9 @@ public:
     // void cgTst(ARMGeneralRegs op1, ARMGeneralRegs op2);
     std::string cgTst(ARMGeneralRegs op1, int32_t op2);
     std::string cgPush(RegList &reglist);
+    std::string cgPush(FpRegList &reglist);
     std::string cgPop(RegList &reglist);
+    std::string cgPop(FpRegList &reglist);
     std::string cgB(
         Value                 *brTarget,
         ComparePredicationType cond = ComparePredicationType::TRUE);
@@ -154,14 +162,17 @@ public:
         ARMFloatRegs           rd,
         float                  imm,
         ComparePredicationType cond = ComparePredicationType::TRUE);
-    std::string cgVmov(
-        ARMFloatRegs           rd,
-        ARMFloatRegs           rs,
-        ComparePredicationType cond = ComparePredicationType::TRUE);
+
+    std::string cgVmov(ARMFloatRegs rd, ARMFloatRegs rs);
     std::string cgVmov(ARMFloatRegs rd, ARMGeneralRegs rs);
+    std::string cgVmov(ARMGeneralRegs rd, ARMFloatRegs rs);
     std::string cgVldr(ARMFloatRegs dst, ARMGeneralRegs src, int32_t offset);
+    std::string cgVldr(
+        ARMFloatRegs dst, ARMGeneralRegs src, ARMGeneralRegs offset);
     std::string cgVldr(ARMGeneralRegs dst, Variable *var);
-    std::string cgVstr(ARMFloatRegs src, ARMFloatRegs dst, int32_t offset);
+    std::string cgVstr(ARMFloatRegs src, ARMGeneralRegs dst, int32_t offset);
+    std::string cgVstr(
+        ARMFloatRegs src, ARMGeneralRegs dst, ARMGeneralRegs offset);
     std::string cgVcvt(
         ARMFloatRegs fltreg,
         ARMFloatRegs intreg,
