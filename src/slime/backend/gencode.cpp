@@ -1918,53 +1918,138 @@ InstCode *Generator::genZExtInst(ZExtInst *inst) {
 }
 
 InstCode *Generator::genCallInst(CallInst *inst) {
+    auto &allocator    = generator_.allocator;
+    auto &genAllocated = allocator->regAllocatedMap;
+    auto &fpAllocated  = allocator->floatRegAllocatedMap;
+
     std::string           inRegParamsCode{};
     auto                  callcode  = new InstCode(inst);
     std::set<Variable *> *whitelist = nullptr;
 
     constexpr auto frameSize = 4; //<! 32-bit arch
 
-    int    totalParamsInReg    = std::min<int>(4, inst->totalParams());
-    int    totalParamsInStack  = inst->totalParams() - totalParamsInReg;
-    size_t frameOffset         = totalParamsInStack * frameSize;
-    bool   stackPointerChanged = frameOffset > 0;
+    const auto           maxParamGenRegs  = 4;
+    const auto           maxParamFpRegs   = 16;
+    int                  usedParamGenRegs = 0;
+    int                  usedParamFpRegs  = 0;
+    std::vector<Value *> onStackParams;
 
     //! handle in-reg params
-    for (int i = 0; i < totalParamsInReg; ++i) {
-        auto param = inst->paramAt(i);
-
-        //! NOTE: reg for param is always reserved
-        auto destReg = static_cast<ARMGeneralRegs>(i);
-        generator_.allocator->usedGeneralRegs.insert(destReg);
-
-        //! register is used by current function scope
-        //! backup occupied reg to another one
+    for (int i = 0; i < inst->totalParams(); ++i) {
+        auto      param           = inst->paramAt(i);
         Variable *lastOccupiedVar = nullptr;
-        if (generator_.allocator->regAllocatedMap[i]) {
-            auto reg = generator_.allocator->allocateGeneralRegister(
+
+        //! handle fp param
+        if (param->type()->isFloat()) {
+            if (usedParamFpRegs == maxParamFpRegs) {
+                onStackParams.push_back(param);
+                continue;
+            }
+            const auto regIndex = usedParamFpRegs++;
+            auto       destReg  = static_cast<ARMFloatRegs>(regIndex);
+            allocator->usedFloatRegs.insert(destReg);
+
+            if (fpAllocated[regIndex]) {
+                auto reg = allocator->allocateFloatRegister(
+                    true, whitelist, this, callcode);
+                assert(reg != ARMFloatRegs::None);
+                lastOccupiedVar = allocator->getVarOfAllocatedReg(destReg);
+                assert(lastOccupiedVar != nullptr);
+                assert(lastOccupiedVar->reg == destReg);
+                inRegParamsCode      += cgVmov(reg, destReg);
+                lastOccupiedVar->reg = reg;
+                allocator->releaseRegister(destReg);
+            }
+
+            assert(!fpAllocated[regIndex]);
+            fpAllocated[regIndex] = true;
+
+            if (auto value = param->tryIntoConstantData()) {
+                const auto imm  = value->asConstantFloat()->value;
+                inRegParamsCode += loadFloatConstant(destReg, imm);
+                continue;
+            }
+
+            assert(Allocator::isVariable(param));
+            auto var = findVariable(param);
+
+            //! value of param is already store into the dest reg
+            if (lastOccupiedVar == var) { continue; }
+
+            //! value of variable is from memory
+            assert(!var->is_alloca);
+            if (var->is_spilled) {
+                //! compute stack pos of value
+                auto srcReg = ARMGeneralRegs::None;
+                int  offset = -1;
+                if (var->is_funcparam) {
+                    srcReg = ARMGeneralRegs::R11;
+                    offset = var->stackpos;
+                } else {
+                    srcReg = ARMGeneralRegs::SP;
+                    offset = allocator->stack->stackSize - var->stackpos;
+                }
+                assert(srcReg != ARMGeneralRegs::None);
+                assert(offset != -1);
+
+                //! spilled value must from reg sp
+                assert(!var->is_spilled || srcReg == ARMGeneralRegs::SP);
+
+                std::string spilledDebugMsg;
+                assert(inst->callee()->isFunction());
+                spilledDebugMsg = sprintln(
+                    "# pass spilled value %%%d to %dth argument of %s(...)",
+                    var->val->id(),
+                    i,
+                    inst->callee()->name().data());
+                inRegParamsCode += spilledDebugMsg;
+
+                if (!isImmediateValid(offset)) {
+                    auto tmpReg = allocator->allocateGeneralRegister(
+                        true, whitelist, this, callcode);
+                    inRegParamsCode += cgLdr(tmpReg, offset);
+                    inRegParamsCode += cgVldr(destReg, srcReg, tmpReg);
+                    allocator->releaseRegister(tmpReg);
+                } else {
+                    inRegParamsCode += cgVldr(destReg, srcReg, offset);
+                }
+                continue;
+            }
+
+            assert(var->reg != destReg);
+            assert(!var->is_general);
+            assert(var->reg != ARMFloatRegs::None);
+            inRegParamsCode += cgVmov(destReg, var->reg.fpr);
+            continue;
+        }
+
+        //! handle general param
+        if (usedParamGenRegs == maxParamGenRegs) {
+            onStackParams.push_back(param);
+            continue;
+        }
+        const auto regIndex = usedParamGenRegs++;
+        auto       destReg  = static_cast<ARMGeneralRegs>(regIndex);
+        allocator->usedGeneralRegs.insert(destReg);
+
+        if (genAllocated[regIndex]) {
+            auto reg = allocator->allocateGeneralRegister(
                 true, whitelist, this, callcode);
             assert(reg != ARMGeneralRegs::None);
-            lastOccupiedVar =
-                generator_.allocator->getVarOfAllocatedReg(destReg);
+            lastOccupiedVar = allocator->getVarOfAllocatedReg(destReg);
             assert(lastOccupiedVar != nullptr);
             assert(lastOccupiedVar->reg == destReg);
             inRegParamsCode      += cgMov(reg, destReg);
             lastOccupiedVar->reg = reg;
-            generator_.allocator->releaseRegister(destReg);
+            allocator->releaseRegister(destReg);
         }
 
-        assert(
-            !generator_.allocator->regAllocatedMap[static_cast<int>(destReg)]);
-        generator_.allocator->regAllocatedMap[static_cast<int>(destReg)] = true;
+        assert(!genAllocated[regIndex]);
+        genAllocated[regIndex] = true;
 
         if (auto value = param->tryIntoConstantData()) {
-            if (value->type()->isFloat()) {
-                const auto imm = value->asConstantFloat()->value;
-                //! TODO: load fp32 imm
-            } else {
-                const auto imm  = value->asConstantInt()->value;
-                inRegParamsCode += cgLdr(destReg, imm);
-            }
+            const auto imm  = value->asConstantInt()->value;
+            inRegParamsCode += cgLdr(destReg, imm);
             continue;
         }
 
@@ -1977,14 +2062,14 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         //! value of variable is from memory
         if (var->is_alloca || var->is_spilled) {
             //! compute stack pos of value
-            ARMGeneralRegs srcReg = ARMGeneralRegs::None;
-            int            offset = -1;
+            auto srcReg = ARMGeneralRegs::None;
+            int  offset = -1;
             if (var->is_funcparam) {
                 srcReg = ARMGeneralRegs::R11;
                 offset = var->stackpos;
             } else {
                 srcReg = ARMGeneralRegs::SP;
-                offset = generator_.allocator->stack->stackSize - var->stackpos;
+                offset = allocator->stack->stackSize - var->stackpos;
             }
             assert(srcReg != ARMGeneralRegs::None);
             assert(offset != -1);
@@ -2018,27 +2103,26 @@ InstCode *Generator::genCallInst(CallInst *inst) {
             continue;
         }
 
-        //! value of variable is from reg
         assert(var->reg != destReg);
+        assert(var->is_general);
         assert(var->reg != ARMGeneralRegs::None);
-        if (var->is_general) {
-            inRegParamsCode += cgMov(destReg, var->reg.gpr);
-        } else {
-            inRegParamsCode += cgMov(destReg, var->reg.fpr);
-        }
+        inRegParamsCode += cgMov(destReg, var->reg.gpr);
+        continue;
     }
 
-    //! WARNING: allocating tmpReg must before the sp
-    auto tmpReg = generator_.allocator->allocateGeneralRegister(
-        true, whitelist, this, callcode);
+    int    totalParamsInReg    = usedParamGenRegs + usedParamFpRegs;
+    int    totalParamsInStack  = onStackParams.size();
+    size_t frameOffset         = totalParamsInStack * frameSize;
+    bool   stackPointerChanged = frameOffset > 0;
 
-    //! NOTE: This variable is only use to avoid stack spaces allocated to
-    //! params being treated as fragment by stack
+    auto tmpGenReg =
+        allocator->allocateGeneralRegister(true, whitelist, this, callcode);
+    auto tmpFpReg =
+        allocator->allocateFloatRegister(true, whitelist, this, callcode);
+
     uint8_t placeholder[sizeof(Variable)]{};
     auto    onStackParamsBoundary = reinterpret_cast<Variable *>(placeholder);
 
-    //! handle on-stack params
-    //! FIXME: consider float params
     if (stackPointerChanged) {
         assert(isImmediateValid(frameOffset));
         callcode->code +=
@@ -2046,34 +2130,37 @@ InstCode *Generator::genCallInst(CallInst *inst) {
         generator_.stack->pushVar(onStackParamsBoundary, frameOffset);
     }
 
-    //! NOTE: fncall rule in ARM is not the same with ours, the former will use
-    //! r0..r3 without save and restore, so these used regs in our fncall must
-    //! be save
-    RegList savedRegList;
-    assert(inst->callee()->isFunction());
-    //! skip r0 since it will be used to store retval
-    //! save r1, r2, r3 if is alive
-    for (int i = 1; i + inst->totalParams() < 4; ++i) {
+    RegList   savedGenRegList;
+    FpRegList savedFpRegList;
+    for (int i = 1; i + usedParamGenRegs < maxParamGenRegs; ++i) {
         auto reg = static_cast<ARMGeneralRegs>(i);
-        if (generator_.allocator->usedGeneralRegs.count(reg)) {
-            savedRegList.insertToTail(reg);
+        if (allocator->usedGeneralRegs.count(reg)) {
+            savedGenRegList.insertToTail(reg);
         }
     }
-    callcode->code += cgPush(savedRegList);
+    for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
+        auto reg = static_cast<ARMFloatRegs>(i);
+        if (allocator->usedFloatRegs.count(reg)) {
+            savedFpRegList.insertToTail(reg);
+        }
+    }
+    callcode->code += cgPush(savedGenRegList);
+    callcode->code += cgPush(savedFpRegList);
 
-    for (int i = 4; i < inst->totalParams(); ++i) {
-        auto param   = inst->paramAt(i);
+    for (int i = 0; i < onStackParams.size(); ++i) {
+        auto param   = onStackParams[i];
         auto destReg = ARMGeneralRegs::None;
         do {
             if (auto value = param->tryIntoConstantData()) {
                 if (value->type()->isFloat()) {
-                    const auto imm = value->asConstantFloat()->value;
-                    //! TODO: load fp32 imm
+                    const auto imm  = value->asConstantFloat()->value;
+                    inRegParamsCode += loadFloatConstant(tmpFpReg, imm);
+                    inRegParamsCode += cgVmov(tmpGenReg, tmpFpReg);
                 } else {
                     const auto imm  = value->asConstantInt()->value;
-                    inRegParamsCode += cgLdr(tmpReg, imm);
+                    inRegParamsCode += cgLdr(tmpGenReg, imm);
                 }
-                destReg = tmpReg;
+                destReg = tmpGenReg;
                 break;
             }
 
@@ -2110,84 +2197,126 @@ InstCode *Generator::genCallInst(CallInst *inst) {
                     callcode->code += spilledDebugMsg;
                 }
 
-                if (!isImmediateValid(offset)) {
-                    callcode->code += cgLdr(tmpReg, offset);
-                    if (var->is_spilled) {
-                        callcode->code += cgLdr(tmpReg, srcReg, tmpReg);
+                if (param->type()->isFloat()) {
+                    assert(!var->is_alloca);
+                    if (!isImmediateValid(offset)) {
+                        callcode->code += cgLdr(tmpGenReg, offset);
+                        callcode->code += cgVldr(tmpFpReg, srcReg, tmpGenReg);
                     } else {
-                        callcode->code += cgAdd(tmpReg, srcReg, tmpReg);
+                        callcode->code += cgVldr(tmpFpReg, srcReg, offset);
                     }
-                } else if (var->is_alloca) {
-                    callcode->code += cgAdd(tmpReg, srcReg, offset);
-                } else if (var->is_spilled) {
-                    callcode->code += cgLdr(tmpReg, srcReg, offset);
+                    callcode->code += cgVmov(tmpGenReg, tmpFpReg);
                 } else {
-                    unreachable();
+                    if (!isImmediateValid(offset)) {
+                        callcode->code += cgLdr(tmpGenReg, offset);
+                        if (var->is_spilled) {
+                            callcode->code +=
+                                cgLdr(tmpGenReg, srcReg, tmpGenReg);
+                        } else {
+                            callcode->code +=
+                                cgAdd(tmpGenReg, srcReg, tmpGenReg);
+                        }
+                    } else if (var->is_alloca) {
+                        callcode->code += cgAdd(tmpGenReg, srcReg, offset);
+                    } else if (var->is_spilled) {
+                        callcode->code += cgLdr(tmpGenReg, srcReg, offset);
+                    } else {
+                        unreachable();
+                    }
                 }
-                destReg = tmpReg;
+                destReg = tmpGenReg;
                 break;
             }
 
-            //! value of variable is from reg
-            assert(var->reg != ARMGeneralRegs::None);
-            if (var->is_general) {
-                destReg = var->reg.gpr;
+            if (param->type()->isFloat()) {
+                assert(!var->is_general);
+                assert(var->reg != ARMFloatRegs::None);
+                callcode->code += cgVmov(tmpGenReg, var->reg.fpr);
+                destReg        = tmpGenReg;
             } else {
-                callcode->code += cgVmov(tmpReg, var->reg.fpr);
-                destReg        = tmpReg;
+                assert(var->is_general);
+                assert(var->reg != ARMGeneralRegs::None);
+                destReg = var->reg.gpr;
             }
         } while (0);
         assert(destReg != ARMGeneralRegs::None);
-        assert(inst->totalParams() >= i + 1);
-        callcode->code += cgStr(
-            destReg,
-            ARMGeneralRegs::SP,
-            (inst->totalParams() - (i + 1)) * frameSize);
+        assert(onStackParams.size() >= i + 1);
+        int offset     = onStackParams.size() - (i + 1) * frameSize;
+        callcode->code += cgStr(destReg, ARMGeneralRegs::SP, offset);
     }
-    generator_.allocator->releaseRegister(tmpReg);
 
-    for (int i = 0; i < totalParamsInReg; ++i) {
+    allocator->releaseRegister(tmpGenReg);
+    allocator->releaseRegister(tmpFpReg);
+
+    for (int i = 0; i < usedParamGenRegs; ++i) {
         auto reg = static_cast<ARMGeneralRegs>(i);
-        generator_.allocator->releaseRegister(reg);
+        allocator->releaseRegister(reg);
+    }
+    for (int i = 0; i < usedParamFpRegs; ++i) {
+        auto reg = static_cast<ARMFloatRegs>(i);
+        allocator->releaseRegister(reg);
     }
 
-    //! use r0 reg to store retval only if is used
     if (inst->unwrap()->uses().size() > 0) {
         auto var = findVariable(inst->unwrap());
         assert(var != nullptr);
-        do {
-            if (!generator_.allocator->regAllocatedMap[0]) { break; }
-            auto occupiedVar =
-                generator_.allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
-            if (occupiedVar == var) { break; }
-            assert(occupiedVar != nullptr);
-            auto reg = generator_.allocator->allocateGeneralRegister(
-                true, whitelist, this, callcode);
-            //! NOTE: R0 reg must be saved before push/pop
-            inRegParamsCode += cgMov(reg, occupiedVar->reg.gpr);
-            generator_.allocator->releaseRegister(occupiedVar->reg.gpr);
-            occupiedVar->reg = reg;
-            assert(!generator_.allocator->regAllocatedMap[0]);
-        } while (0);
-        if (var->reg != ARMGeneralRegs::R0) {
-            assert(!generator_.allocator->regAllocatedMap[0]);
-            if (var->reg != ARMGeneralRegs::None) {
-                generator_.allocator->releaseRegister(var);
+        if (var->val->type()->isFloat()) {
+            do {
+                if (!fpAllocated[0]) { break; }
+                auto occupiedVar =
+                    allocator->getVarOfAllocatedReg(ARMFloatRegs::S0);
+                if (occupiedVar == var) { break; }
+                assert(occupiedVar != nullptr);
+                auto reg = allocator->allocateFloatRegister(
+                    true, whitelist, this, callcode);
+                //! NOTE: S0 reg must be saved before push/pop
+                inRegParamsCode += cgVmov(reg, occupiedVar->reg.fpr);
+                allocator->releaseRegister(occupiedVar->reg.fpr);
+                occupiedVar->reg = reg;
+                assert(!fpAllocated[0]);
+            } while (0);
+            if (var->reg != ARMFloatRegs::S0) {
+                assert(!fpAllocated[0]);
+                if (var->reg != ARMFloatRegs::None) {
+                    allocator->releaseRegister(var);
+                }
+                var->reg       = ARMFloatRegs::S0;
+                fpAllocated[0] = true;
             }
-            var->reg                                 = ARMGeneralRegs::R0;
-            generator_.allocator->regAllocatedMap[0] = true;
+            assert(var->reg == ARMFloatRegs::S0);
+            assert(fpAllocated[0]);
+        } else {
+            do {
+                if (!genAllocated[0]) { break; }
+                auto occupiedVar =
+                    allocator->getVarOfAllocatedReg(ARMGeneralRegs::R0);
+                if (occupiedVar == var) { break; }
+                assert(occupiedVar != nullptr);
+                auto reg = allocator->allocateGeneralRegister(
+                    true, whitelist, this, callcode);
+                //! NOTE: R0 reg must be saved before push/pop
+                inRegParamsCode += cgMov(reg, occupiedVar->reg.gpr);
+                allocator->releaseRegister(occupiedVar->reg.gpr);
+                occupiedVar->reg = reg;
+                assert(!genAllocated[0]);
+            } while (0);
+            if (var->reg != ARMGeneralRegs::R0) {
+                assert(!genAllocated[0]);
+                if (var->reg != ARMGeneralRegs::None) {
+                    allocator->releaseRegister(var);
+                }
+                var->reg        = ARMGeneralRegs::R0;
+                genAllocated[0] = true;
+            }
+            assert(var->reg == ARMGeneralRegs::R0);
+            assert(genAllocated[0]);
         }
-        assert(var->reg == ARMGeneralRegs::R0);
-        assert(generator_.allocator->regAllocatedMap[0]);
     }
 
-    //! generate fncall
     callcode->code += cgBl(inst->callee()->asFunction());
+    callcode->code += cgPop(savedFpRegList);
+    callcode->code += cgPop(savedGenRegList);
 
-    //! restore saved regs
-    callcode->code += cgPop(savedRegList);
-
-    //! restore stack pointer
     if (stackPointerChanged) {
         assert(isImmediateValid(frameOffset));
         callcode->code +=
@@ -2407,16 +2536,15 @@ std::string Generator::cgTst(ARMGeneralRegs op1, int32_t op2) {
     return instrln("tst", "%s, #%d", reg2str(op1), op2);
 }
 
+std::string Generator::cgVmov(ARMFloatRegs rd, ARMFloatRegs rm) {
+    return instrln("vmov", "%s, %s", reg2str(rd), reg2str(rm));
+}
+
 std::string Generator::cgVmov(ARMFloatRegs rd, ARMGeneralRegs rm) {
     return instrln("vmov", "%s, %s", reg2str(rd), reg2str(rm));
 }
 
 std::string Generator::cgVmov(ARMGeneralRegs rd, ARMFloatRegs rm) {
-    return instrln("vmov", "%s, %s", reg2str(rd), reg2str(rm));
-}
-
-std::string Generator::cgVmov(
-    ARMFloatRegs rd, ARMFloatRegs rm, ComparePredicationType cond) {
     return instrln("vmov", "%s, %s", reg2str(rd), reg2str(rm));
 }
 
@@ -2577,6 +2705,16 @@ std::string Generator::cgPush(RegList &reglist) {
     return instrln("push", "{%s}", regs.c_str());
 }
 
+std::string Generator::cgPush(FpRegList &reglist) {
+    if (reglist.size() == 0) { return ""; }
+    std::string regs;
+    for (auto reg : reglist) {
+        regs += reg2str(reg);
+        if (reg != reglist.tail()->value()) { regs.push_back(','); };
+    }
+    return instrln("vpush", "{%s}", regs.c_str());
+}
+
 std::string Generator::cgPop(RegList &reglist) {
     if (reglist.size() == 0) { return ""; }
     std::string regs;
@@ -2585,6 +2723,16 @@ std::string Generator::cgPop(RegList &reglist) {
         if (reg != reglist.tail()->value()) { regs.push_back(','); };
     }
     return instrln("pop", "{%s}", regs.c_str());
+}
+
+std::string Generator::cgPop(FpRegList &reglist) {
+    if (reglist.size() == 0) { return ""; }
+    std::string regs;
+    for (auto reg : reglist) {
+        regs += reg2str(reg);
+        if (reg != reglist.tail()->value()) { regs.push_back(','); };
+    }
+    return instrln("vpop", "{%s}", regs.c_str());
 }
 
 } // namespace slime::backend

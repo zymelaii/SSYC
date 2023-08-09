@@ -51,6 +51,7 @@ enum class ARMGeneralRegs;
 enum class ARMFloatRegs;
 
 using RegList        = utils::ListTrait<ARMGeneralRegs>;
+using FpRegList      = utils::ListTrait<ARMFloatRegs>;
 using BlockCodeList  = slime::LinkedList<BlockCode *>;
 using UsedGlobalVars = std::map<Variable *, std::string>;
 using FloatConstants = LinkedList<float>;
@@ -147,7 +148,9 @@ public:
     // void cgTst(ARMGeneralRegs op1, ARMGeneralRegs op2);
     std::string cgTst(ARMGeneralRegs op1, int32_t op2);
     std::string cgPush(RegList &reglist);
+    std::string cgPush(FpRegList &reglist);
     std::string cgPop(RegList &reglist);
+    std::string cgPop(FpRegList &reglist);
     std::string cgB(
         Value                 *brTarget,
         ComparePredicationType cond = ComparePredicationType::TRUE);
@@ -159,10 +162,8 @@ public:
         ARMFloatRegs           rd,
         float                  imm,
         ComparePredicationType cond = ComparePredicationType::TRUE);
-    std::string cgVmov(
-        ARMFloatRegs           rd,
-        ARMFloatRegs           rs,
-        ComparePredicationType cond = ComparePredicationType::TRUE);
+
+    std::string cgVmov(ARMFloatRegs rd, ARMFloatRegs rs);
     std::string cgVmov(ARMFloatRegs rd, ARMGeneralRegs rs);
     std::string cgVmov(ARMGeneralRegs rd, ARMFloatRegs rs);
     std::string cgVldr(ARMFloatRegs dst, ARMGeneralRegs src, int32_t offset);
