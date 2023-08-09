@@ -1,7 +1,6 @@
 #include "14.h"
 #include "16.h"
 
-#include <algorithm>
 #include "21.h"
 #include "46.h"
 #include "49.h"
@@ -9,6 +8,7 @@
 #include "51.h"
 #include "47.h"
 #include "88.h"
+#include <algorithm>
 #include <set>
 #include <stddef.h>
 #include <assert.h>
