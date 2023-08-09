@@ -15,23 +15,23 @@
 namespace slime::backend {
 
 bool operator!=(const ARMRegister &a, const ARMGeneralRegs &b) {
-    if (a.holder->is_general) { return a.gpr != b; }
-    assert(0);
+    assert(a.holder->is_general);
+    return a.gpr != b;
 }
 
 bool operator!=(const ARMRegister &a, const ARMFloatRegs &b) {
-    if (!a.holder->is_general) { return a.fpr != b; }
-    assert(0);
+    assert(!a.holder->is_general);
+    return a.fpr != b;
 }
 
 bool operator==(const ARMRegister &a, const ARMGeneralRegs &b) {
-    if (a.holder->is_general) { return a.gpr == b; }
-    assert(0);
+    assert(a.holder->is_general);
+    return a.gpr == b;
 }
 
 bool operator==(const ARMRegister &a, const ARMFloatRegs &b) {
-    if (!a.holder->is_general) { return a.fpr == b; }
-    assert(0);
+    assert(!a.holder->is_general);
+    return a.fpr == b;
 }
 
 bool Allocator::isVariable(Value *val) {
