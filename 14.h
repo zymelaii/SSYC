@@ -50,11 +50,12 @@ class Allocator;
 enum class ARMGeneralRegs;
 enum class ARMFloatRegs;
 
-using RegList        = utils::ListTrait<ARMGeneralRegs>;
-using FpRegList      = utils::ListTrait<ARMFloatRegs>;
-using BlockCodeList  = slime::LinkedList<BlockCode *>;
-using UsedGlobalVars = std::map<Variable *, std::string>;
-using FloatConstants = LinkedList<float>;
+using RegList         = utils::ListTrait<ARMGeneralRegs>;
+using FpRegList       = utils::ListTrait<ARMFloatRegs>;
+using BlockCodeList   = slime::LinkedList<BlockCode *>;
+using UsedGlobalVars  = std::map<Variable *, std::string>;
+using FloatConstants  = LinkedList<std::pair<int, float>>;
+using FpConstVersoins = std::map<int, int>;
 
 class Generator {
     Generator(){};
@@ -191,10 +192,13 @@ protected:
     std::string            saveCallerReg();
     std::string            restoreCallerReg();
     std::string            loadFloatConstant(ARMFloatRegs rd, float imm);
+    std::string            indirectLoadFpConstant(ARMFloatRegs rd, int index);
+    std::string            genIndirectFpConstantAddrs();
     std::string            unpackInstCodeList(InstCodeList &instCodeList);
     std::string            unpackBlockCodeList(BlockCodeList &blockCodeList);
     void                   checkStackChanges(BlockCodeList &blockCodeList);
     void                   addUsedGlobalVar(Variable *var);
+    void                   refreshUsedGlobalVar();
     BasicBlock            *getNextBlock();
     int                    getBlockNum(int blockid);
     ComparePredicationType reversePredict(ComparePredicationType predict);
@@ -263,14 +267,15 @@ private:
     };
 
     struct GeneratorState {
-        bool            longfunc       = false;
-        BasicBlock     *cur_block      = nullptr;
-        Function       *cur_func       = nullptr;
-        size_t          cur_funcnum    = 0;
-        Allocator      *allocator      = nullptr;
-        Stack          *stack          = nullptr;
-        UsedGlobalVars *usedGlobalVars = nullptr;
-        FloatConstants *floatConstants = nullptr;
+        bool             longfunc       = false;
+        BasicBlock      *cur_block      = nullptr;
+        Function        *cur_func       = nullptr;
+        size_t           cur_funcnum    = 0;
+        Allocator       *allocator      = nullptr;
+        Stack           *stack          = nullptr;
+        UsedGlobalVars  *usedGlobalVars = nullptr;
+        FloatConstants  *floatConstants = nullptr;
+        FpConstVersoins *fpVersions     = nullptr;
     };
 
     // std::ostream    os;

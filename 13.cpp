@@ -29,6 +29,7 @@ std::string Generator::genCode(Module *module) {
     generator_.stack             = generator_.allocator->stack;
     generator_.usedGlobalVars    = new UsedGlobalVars;
     generator_.floatConstants    = new FloatConstants;
+    generator_.fpVersions        = new FpConstVersoins;
     GlobalObjectList *global_var = new GlobalObjectList;
     std::string       modulecode;
     modulecode += sprintln("    .arch armv7a");
@@ -39,6 +40,9 @@ std::string Generator::genCode(Module *module) {
             generator_.cur_func = static_cast<Function *>(e);
             if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             modulecode += genAssembly(static_cast<Function *>(e));
+            modulecode += genIndirectFpConstantAddrs();
+            modulecode += genUsedGlobVars();
+            refreshUsedGlobalVar();
             generator_.cur_funcnum++;
             modulecode += sprintln("    .pool\n");
         } else {
@@ -48,7 +52,6 @@ std::string Generator::genCode(Module *module) {
     }
     // generator constant pool
     modulecode += genFloatConstants();
-    modulecode += genUsedGlobVars();
     for (auto e : *global_var) { modulecode += genGlobalDef(e); }
     return modulecode;
 }
@@ -358,7 +361,7 @@ std::string Generator::genUsedGlobVars() {
         globvars += sprintln("%s:", e.second.data());
         globvars += sprintln("    .long %s", e.first->val->name().data());
     }
-    globvars += sprintln("");
+    if (!globvars.empty()) { globvars += sprintln(""); }
     return globvars;
 }
 
@@ -447,27 +450,60 @@ void Generator::checkStackChanges(BlockCodeList &blockCodeList) {
 void Generator::addUsedGlobalVar(Variable *var) {
     assert(var->is_global);
     static uint32_t nrGlobVar = 0;
-    static char     str[10];
+    static char     str[16];
     if (generator_.usedGlobalVars->find(var)
         != generator_.usedGlobalVars->end())
         return;
-    sprintf(str, "GlobAddr%d", nrGlobVar++);
+    sprintf(str, "GlobAddr%d.0", nrGlobVar++);
     generator_.usedGlobalVars->insert({var, str});
 }
 
-std::string Generator::loadFloatConstant(ARMFloatRegs rd, float imm) {
-    auto it     = generator_.floatConstants->node_begin();
-    auto end    = generator_.floatConstants->node_end();
-    int  offset = 0;
-    while (it != end) {
-        float tmp = it->value();
-        if (tmp == imm)
-            return instrln("vldr", "%s, .FloatConstant%d", reg2str(rd), offset);
-        offset++;
-        it++;
+void Generator::refreshUsedGlobalVar() {
+    for (auto &[var, name] : *generator_.usedGlobalVars) {
+        auto pos = name.find_last_of('.');
+        assert(pos != name.npos);
+        auto nextId = std::stoi(name.substr(pos + 1)) + 1;
+        name.erase(pos + 1);
+        name += std::to_string(nextId);
     }
-    generator_.floatConstants->insertToTail(imm);
-    return instrln("vldr", "%s, .FloatConstant%d", reg2str(rd), offset);
+}
+
+std::string Generator::loadFloatConstant(ARMFloatRegs rd, float imm) {
+    auto &fps      = *generator_.floatConstants;
+    int   targetId = -1;
+    for (auto [id, tmp] : fps) {
+        if (tmp == imm) { targetId = id; }
+    }
+    if (targetId == -1) {
+        targetId = fps.size();
+        fps.insertToTail(std::pair{targetId, imm});
+        (*generator_.fpVersions)[targetId] = 0;
+    }
+    return indirectLoadFpConstant(rd, targetId);
+}
+
+std::string Generator::indirectLoadFpConstant(ARMFloatRegs rd, int index) {
+    std::string fetch;
+    auto        fpv = *generator_.fpVersions;
+    assert(fpv.count(index));
+    auto version = fpv.at(index);
+    auto tmpReg  = generator_.allocator->allocateGeneralRegister(true);
+    assert(tmpReg != ARMGeneralRegs::None);
+    fetch += instrln("ldr", "%s, .J_FP%d_%d", reg2str(tmpReg), index, version);
+    fetch += cgVldr(rd, tmpReg, 0);
+    generator_.allocator->releaseRegister(tmpReg);
+    return fetch;
+}
+
+std::string Generator::genIndirectFpConstantAddrs() {
+    std::string code;
+    auto       &fpv = *generator_.fpVersions;
+    for (auto &[id, version] : fpv) {
+        code += sprintln(".J_FP%d_%d:", id, version);
+        code += sprintln("    .long .FloatConstant%d", id);
+        ++version;
+    }
+    return code;
 }
 
 std::string Generator::saveCallerReg() {
@@ -1860,36 +1896,36 @@ InstCode *Generator::genFCmpInst(FCmpInst *inst) {
         switch (inst->predicate()) {
             case ComparePredicationType::OLT: {
                 fcmpcode->code +=
-                    instrln("movmi", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movmi", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OLE: {
                 fcmpcode->code +=
-                    instrln("movls", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movls", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OGT: {
                 fcmpcode->code +=
-                    instrln("movgt", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movgt", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OGE: {
                 fcmpcode->code +=
-                    instrln("movge", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movge", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::OEQ: {
                 fcmpcode->code +=
-                    instrln("moveq", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("moveq", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             case ComparePredicationType::ONE: {
                 fcmpcode->code +=
-                    instrln("movmi", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movmi", "%s, #%d", reg2str(result->reg.gpr), 1);
                 fcmpcode->code += instrln("vmrs", "APSR_nzcv, fpscr");
                 fcmpcode->code += cgVcmp(rd, rm);
                 fcmpcode->code +=
-                    instrln("movgt", "%s, %d", reg2str(result->reg.gpr), 1);
+                    instrln("movgt", "%s, #%d", reg2str(result->reg.gpr), 1);
                 break;
             }
             default:
