@@ -280,14 +280,23 @@ Variable *Allocator::getVarOfAllocatedReg(ARMFloatRegs reg) {
     unreachable();
 }
 
-Variable *Allocator::getMinIntervalRegVar(std::set<Variable *> whitelist) {
+Variable *Allocator::getMinIntervalRegVar(
+    std::set<Variable *> whitelist, bool is_general) {
     uint32_t  min    = UINT32_MAX;
     Variable *retVar = nullptr;
+
     for (auto e : *liveVars) {
         if (whitelist.find(e) != whitelist.end()) continue;
-        if (e->livIntvl->end < min && e->reg != ARMGeneralRegs::None) {
-            min    = e->livIntvl->end;
-            retVar = e;
+        if (e->is_general && e->is_general == is_general) {
+            if (e->livIntvl->end < min && e->reg != ARMGeneralRegs::None) {
+                min    = e->livIntvl->end;
+                retVar = e;
+            }
+        } else if (!e->is_general && e->is_general == is_general) {
+            if (e->livIntvl->end < min && e->reg != ARMFloatRegs::None) {
+                min    = e->livIntvl->end;
+                retVar = e;
+            }
         }
     }
     return retVar;
@@ -358,7 +367,7 @@ ARMGeneralRegs Allocator::allocateGeneralRegister(
         std::set<Variable *> emptylistHolder;
         whitelist = &emptylistHolder;
     }
-    Variable *minlntvar = getMinIntervalRegVar(*whitelist);
+    Variable *minlntvar = getMinIntervalRegVar(*whitelist, true);
     assert(minlntvar);
     assert(!minlntvar->is_spilled);
     minlntvar->is_spilled = true;
@@ -401,8 +410,23 @@ ARMFloatRegs Allocator::allocateFloatRegister(
     }
 
     if (!force) return ARMFloatRegs::None;
-    assert(0 && "unfinished yet");
-    unreachable();
+    if (!whitelist) {
+        std::set<Variable *> emptylistHolder;
+        whitelist = &emptylistHolder;
+    }
+    Variable *minlntvar = getMinIntervalRegVar(*whitelist, false);
+    assert(minlntvar);
+    assert(!minlntvar->is_spilled);
+    minlntvar->is_spilled = true;
+    auto ret              = minlntvar->reg.fpr;
+    minlntvar->reg        = ARMGeneralRegs::None;
+    instcode->code +=
+        Generator::sprintln("# spill value %%%d", minlntvar->val->id());
+    if (stack->spillVar(minlntvar, 4))
+        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+    instcode->code += gen->cgVstr(
+        ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
+    return ret;
 }
 
 void Allocator::releaseRegister(Variable *var) {
@@ -425,7 +449,7 @@ void Allocator::releaseRegister(ARMFloatRegs reg) {
     assert(
         floatRegAllocatedMap[static_cast<int>(reg)]
         && "It must be a bug here!");
-    assert(static_cast<int>(reg) < 30);
+    assert(static_cast<int>(reg) < 32);
     floatRegAllocatedMap[static_cast<int>(reg)] = false;
 }
 
@@ -489,11 +513,15 @@ void Allocator::updateAllocation(
 
             if (!success && inst->id() != InstructionID::Call) {
                 //! NOTE: spill
-                Variable *minlntvar = getMinIntervalRegVar(*operands);
+                Variable *minlntvar =
+                    getMinIntervalRegVar(*operands, var->is_general);
                 assert(!minlntvar->is_spilled);
 
-                var->reg       = minlntvar->reg;
-                minlntvar->reg = ARMGeneralRegs::None;
+                var->reg = minlntvar->reg;
+                if (var->is_general)
+                    minlntvar->reg = ARMGeneralRegs::None;
+                else
+                    minlntvar->reg = ARMFloatRegs::None;
                 if (!minlntvar->is_global) {
                     minlntvar->is_spilled = true;
                     if (stack->spillVar(minlntvar, 4))
@@ -501,10 +529,16 @@ void Allocator::updateAllocation(
                             "# spill value %%%d", minlntvar->val->id());
                     instcode->code +=
                         gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-                    instcode->code += gen->cgStr(
-                        var->reg.gpr,
-                        ARMGeneralRegs::SP,
-                        stack->stackSize - minlntvar->stackpos);
+                    if (var->is_general)
+                        instcode->code += gen->cgStr(
+                            var->reg.gpr,
+                            ARMGeneralRegs::SP,
+                            stack->stackSize - minlntvar->stackpos);
+                    else
+                        instcode->code += gen->cgVstr(
+                            var->reg.fpr,
+                            ARMGeneralRegs::SP,
+                            stack->stackSize - minlntvar->stackpos);
                 }
             }
             if (var->is_global) {}
@@ -516,8 +550,12 @@ void Allocator::updateAllocation(
     // register
     for (auto var : *operands) {
         if (var->is_spilled && inst->id() != InstructionID::Call) {
-            var->reg   = allocateGeneralRegister(true, operands, gen, instcode);
-            int offset = stack->stackSize - var->stackpos;
+            if (var->is_general)
+                var->reg =
+                    allocateGeneralRegister(true, operands, gen, instcode);
+            else
+                var->reg = allocateFloatRegister(true, operands, gen, instcode);
+            int offset      = stack->stackSize - var->stackpos;
             instcode->code += Generator::sprintln(
                 "# load spilled value %%%d", var->val->id());
             if (var->is_general) {
