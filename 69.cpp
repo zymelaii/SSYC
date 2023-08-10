@@ -1,159 +1,179 @@
 #include "70.h"
 
-#include "47.h"
+#include <stack>
+#include <set>
+#include <assert.h>
 
 namespace slime::pass {
 
 using namespace ir;
 
-void CopyPropagationPass::runOnFunction(Function *target) {
-    for (auto block : target->basicBlocks()) {
-        std::map<Value *, StoreInst *> def;
-        std::set<Instruction *>        deleteLater;
-        auto                           it = block->instructions().begin();
-        while (it != block->instructions().end()) {
-            auto inst = *it++;
-            if (inst->id() == InstructionID::Store) {
-                auto  store     = inst->asStore();
-                auto &lastStore = def[store->lhs()];
-                if (lastStore != nullptr) { deleteLater.insert(lastStore); }
-                lastStore = store;
-                continue;
-            }
-            if (inst->id() == InstructionID::Load) {
-                auto load  = inst->asLoad();
-                auto store = def[load->operand()];
-                if (store != nullptr) {
-                    std::vector<Use *> uses(
-                        load->uses().begin(), load->uses().end());
-                    for (auto use : uses) { use->reset(store->rhs()); }
-                    deleteLater.insert(load);
+void ControlFlowSimplificationPass::runOnFunction(ir::Function* target) {
+    std::stack<BasicBlock*> blocks;
+    std::set<BasicBlock*>   visited;
+    std::set<BasicBlock*>   deleteLater;
+
+    //! compute unreachable blocks
+    deleteLater.insert(
+        target->basicBlocks().begin(), target->basicBlocks().end());
+    blocks.push(target->front());
+    while (!blocks.empty()) {
+        auto block = blocks.top();
+        blocks.pop();
+        if (visited.count(block)) { continue; }
+
+        //! mark block as reachable
+        deleteLater.erase(block);
+        visited.insert(block);
+
+        //! fold dead branch
+        if (block->isBranched()) {
+            if (block->branch() == block->branchElse()) {
+                block->reset(block->branch());
+            } else if (block->control()->isImmediate()) {
+                if (auto selectFirst =
+                        static_cast<ConstantInt*>(block->control())->value) {
+                    block->reset(block->branch());
+                } else {
+                    block->reset(block->branchElse());
                 }
-                continue;
             }
         }
-        for (auto inst : deleteLater) {
-            auto ok = inst->removeFromBlock();
-            assert(ok);
-        }
-        //! FIXME: kill variable used by a call
-    }
 
-    return;
-    for (auto block : target->basicBlocks()) {
-        auto it = block->begin();
-        while (it != block->end()) {
-            auto inst = *it++;
-            switch (inst->id()) {
-                case InstructionID::Alloca: {
-                    if (inst->unwrap()->uses().size() == 0) {
-                        inst->removeFromBlock();
-                    } else {
-                        createUseDefRecord(inst->unwrap());
-                    }
-                    continue;
-                } break;
-                case InstructionID::Load: {
-                    auto load = inst->asLoad();
-                    auto ptr  = load->operand();
-                    //! ptr may from a global object
-                    if (ptr->isGlobal()) assert(ptr != nullptr);
-                    auto &[value, store, used] = useDef_[ptr];
-                    if (value == nullptr) {
-                        //! WANRING: load before store
-                        value = load->unwrap();
-                        assert(store == nullptr);
-                        used = false;
-                    } else {
-                        auto &uses = load->unwrap()->uses();
-                        auto  it   = uses.begin();
-                        while (it != uses.end()) {
-                            auto use = *it++;
-                            use->reset(value);
-                        }
-                        used = true;
-                    }
-                } break;
-                case InstructionID::Store: {
-                    updateUseDef(inst->asStore());
-                    continue;
-                } break;
-                case InstructionID::GetElementPtr: {
-                } break;
-                default: {
-                } break;
-            }
+        //! visit succ blocks
+        if (block->isBranched()) {
+            blocks.push(block->branch());
+            blocks.push(block->branchElse());
+        } else if (!block->isTerminal()) {
+            assert(block->isLinear());
+            blocks.push(block->branch());
+        }
+    }
+    visited.clear();
+
+    //! remove unreachable blocks
+    for (auto block : deleteLater) { block->reset(); }
+    for (auto block : deleteLater) {
+        auto ok = block->remove();
+        assert(ok);
+    }
+    deleteLater.clear();
+
+    //! simplify cfg
+    blocks.push(target->front());
+    while (!blocks.empty()) {
+        auto block = blocks.top();
+        blocks.pop();
+
+        //! skip removed or visited block
+        if (!block->parent() || visited.count(block)) { continue; }
+
+        visited.insert(block);
+
+        //! TODO: fold simple indirect jump
+        //! TODO: merge continous jump
+
+        //! visit succ blocks
+        if (block->isBranched()) {
+            blocks.push(block->branch());
+            blocks.push(block->branchElse());
+        } else if (!block->isTerminal()) {
+            assert(block->isLinear());
+            blocks.push(block->branch());
         }
     }
 
-    for (auto &[ptr, e] : useDef_) {
-        auto &[value, store, used] = e;
+    // auto& blocks    = target->basicBlocks();
+    // auto  blockIter = blocks.begin();
+    // while (blockIter != blocks.end()) {
+    //     auto thisBlockIter = blockIter;
+    //     auto block         = *blockIter++;
 
-        if (!used && store != nullptr) {
-            store->removeFromBlock();
-            store->lhs().reset();
-            store->rhs().reset();
-        }
-        if (value && value->isInstruction()) {
-            auto inst = value->asInstruction();
-            if (value->uses().size() == 0) { inst->removeFromBlock(); }
-        }
-        //! FIXME: some bugs enables ptr to be nullptr, unexpectedly
-        if (ptr && ptr->isInstruction()) {
-            auto inst = ptr->asInstruction();
-            if (ptr->uses().size() == 0) { inst->removeFromBlock(); }
-        }
-    }
-    useDef_.clear();
-}
+    //    //! 1. fold constant branch
+    //    if (block->isBranched()) {
+    //        if (block->branch() == block->branchElse()) {
+    //            block->reset(block->branch());
+    //        } else {
+    //            if (!block->control()->isImmediate()) { continue; }
+    //            auto imm = static_cast<ConstantInt*>(block->control())->value;
+    //            if (imm) {
+    //                block->reset(block->branch());
+    //            } else {
+    //                block->reset(block->branchElse());
+    //            }
+    //        }
+    //    }
 
-void CopyPropagationPass::createUseDefRecord(Value *ptr) {
-    assert(useDef_.count(ptr) == 0);
-    assert(ptr != nullptr);
-    auto &e = useDef_[ptr];
-    e.value = nullptr;
-    e.store = nullptr;
-    e.used  = false;
-}
+    //    //! 2. remove unreachable incoming blocks
+    //    std::vector<BasicBlock*> inblocks;
+    //    for (auto inblock : block->inBlocks()) {
+    //        if (inblock->totalInBlocks() == 0) { inblocks.push_back(inblock);
+    //        }
+    //    }
+    //    for (auto inblock : inblocks) {
+    //        if (inblock != target->front()) {
+    //            auto ok = inblock->remove();
+    //            assert(ok);
+    //        }
+    //    }
+    //    auto it   = thisBlockIter;
+    //    blockIter = ++it;
 
-void CopyPropagationPass::updateUseDef(ir::StoreInst *store) {
-    auto ptr = store->lhs();
-    if (useDef_.count(ptr) == 0) { return; }
-    auto &[value, lastStore, used] = useDef_.at(ptr);
-    assert(store != lastStore);
-    removeLastStoreIfUnused(ptr);
-    value     = store->rhs();
-    used      = false;
-    lastStore = store;
-}
+    //    //! 3. remove unreachable block
+    //    bool isEntry = block == target->front();
+    //    if (!isEntry && block->totalInBlocks() == 0) {
+    //        auto ok = block->remove();
+    //        assert(ok);
+    //        continue;
+    //    }
+    //    if (!block->isLinear() || block->isTerminal()) { continue; }
+    //    auto nextBlock = block->branch();
+    //    if (nextBlock == block) {
+    //        if (!isEntry && block->totalInBlocks() == 1) {
+    //            block->reset();
+    //            auto ok = block->remove();
+    //            assert(ok);
+    //        }
+    //        continue;
+    //    }
 
-Value *CopyPropagationPass::lookupValueDef(Value *ptr) {
-    assert(useDef_.count(ptr) == 1);
-    auto &[value, store, used] = useDef_.at(ptr);
-    if (!value) { return nullptr; }
-    used = true;
-    return value;
-}
+    //    //! 4 check simplifiable
+    //    bool simplifiable = true;
+    //    for (auto use : block->uses()) {
+    //        if (use->owner()->asInstruction()->id() != InstructionID::Br) {
+    //            simplifiable = false;
+    //            break;
+    //        }
+    //    }
+    //    if (!simplifiable) { continue; }
 
-StoreInst *CopyPropagationPass::lookupLastStoreInst(Value *ptr) {
-    assert(useDef_.count(ptr) == 1);
-    auto &[value, store, used] = useDef_.at(ptr);
-    return store;
-}
+    //    //! 5. remove useless branch
+    //    if (block->size() == 1) {
+    //        std::vector<Use*> uses(block->uses().begin(),
+    //        block->uses().end()); for (auto use : uses) {
+    //            use->reset(nextBlock);
+    //            use->owner()
+    //                ->asInstruction()
+    //                ->parent()
+    //                ->syncFlowWithInstUnsafe();
+    //        }
+    //        auto ok = block->remove();
+    //        assert(ok);
+    //        continue;
+    //    }
 
-bool CopyPropagationPass::removeLastStoreIfUnused(ir::Value *ptr) {
-    assert(useDef_.count(ptr) == 1);
-    auto &[value, store, used] = useDef_.at(ptr);
-    //! value might from a before-store load inst
-    if (!store) { return false; }
-    if (!value) { return false; }
-    if (!used || value->uses().size() == 0) {
-        if (value->isInstruction()) {
-            value->asInstruction()->removeFromBlock();
-        }
-        store->removeFromBlock();
-    }
-    return used == 0;
+    //    //! 6. combine linear branch
+    //    if (nextBlock->totalInBlocks() == 1) {
+    //        block->reset();
+    //        std::vector<Instruction*> instrs(
+    //            nextBlock->begin(), nextBlock->end());
+    //        for (auto inst : instrs) { inst->insertToTail(block); }
+    //        block->syncFlowWithInstUnsafe();
+    //        auto ok = nextBlock->remove();
+    //        assert(ok);
+    //        blockIter = thisBlockIter;
+    //    }
+    //}
 }
 
 } // namespace slime::pass

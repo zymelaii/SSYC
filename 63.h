@@ -1,118 +1,80 @@
 #pragma once
 
-#include "56.h"
-#include "0.h"
-#include "10.h"
 #include "5.h"
-#include <set>
-#include <map>
-#include <vector>
-#include <limits>
 #include <string_view>
 
 namespace slime {
 
-using namespace ast;
+struct Diagnosis {
+    //! expect: always false
+    static void expectAlwaysFalse(std::string_view message);
 
-class Parser {
-public:
-    Parser()
-        : stringSet_{lexer_.strtable()} {
-        //! the bottom is always alive for global symbols
-        symbolTableStack_.push_back(new SymbolTable);
-    }
+    //! expect: the given expression is true
+    static inline void expectTrue(bool value, std::string_view message);
 
-    template <typename T>
-    void reset(T& stream, std::string_view source) {
-        lexer_.reset(stream, source);
-    }
+    //! assert: always false
+    [[noreturn]] static void assertAlwaysFalse(std::string_view message);
 
-    inline const Token&         token() const;
-    inline const Lexer&         lexer() const;
-    [[nodiscard]] inline Lexer* unbindLexer();
+    //! assert: the given expression is true
+    static inline void assertTrue(bool value, std::string_view message);
 
-    bool        expect(TOKEN token, const char* msg = nullptr);
-    const char* lookup(std::string_view s);
+    //! check: pointer is not null
+    static inline bool checkNotNull(void *ptr);
 
-    void                     addSymbol(NamedDecl* decl);
-    [[nodiscard]] NamedDecl* findSymbol(std::string_view name, DeclID declID);
+    //! check: type 'from' is convertible to type 'to'
+    static bool checkTypeConvertible(ast::Type *from, ast::Type *to);
 
-    [[nodiscard]] TranslationUnit* parse();
+    //! assert: the given conditional expression is convertible to 'bool'
+    static void assertConditionalExpression(ast::Expr *expr);
 
-    void                           parseGlobalDecl();
-    [[nodiscard]] DeclStmt*        parseDeclStmt();
-    [[nodiscard]] VarDecl*         parseVarDef();
-    [[nodiscard]] FunctionDecl*    parseFunction();
-    [[nodiscard]] ParamVarDeclList parseFunctionParams();
-    [[nodiscard]] Stmt*            parseStmt(bool standalone = false);
-    [[nodiscard]] IfStmt*          parseIfStmt();
-    [[nodiscard]] DoStmt*          parseDoStmt();
-    [[nodiscard]] WhileStmt*       parseWhileStmt();
-    [[nodiscard]] ForStmt*         parseForStmt();
-    [[nodiscard]] BreakStmt*       parseBreakStmt();
-    [[nodiscard]] ContinueStmt*    parseContinueStmt();
-    [[nodiscard]] ReturnStmt*      parseReturnStmt();
-    [[nodiscard]] CompoundStmt*    parseBlock();
-    [[nodiscard]] Expr*            parsePrimaryExpr();
-    [[nodiscard]] Expr*            parsePostfixExpr();
-    [[nodiscard]] Expr*            parseUnaryExpr();
-    [[nodiscard]] Expr*            parseBinaryExpr();
-    [[nodiscard]] Expr*            parseCommaExpr();
-    [[nodiscard]] InitListExpr*    parseInitListExpr();
-    [[nodiscard]] ExprList*        parseExprList();
+    //! assert: the return statement matches the function proto
+    static void assertWellFormedReturnStatement(
+        ast::ReturnStmt *stmt, ast::FunctionProtoType *proto);
 
-protected:
-    void                        enterDecl();
-    void                        leaveDecl();
-    [[nodiscard]] FunctionDecl* enterFunction();
-    void                        leaveFunction();
-    void                        enterBlock();
-    void                        leaveBlock();
+    //! assert: break statement appears in a loop statement
+    static void assertWellFormedBreakStatement(ast::BreakStmt *stmt);
 
-private:
-    void addExternalFunction(
-        const char* name, Type* returnType, ParamVarDeclList& params);
+    //! assert: continue statement appears in a loop statement
+    static void assertWellFormedContinueStatement(ast::ContinueStmt *stmt);
 
-    void addPresetSymbols();
+    //! assert: for statement is well-formed
+    static void assertWellFormedForStatement(ast::ForStmt *stmt);
 
-    void dropUnusedExternalSymbols();
+    //! assert: comma is not left alone in a comma expression
+    static void assertWellFormedCommaExpression(ast::Expr *expr);
 
-    [[nodiscard]] Expr* parseBinaryExprWithPriority(int priority);
+    //! assert: the value being assigned is not constant
+    static void assertNoAssignToConstQualifiedValue(
+        ast::Expr *value, ast::BinaryOperator op = ast::BinaryOperator::Assign);
 
-private:
-    using SymbolTable = std::map<std::string_view, NamedDecl*>;
+    //! assert: the given array type is well-formed
+    static void assertWellFormedArrayType(ast::ArrayType *type);
 
-    struct ParseState {
-        FunctionDecl*        cur_func              = nullptr;
-        int                  cur_depth             = 0;
-        DeclID               decl_type             = DeclID::ParamVar;
-        DeclSpecifier*       cur_specifs           = nullptr;
-        ParamVarDeclList*    cur_params            = nullptr;
-        TranslationUnit*     tu                    = nullptr;
-        LoopStmt*            cur_loop              = nullptr;
-        bool                 not_deepen_next_block = false;
-        bool                 ignore_next_funcdecl  = false;
-        std::set<NamedDecl*> symref_set;
-    };
+    //! assert: the subscripted value is valid, e.g. array, pointer...
+    static void assertSubscriptableValue(ast::Expr *value);
 
-    Lexer                                  lexer_;
-    ParseState                             state_;
-    std::shared_ptr<std::set<const char*>> stringSet_;
-    std::vector<SymbolTable*>              symbolTableStack_;
+    //! assert: the initialization is well formed
+    static void assertWellFormedInitialization(
+        ast::Type *type, ast::Expr *value);
+
+    //! assert: the given callable is valid
+    static void assertCallable(ast::Expr *callable);
+
+    //! assert: the function is valid
+    static void assertWellFormedFunctionCall(
+        ast::FunctionProtoType *proto, ast::ExprList *arguments);
 };
 
-inline const Token& Parser::token() const {
-    return lexer().this_token();
+inline void Diagnosis::expectTrue(bool value, std::string_view message) {
+    if (!value) { expectAlwaysFalse(message); }
 }
 
-inline const Lexer& Parser::lexer() const {
-    return lexer_;
+inline void Diagnosis::assertTrue(bool value, std::string_view message) {
+    if (!value) { assertAlwaysFalse(message); }
 }
 
-inline Lexer* Parser::unbindLexer() {
-    auto lexer = new Lexer(std::move(lexer_));
-    new (&lexer_) Lexer;
-    return lexer;
+inline bool Diagnosis::checkNotNull(void *ptr) {
+    return ptr != nullptr;
 }
 
 } // namespace slime

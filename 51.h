@@ -1,245 +1,121 @@
 #pragma once
 
-#include "53.h"
-
-#include "88.h"
-#include "89.h"
+#include "90.h"
 #include <stdint.h>
-#include <stddef.h>
-#include <memory>
+#include <string_view>
+#include <map>
 
 namespace slime::ir {
 
+class Type;
+class SequentialType;
+class ArrayType;
+class PointerType;
+class FunctionType;
+
+class Value;
+class Use;
+template <int N>
+class User;
+
 class BasicBlock;
-class Function;
+class Parameter;
+
+class Constant;
 class ConstantData;
 class ConstantInt;
 class ConstantFloat;
 class ConstantArray;
+class GlobalObject;
+class GlobalVariable;
+class Function;
 
-using BasicBlockList   = utils::ListTrait<BasicBlock*>;
-using ConstantDataList = utils::ListTrait<ConstantData*>;
+class Instruction;
+class AllocaInst;
+class LoadInst;
+class StoreInst;
+class RetInst;
+class BrInst;
+class GetElementPtrInst;
+class AddInst;
+class SubInst;
+class MulInst;
+class UDivInst;
+class SDivInst;
+class URemInst;
+class SRemInst;
+class FNegInst;
+class FAddInst;
+class FSubInst;
+class FMulInst;
+class FDivInst;
+class FRemInst;
+class ShlInst;
+class LShrInst;
+class AShrInst;
+class AndInst;
+class OrInst;
+class XorInst;
+class FPToUIInst;
+class FPToSIInst;
+class UIToFPInst;
+class SIToFPInst;
+class ICmpInst;
+class FCmpInst;
+class PhiInst;
+class CallInst;
 
-class Constant : public User<0> {
+using GlobalObjectList = utils::ListTrait<GlobalObject*>;
+
+class Module : public GlobalObjectList {
 public:
-    Constant(Type* type, uint32_t tag)
-        : User(type, tag) {}
-};
+    Module(const char* name);
+    ~Module();
 
-class ConstantData : public Constant {
-public:
-    ConstantData(Type* type, uint32_t tag)
-        : Constant(type, tag) {}
+    inline std::string_view name() const;
 
-    static inline ConstantInt*   getBoolean(bool value);
-    static inline ConstantInt*   createI8(int8_t data);
-    static inline ConstantInt*   createI32(int32_t data);
-    static inline ConstantFloat* createF32(float data);
+    [[nodiscard]] ConstantInt*    createI8(int8_t value);
+    [[nodiscard]] ConstantInt*    createI32(int32_t value);
+    [[nodiscard]] ConstantFloat*  createF32(float value);
+    [[nodiscard]] GlobalVariable* createString(std::string_view value);
 
-    inline ConstantInt*   asConstantInt() const;
-    inline ConstantFloat* asConstantFloat() const;
-    inline ConstantArray* asConstantArray() const;
+    bool acceptFunction(Function* fn);
+    bool acceptGlobalVariable(GlobalVariable* var);
 
-    inline ConstantInt*   tryIntoConstantInt() const;
-    inline ConstantFloat* tryIntoConstantFloat() const;
-    inline ConstantArray* tryIntoConstantArray() const;
-};
+    Function*       lookupFunction(std::string_view name);
+    GlobalVariable* lookupGlobalVariable(std::string_view name);
 
-class ConstantInt final
-    : public ConstantData
-    , public utils::BuildTrait<ConstantInt> {
-public:
-    ConstantInt(int32_t value, Type* type = Type::getIntegerType())
-        : ConstantData(type, ValueTag::Immediate | 0)
-        , value{value} {}
+    inline GlobalObjectList&       globalObjects();
+    inline const GlobalObjectList& globalObjects() const;
 
-public:
-    int32_t value;
-};
+    [[nodiscard]] CallInst* createMemset(
+        Value* address, uint8_t value, size_t n);
 
-class ConstantFloat final
-    : public ConstantData
-    , public utils::BuildTrait<ConstantFloat> {
-public:
-    ConstantFloat(float value)
-        : ConstantData(Type::getFloatType(), ValueTag::Immediate | 0)
-        , value{value} {}
-
-public:
-    float value;
-};
-
-class ConstantArray final
-    : public ConstantData
-    , public utils::BuildTrait<ConstantArray> {
-public:
-    ConstantArray(ArrayType* type)
-        : ConstantData(type, ValueTag::ReadOnly | 0) {}
-
-    ConstantData*& operator[](size_t index) {
-        if (index >= values_.size()) { values_.resize(index + 1, nullptr); }
-        return values_[index];
-    }
-
-    ConstantData* at(size_t index) {
-        return index < values_.size() ? values_[index] : nullptr;
-    }
-
-    size_t size() const {
-        return values_.size();
-    }
+protected:
+    void initializeBuiltinFunctions();
 
 private:
-    std::vector<ConstantData*> values_;
+    const char* moduleName_;
+
+    std::map<int32_t, ConstantInt*>        i32DataMap_;
+    std::map<int8_t, ConstantInt*>         i8DataMap_;
+    std::map<float, ConstantFloat*>        f32DataMap_;
+    std::map<const char*, GlobalVariable*> strDataMap_;
+
+    std::map<std::string_view, Function*>       functions_;
+    std::map<std::string_view, GlobalVariable*> globalVariables_;
 };
 
-class GlobalObject : public Constant {
-public:
-    GlobalObject(Type* type, uint32_t tag)
-        : Constant(type, tag) {}
-};
-
-class GlobalVariable final
-    : public GlobalObject
-    , public utils::BuildTrait<GlobalVariable> {
-public:
-    GlobalVariable(std::string_view name, Type* type, bool constant = false)
-        : GlobalObject(
-            Type::createPointerType(type),
-            ValueTag::Global | (constant ? ValueTag::ReadOnly | 0 : 0)) {
-        setName(name);
-    }
-
-    void setInitData(ConstantData* data) {
-        assert(data->type()->equals(type()->tryGetElementType()));
-        data_ = data;
-    }
-
-    void setInitData(int32_t data) {
-        setInitData(ConstantData::createI32(data));
-    }
-
-    void setInitData(float data) {
-        setInitData(ConstantData::createF32(data));
-    }
-
-    const ConstantData* data() const {
-        return data_;
-    }
-
-    bool isConst() const {
-        return isConstant();
-    }
-
-private:
-    ConstantData* data_;
-};
-
-//! NOTE: function may contains uses of global variable, but we do not care
-//! about it at the definition stage
-class Function final
-    : public GlobalObject
-    , public BasicBlockList
-    , public utils::BuildTrait<Function> {
-public:
-    Function(std::string_view name, FunctionType* proto)
-        : GlobalObject(proto, ValueTag::Function | 0)
-        , params_(new Parameter[proto->totalParams()]) {
-        setName(name);
-    }
-
-    inline BasicBlockList& basicBlocks() {
-        return *this;
-    }
-
-    inline const BasicBlockList& basicBlocks() const {
-        return *this;
-    }
-
-    inline BasicBlock* front() {
-        assert(size() > 0);
-        return head()->value();
-    }
-
-    inline BasicBlock* back() {
-        assert(size() > 0);
-        return tail()->value();
-    }
-
-    inline FunctionType* proto() const {
-        return const_cast<Function*>(this)->type()->asFunctionType();
-    }
-
-    inline const Parameter* params() const {
-        return &params_.get()[0];
-    }
-
-    inline size_t totalParams() const {
-        return proto()->totalParams();
-    }
-
-    inline const Parameter* paramAt(size_t index) const {
-        return index < proto()->totalParams() ? &params_.get()[index] : nullptr;
-    }
-
-    inline void setParam(std::string_view name, size_t index) {
-        if (index >= totalParams()) { return; }
-        auto& param = params_.get()[index];
-        param.setName(name);
-        param.resetValueTypeUnsafe(proto()->paramTypeAt(index));
-        param.attachTo(this, index);
-    }
-
-private:
-    std::unique_ptr<Parameter> params_;
-};
-
-inline ConstantInt* ConstantData::getBoolean(bool value) {
-    static ConstantInt trueSingleton(true, Type::getBooleanType());
-    static ConstantInt falseSingleton(false, Type::getBooleanType());
-    return value ? &trueSingleton : &falseSingleton;
+inline std::string_view Module::name() const {
+    return moduleName_;
 }
 
-inline ConstantInt* ConstantData::createI8(int8_t data) {
-    return ConstantInt::create(data, IntegerType::get(IntegerKind::i8));
+inline GlobalObjectList& Module::globalObjects() {
+    return *this;
 }
 
-inline ConstantInt* ConstantData::createI32(int32_t data) {
-    return ConstantInt::create(data);
-}
-
-inline ConstantFloat* ConstantData::createF32(float data) {
-    return ConstantFloat::create(data);
-}
-
-inline ConstantInt* ConstantData::asConstantInt() const {
-    assert(isImmediate() && type()->isInteger());
-    return static_cast<ConstantInt*>(const_cast<ConstantData*>(this));
-}
-
-inline ConstantFloat* ConstantData::asConstantFloat() const {
-    assert(isImmediate() && type()->isFloat());
-    return static_cast<ConstantFloat*>(const_cast<ConstantData*>(this));
-}
-
-inline ConstantArray* ConstantData::asConstantArray() const {
-    assert(!isImmediate() && isReadOnly() && type()->isArray());
-    return static_cast<ConstantArray*>(const_cast<ConstantData*>(this));
-}
-
-inline ConstantInt* ConstantData::tryIntoConstantInt() const {
-    bool convertible = isImmediate() && type()->isInteger();
-    return convertible ? asConstantInt() : nullptr;
-}
-
-inline ConstantFloat* ConstantData::tryIntoConstantFloat() const {
-    bool convertible = isImmediate() && type()->isFloat();
-    return convertible ? asConstantFloat() : nullptr;
-}
-
-inline ConstantArray* ConstantData::tryIntoConstantArray() const {
-    bool convertible = !isImmediate() && isReadOnly() && type()->isArray();
-    return convertible ? asConstantArray() : nullptr;
+inline const GlobalObjectList& Module::globalObjects() const {
+    return *this;
 }
 
 } // namespace slime::ir

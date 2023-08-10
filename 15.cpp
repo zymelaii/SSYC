@@ -1,585 +1,571 @@
 #include "16.h"
-#include "14.h"
 
-#include "21.h"
-#include "46.h"
-#include "53.h"
-#include "47.h"
-#include <algorithm>
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <set>
-#include <vector>
+#include <iostream>
+#include <sstream>
 
 namespace slime::backend {
 
-bool operator!=(const ARMRegister &a, const ARMGeneralRegs &b) {
-    assert(a.holder->is_general);
-    return a.gpr != b;
-}
+std::string InstrOp::InstrState::dump() const {
+    constexpr auto opcodeWidth     = 5;
+    constexpr auto longOpcodeWidth = 14;
+    constexpr auto indent          = 4;
+    constexpr auto space           = 2;
 
-bool operator!=(const ARMRegister &a, const ARMFloatRegs &b) {
-    assert(!a.holder->is_general);
-    return a.fpr != b;
-}
+    constexpr auto N     = 64;
+    auto           instr = InstrOp::toString(kind);
+    char           buffer[N]{}, *p = buffer;
 
-bool operator==(const ARMRegister &a, const ARMGeneralRegs &b) {
-    assert(a.holder->is_general);
-    return a.gpr == b;
-}
+    int written = sprintf(
+        p,
+        "%*s%-s%*s",
+        indent,
+        "",
+        instr.size() <= opcodeWidth ? opcodeWidth : longOpcodeWidth,
+        instr.data(),
+        space,
+        "");
+    assert(written < N);
 
-bool operator==(const ARMRegister &a, const ARMFloatRegs &b) {
-    assert(!a.holder->is_general);
-    return a.fpr == b;
-}
+    p        += written;
+    int size = N - written;
 
-bool Allocator::isVariable(Value *val) {
-    return !(val->isConstant() || val->isImmediate() || val->isLabel());
-}
-
-void Allocator::initAllocator() {
-    cur_inst   = 0;
-    total_inst = 0;
-    blockVarTable->clear();
-    stack->clear();
-    usedGeneralRegs.clear();
-    usedFloatRegs.clear();
-    strImmFlag     = true;
-    maxIntegerArgs = 0;
-    maxFloatArgs   = 0;
-    freeAllRegister();
-    // init liveVars
-    auto it  = liveVars->node_begin();
-    auto end = liveVars->node_end();
-    while (it != end) {
-        auto tmp = *it++;
-        tmp.removeFromList();
-    }
-}
-
-Variable *Allocator::createVariable(Value *val) {
-    auto it = funcValVarTable->find(val);
-    if (it != funcValVarTable->end())
-        return it->second;
-    else {
-        auto var = Variable::create(val);
-        funcValVarTable->insert({val, var});
-        return var;
-    }
-}
-
-Variable *monitor = nullptr;
-
-void Allocator::initVarInterval(Function *func) {
-    ValVarTable funcparams;
-
-    const auto           maxGenRegs  = 4;
-    const auto           maxFpRegs   = 16;
-    int                  usedGenRegs = 0;
-    int                  usedFpRegs  = 0;
-    std::vector<Value *> onStackParams;
-    for (int i = 0; i < func->totalParams(); ++i) {
-        auto param        = const_cast<Parameter *>(func->paramAt(i));
-        auto var          = Variable::create(param);
-        var->is_funcparam = true;
-
-        if (var->is_general && usedGenRegs < maxGenRegs) {
-            var->reg = static_cast<ARMGeneralRegs>(usedGenRegs);
-            regAllocatedMap[usedGenRegs] = true;
-            ++usedGenRegs;
-        } else if (!var->is_general && usedFpRegs < maxFpRegs) {
-            var->reg = static_cast<ARMFloatRegs>(usedFpRegs);
-            floatRegAllocatedMap[usedFpRegs] = true;
-            ++usedFpRegs;
-        } else {
-            var->is_alloca = true;
-            onStackParams.push_back(param);
-        }
-        if (!var->is_alloca && !monitor) { monitor = var; }
-        funcparams.insert({param, var});
-    }
-    for (int i = 0; i < onStackParams.size(); ++i) {
-        auto param    = onStackParams[i];
-        auto var      = funcparams.at(param);
-        int  offset   = 4 * (onStackParams.size() - (i + 1));
-        var->stackpos = offset;
-    }
-
-    for (auto block : func->basicBlocks()) {
-        auto valVarTable = new ValVarTable;
-        blockVarTable->insert({block, valVarTable});
-        total_inst += block->instructions().size();
-        for (auto inst : block->instructions()) {
-            if (inst->id() == InstructionID::Call
-                || inst->id() == InstructionID::SDiv
-                || inst->id() == InstructionID::SRem) {
-                has_funccall = true;
-                if (inst->id() == InstructionID::Call) {
-                    size_t intArgNum = 0, fltArgNum = 0;
-                    auto   callee = inst->asCall()->callee()->asFunction();
-                    for (int i = 0; i < callee->totalParams(); i++) {
-                        auto paramtype = callee->paramAt(i)->type();
-                        if (paramtype->isFloat()) {
-                            ++fltArgNum;
-                        } else {
-                            ++intArgNum;
-                        }
-
-                        maxIntegerArgs = std::max(maxIntegerArgs, intArgNum);
-                        maxFloatArgs   = std::max(maxFloatArgs, fltArgNum);
-                    }
+    switch (type) {
+        case InstrType::Reg: {
+            snprintf(p, size, "%s", InstrOp::toString(regs[0]).data());
+        } break;
+        case InstrType::Reg2: {
+            written = snprintf(
+                p,
+                size,
+                "%s, %s",
+                InstrOp::toString(regs[0]).data(),
+                InstrOp::toString(regs[1]).data());
+        } break;
+        case InstrType::Reg3: {
+            written = snprintf(
+                p,
+                size,
+                "%s, %s, %s",
+                InstrOp::toString(regs[0]).data(),
+                InstrOp::toString(regs[1]).data(),
+                InstrOp::toString(regs[2]).data());
+        } break;
+        case InstrType::RegImm: {
+            assert(!isFpImm);
+            written = snprintf(
+                p,
+                size,
+                "%s, #%d",
+                InstrOp::toString(regs[0]).data(),
+                std::get<int32_t>(extra));
+        } break;
+        case InstrType::RegLabel: {
+            written = snprintf(
+                p,
+                size,
+                "%s, %s",
+                InstrOp::toString(regs[0]).data(),
+                std::get<std::string_view>(extra).data());
+        } break;
+        case InstrType::RegImmExtend: {
+            written = snprintf(
+                p,
+                size,
+                "%s, =%d",
+                InstrOp::toString(regs[0]).data(),
+                std::get<int32_t>(extra));
+        } break;
+        case InstrType::RegAddr: {
+            written = snprintf(
+                p,
+                size,
+                "%s, [%s]",
+                InstrOp::toString(regs[0]).data(),
+                InstrOp::toString(regs[1]).data());
+        } break;
+        case InstrType::RegAddrImmOffset: {
+            written = snprintf(
+                p,
+                size,
+                "%s, [%s, #%d]",
+                InstrOp::toString(regs[0]).data(),
+                InstrOp::toString(regs[1]).data(),
+                std::get<int32_t>(extra));
+        } break;
+        case InstrType::RegAddrRegOffset: {
+            written = snprintf(
+                p,
+                size,
+                "%s, [%s, %s]",
+                InstrOp::toString(regs[0]).data(),
+                InstrOp::toString(regs[1]).data(),
+                InstrOp::toString(regs[2]).data());
+        } break;
+        case InstrType::RegRegImm: {
+            written = snprintf(
+                p,
+                size,
+                "%s, %s, #%d",
+                InstrOp::toString(regs[0]).data(),
+                InstrOp::toString(regs[1]).data(),
+                std::get<int32_t>(extra));
+        } break;
+        case InstrType::RegRange: {
+            const char *origin = p;
+            *p++               = '{';
+            auto &ranges       = std::get<RegRanges>(extra);
+            for (int i = 0; i < ranges.size(); ++i) {
+                auto [first, last] = ranges[i];
+                if (first == last) {
+                    p += sprintf(p, "%s", InstrOp::toString(first).data());
                 } else {
-                    maxIntegerArgs = std::max<size_t>(maxIntegerArgs, 4);
+                    p += sprintf(
+                        p,
+                        "%s-%s",
+                        InstrOp::toString(first).data(),
+                        InstrOp::toString(last).data());
                 }
-            } else if (!strImmFlag && inst->id() == InstructionID::Store) {
-                if (inst->asStore()->useAt(0)->isImmediate()) {
-                    strImmFlag = true;
-                }
-            }
-            for (int i = 0; i < inst->totalOperands(); i++) {
-                if (inst->useAt(i) && isVariable(inst->useAt(i))) {
-                    Value *val = inst->useAt(i).value();
-                    auto   it  = funcparams.find(val);
-                    if (it != funcparams.end()) {
-                        it->second->livIntvl->start = 1;
-                        funcValVarTable->insert({val, it->second});
-                        liveVars->insertToTail(it->second);
-                        funcparams.erase(it);
-                    }
-                    auto var = createVariable(val);
-                    valVarTable->insert({val, var});
+                if (i + 1 != ranges.size()) {
+                    *p++ = ',';
+                    *p++ = ' ';
                 }
             }
-
-            if (!inst->unwrap()->type()->isVoid()) {
-                auto var = createVariable(inst->unwrap());
-                valVarTable->insert({inst->unwrap(), var});
-            }
-        }
+            *p++    = '}';
+            *p++    = '\0';
+            written = p - origin;
+        } break;
+        case InstrType::Label: {
+            written = snprintf(
+                p, size, "%s", std::get<std::string_view>(extra).data());
+        } break;
+        default: {
+            unreachable();
+        } break;
     }
 
-    // use R11 as frame point of stack when the num of function arguments is
-    // more than 4
-    if (maxIntegerArgs > 4) {
-        regAllocatedMap[11] = true;
-        usedGeneralRegs.insert(ARMGeneralRegs::R11);
-    }
-
-    // release register occupied by unused params
-    for (auto &[param, var] : funcparams) {
-        if (var->is_general && var->reg != ARMGeneralRegs::None) {
-            Allocator::releaseRegister(var);
-        } else if (!var->is_general && var->reg != ARMFloatRegs::None) {
-            Allocator::releaseRegister(var);
-        }
-    }
+    assert(written < N - size);
+    return {buffer};
 }
 
-void Allocator::checkLiveInterval(std::string *instcode) {
-    auto it  = liveVars->node_begin();
-    auto end = liveVars->node_end();
-    while (it != end) {
-        auto var      = it->value();
-        auto interval = var->livIntvl;
-        if (interval->end <= cur_inst) {
-            auto tmp = it++;
-            if ((var->is_general && var->reg != ARMGeneralRegs::None)
-                || (!var->is_general && var->reg != ARMFloatRegs::None))
-                releaseRegister(var);
-            else if (
-                var->is_spilled || (var->is_alloca && !var->is_funcparam)) {
-                uint32_t releaseStackSpaces = stack->releaseOnStackVar(var);
-                if (var->is_spilled) {
-                    *instcode += Generator::sprintln(
-                        "# release spilled value %%%d", var->val->id());
-                    if (releaseStackSpaces != 0) {
-                        *instcode += Generator::instrln(
-                            "add",
-                            "%s, %s, #%d",
-                            Generator::reg2str(ARMGeneralRegs::SP),
-                            Generator::reg2str(ARMGeneralRegs::SP),
-                            releaseStackSpaces);
-                    }
-                }
-                var->is_spilled = false;
-            }
-            tmp->removeFromList();
-        } else
-            it++;
-    }
+void InstrOp::move(ARMGeneralRegs rd, ARMGeneralRegs rs) {
+    instrs_.push_back(createReg2(InstrKind::MOV, rd, rs));
 }
 
-void Allocator::computeInterval(Function *func) {
-    initVarInterval(func);
-    auto bit  = func->basicBlocks().rbegin();
-    auto bend = func->basicBlocks().rend();
-    cur_inst  = total_inst;
-    while (bit != bend) {
-        auto it          = (*bit)->instructions().rbegin();
-        auto end         = (*bit)->instructions().rend();
-        auto valVarTable = blockVarTable->find(*(bit))->second;
-        while (it != end) {
-            Instruction *inst = *it;
-            //! update live-in
-            for (int i = 0; i < inst->totalOperands(); i++) {
-                Value *val = inst->useAt(i);
-                if (inst->useAt(i) && isVariable(inst->useAt(i))) {
-                    auto var      = valVarTable->find(inst->useAt(i))->second;
-                    auto interval = var->livIntvl;
-                    interval->end = std::max(interval->end, cur_inst);
-                    if (inst->useAt(i)->isGlobal()) {
-                        interval->start = std::min(interval->start, cur_inst);
-                    }
-                }
-            }
-            //! update live-out
-            if (!inst->unwrap()->type()->isVoid()) {
-                auto interval =
-                    valVarTable->find(inst->unwrap())->second->livIntvl;
-                assert(
-                    interval->start == UINT64_MAX && "SSA only assign ONCE!");
-                interval->start = cur_inst;
-                // assume the retval of function may not be used
-                if (interval->end == 0) { interval->end = cur_inst; }
-            }
-            --cur_inst;
-            ++it;
-        }
-        ++bit;
-    }
-
-    // for (auto e : func->basicBlocks()) {
-    //     auto e2 = blockVarTable->find(e)->second;
-    //     for (auto e3 : *e2) {
-    //         printf(
-    //             "%%%d: begin:%lu end:%lu\n",
-    //             e3.first->id(),
-    //             e3.second->livIntvl->start,
-    //             e3.second->livIntvl->end);
-    //     }
-    // }
-    assert(cur_inst == 0);
+void InstrOp::move(ARMGeneralRegs rd, int32_t imm) {
+    instrs_.push_back(createRegImm(InstrKind::MOV, rd, imm));
 }
 
-Variable *Allocator::getVarOfAllocatedReg(ARMGeneralRegs reg) {
-    assert(regAllocatedMap[static_cast<int>(reg)] == true);
-    for (auto e : *liveVars) {
-        if (e->is_general && e->reg.gpr == reg) { return e; }
+void InstrOp::move(ARMFloatRegs rd, ARMFloatRegs rs) {
+    instrs_.push_back(createReg2(InstrKind::VMOV, rd, rs));
+}
+
+void InstrOp::move(ARMFloatRegs rd, float imm) {
+    instrs_.push_back(createRegImm(InstrKind::VMOV, rd, imm));
+}
+
+void InstrOp::move(ARMFloatRegs rd, ARMGeneralRegs rs) {
+    instrs_.push_back(createReg2(InstrKind::VMOV, rd, rs));
+}
+
+void InstrOp::move(ARMGeneralRegs rd, ARMFloatRegs rs) {
+    instrs_.push_back(createReg2(InstrKind::VMOV, rd, rs));
+}
+
+void InstrOp::moveIf(ARMGeneralRegs rd, ARMGeneralRegs rs, Predicate pred) {
+    InstrKind kind{};
+
+    switch (pred) {
+        case Predicate::TRUE: {
+            kind = InstrKind::MOV;
+        } break;
+        case Predicate::EQ: {
+            kind = InstrKind::MOVEQ;
+        } break;
+        case Predicate::NE: {
+            kind = InstrKind::MOVNE;
+        } break;
+        case Predicate::SLE: {
+            kind = InstrKind::MOVLE;
+        } break;
+        case Predicate::SLT: {
+            kind = InstrKind::MOVLT;
+        } break;
+        case Predicate::SGE: {
+            kind = InstrKind::MOVGE;
+        } break;
+        case Predicate::SGT: {
+            kind = InstrKind::MOVGT;
+        } break;
+        default: {
+            unreachable();
+        } break;
     }
-    assert(false && "it must be an error here.");
+
+    instrs_.push_back(createReg2(kind, rd, rs));
+}
+
+void InstrOp::moveIf(ARMGeneralRegs rd, int32_t imm, Predicate pred) {
+    InstrKind kind{};
+
+    switch (pred) {
+        case Predicate::TRUE: {
+            kind = InstrKind::MOV;
+        } break;
+        case Predicate::EQ: {
+            kind = InstrKind::MOVEQ;
+        } break;
+        case Predicate::NE: {
+            kind = InstrKind::MOVNE;
+        } break;
+        case Predicate::SLE: {
+            kind = InstrKind::MOVLE;
+        } break;
+        case Predicate::SLT: {
+            kind = InstrKind::MOVLT;
+        } break;
+        case Predicate::SGE: {
+            kind = InstrKind::MOVGE;
+        } break;
+        case Predicate::SGT: {
+            kind = InstrKind::MOVGT;
+        } break;
+        default: {
+            unreachable();
+        } break;
+    }
+
+    instrs_.push_back(createRegImm(kind, rd, imm));
+}
+
+void InstrOp::load(ARMGeneralRegs rd, ARMGeneralRegs base, int32_t offset) {
+    instrs_.push_back(createRegAddrImmOffset(InstrKind::LDR, rd, base, offset));
+}
+
+void InstrOp::load(
+    ARMGeneralRegs rd, ARMGeneralRegs base, ARMGeneralRegs offset) {
+    instrs_.push_back(createRegAddrRegOffset(InstrKind::LDR, rd, base, offset));
+}
+
+void InstrOp::load(ARMGeneralRegs rd, Variable *var) {
+    const auto &globvars = parent_->generator_.usedGlobalVars;
+    assert(globvars->count(var));
+    instrs_.push_back(createRegLabel(InstrKind::LDR, rd, globvars->at(var)));
+}
+
+void InstrOp::load(ARMFloatRegs rd, ARMGeneralRegs base, int32_t offset) {
+    instrs_.push_back(
+        createRegAddrImmOffset(InstrKind::VLDR, rd, base, offset));
+}
+
+void InstrOp::load(
+    ARMFloatRegs rd, ARMGeneralRegs base, ARMGeneralRegs offset) {
+    instrs_.push_back(
+        createRegAddrRegOffset(InstrKind::VLDR, rd, base, offset));
+}
+
+void InstrOp::load(ARMFloatRegs rd, Variable *var) {
+    const auto &globvars = parent_->generator_.usedGlobalVars;
+    assert(globvars->count(var));
+    instrs_.push_back(createRegLabel(InstrKind::VLDR, rd, globvars->at(var)));
+}
+
+void InstrOp::store(ARMGeneralRegs rs, ARMGeneralRegs base, int32_t offset) {
+    instrs_.push_back(createRegAddrImmOffset(InstrKind::STR, rs, base, offset));
+}
+
+void InstrOp::store(
+    ARMGeneralRegs rs, ARMGeneralRegs base, ARMGeneralRegs offset) {
+    instrs_.push_back(createRegAddrRegOffset(InstrKind::STR, rs, base, offset));
+}
+
+void InstrOp::store(ARMFloatRegs rs, ARMGeneralRegs base, int32_t offset) {
+    instrs_.push_back(
+        createRegAddrImmOffset(InstrKind::VSTR, rs, base, offset));
+}
+
+void InstrOp::store(
+    ARMFloatRegs rs, ARMGeneralRegs base, ARMGeneralRegs offset) {
+    instrs_.push_back(
+        createRegAddrRegOffset(InstrKind::VSTR, rs, base, offset));
+}
+
+void InstrOp::neg(ARMGeneralRegs rd, ARMGeneralRegs rs) {
+    sub(rd, 0, rs);
+}
+
+void InstrOp::neg(ARMFloatRegs rd, ARMFloatRegs rs) {
+    instrs_.push_back(createReg2(InstrKind::VNEG_F32, rd, rs));
+}
+
+void InstrOp::add(ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::ADD, rd, lhs, rhs));
+}
+
+void InstrOp::add(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::ADD, rd, lhs, rhs));
+}
+
+void InstrOp::add(ARMFloatRegs rd, ARMFloatRegs lhs, ARMFloatRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::VADD_F32, rd, lhs, rhs));
+}
+
+void InstrOp::sub(ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::SUB, rd, lhs, rhs));
+}
+
+void InstrOp::sub(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::SUB, rd, lhs, rhs));
+}
+
+void InstrOp::sub(ARMGeneralRegs rd, int32_t lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::RSB, rd, rhs, lhs));
+}
+
+void InstrOp::sub(ARMFloatRegs rd, ARMFloatRegs lhs, ARMFloatRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::VSUB_F32, rd, lhs, rhs));
+}
+
+void InstrOp::mul(ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::MUL, rd, lhs, rhs));
+}
+
+void InstrOp::mul(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::MUL, rd, lhs, rhs));
+}
+
+void InstrOp::mul(ARMFloatRegs rd, ARMFloatRegs lhs, ARMFloatRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::VMUL_F32, rd, lhs, rhs));
+}
+
+void InstrOp::div(ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
     unreachable();
 }
 
-Variable *Allocator::getVarOfAllocatedReg(ARMFloatRegs reg) {
-    assert(floatRegAllocatedMap[static_cast<int>(reg)] == true);
-    for (auto e : *liveVars) {
-        if (!e->is_general && e->reg.fpr == reg) { return e; }
-    }
-    assert(false && "it must be an error here.");
+void InstrOp::div(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
     unreachable();
 }
 
-Variable *Allocator::getMinIntervalRegVar(
-    std::set<Variable *> whitelist, bool is_general) {
-    uint32_t  min    = UINT32_MAX;
-    Variable *retVar = nullptr;
-
-    for (auto e : *liveVars) {
-        if (whitelist.find(e) != whitelist.end()) continue;
-        if (e->is_general && e->is_general == is_general) {
-            if (e->livIntvl->end < min && e->reg != ARMGeneralRegs::None) {
-                min    = e->livIntvl->end;
-                retVar = e;
-            }
-        } else if (!e->is_general && e->is_general == is_general) {
-            if (e->livIntvl->end < min && e->reg != ARMFloatRegs::None) {
-                min    = e->livIntvl->end;
-                retVar = e;
-            }
-        }
-    }
-    return retVar;
+void InstrOp::div(ARMFloatRegs rd, ARMFloatRegs lhs, ARMFloatRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::VDIV_F32, rd, lhs, rhs));
 }
 
-std::set<Variable *> *Allocator::getInstOperands(Instruction *inst) {
-    static std::set<Variable *> operands;
-    if (!operands.empty()) operands.clear();
-    auto valVarTable = blockVarTable->find(inst->parent())->second;
-    for (int i = 0; i < inst->totalOperands(); i++) {
-        if (!inst->useAt(i)) continue;
-        if (isVariable(inst->useAt(i))) {
-            Variable *var = valVarTable->find(inst->useAt(i))->second;
-            operands.insert(var);
-        }
-    }
-    if (!inst->unwrap()->type()->isVoid() && isVariable(inst->unwrap())) {
-        Variable *var = valVarTable->find(inst->unwrap())->second;
-        operands.insert(var);
-    }
-    return &operands;
+void InstrOp::mod(ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    unreachable();
 }
 
-ARMGeneralRegs Allocator::allocateGeneralRegister(
-    bool                  force,
-    std::set<Variable *> *whitelist,
-    Generator            *gen,
-    InstCode             *instcode) {
-    ARMGeneralRegs retreg;
-    if (!has_funccall) {
-        for (int i = 0; i < 12; i++) {
-            if (!regAllocatedMap[i]) {
-                regAllocatedMap[i] = true;
-                retreg             = static_cast<ARMGeneralRegs>(i);
-                if (usedGeneralRegs.find(retreg) == usedGeneralRegs.end())
-                    usedGeneralRegs.insert(retreg);
-                return retreg;
-            }
-        }
-    } else {
-        int regAllocBase = maxIntegerArgs > 4 ? 4 : maxIntegerArgs;
-        for (int i = regAllocBase; i < 12; i++) {
-            if (!regAllocatedMap[i]) {
-                retreg             = static_cast<ARMGeneralRegs>(i);
-                regAllocatedMap[i] = true;
-                if (usedGeneralRegs.find(retreg) == usedGeneralRegs.end())
-                    usedGeneralRegs.insert(retreg);
-                return retreg;
-            }
-        }
-        // if (instcode && instcode->inst
-        //     && instcode->inst->id() != InstructionID::Call) {
-        //     for (int i = regAllocBase - 1; i >= 0; i--) {
-        //         if (!regAllocatedMap[i]) {
-        //             retreg             = static_cast<ARMGeneralRegs>(i);
-        //             regAllocatedMap[i] = true;
-        //             if (usedGeneralRegs.find(retreg) ==
-        //             usedGeneralRegs.end())
-        //                 usedGeneralRegs.insert(retreg);
-        //             return retreg;
-        //         }
-        //     }
-        // }
-    }
-    if (!force) return ARMGeneralRegs::None;
-    assert(instcode && "instcode couldn't be null in this case");
-    if (!whitelist) {
-        std::set<Variable *> emptylistHolder;
-        whitelist = &emptylistHolder;
-    }
-    Variable *minlntvar = getMinIntervalRegVar(*whitelist, true);
-    assert(minlntvar);
-    assert(!minlntvar->is_spilled);
-    minlntvar->is_spilled = true;
-    auto ret              = minlntvar->reg.gpr;
-    minlntvar->reg        = ARMGeneralRegs::None;
-    instcode->code +=
-        Generator::sprintln("# spill value %%%d", minlntvar->val->id());
-    if (stack->spillVar(minlntvar, 4))
-        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-    instcode->code += gen->cgStr(
-        ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
-    return ret;
+void InstrOp::mod(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    unreachable();
 }
 
-ARMFloatRegs Allocator::allocateFloatRegister(
-    bool                  force,
-    std::set<Variable *> *whitelist,
-    Generator            *gen,
-    InstCode             *instcode) {
-    ARMFloatRegs retreg;
-    if (!has_funccall) {
-        for (int i = 0; i < 32; i++) {
-            if (!floatRegAllocatedMap[i]) {
-                floatRegAllocatedMap[i] = true;
-                retreg                  = static_cast<ARMFloatRegs>(i);
-                usedFloatRegs.insert(retreg);
-                return retreg;
-            }
-        }
-    } else {
-        int regAllocaBase = maxFloatArgs > 8 ? 8 : maxFloatArgs;
-        for (int i = regAllocaBase; i < 32; i++) {
-            if (!floatRegAllocatedMap[i]) {
-                floatRegAllocatedMap[i] = true;
-                retreg                  = static_cast<ARMFloatRegs>(i);
-                usedFloatRegs.insert(retreg);
-                return retreg;
-            }
-        }
-    }
-
-    if (!force) return ARMFloatRegs::None;
-    if (!whitelist) {
-        std::set<Variable *> emptylistHolder;
-        whitelist = &emptylistHolder;
-    }
-    Variable *minlntvar = getMinIntervalRegVar(*whitelist, false);
-    assert(minlntvar);
-    assert(!minlntvar->is_spilled);
-    minlntvar->is_spilled = true;
-    auto ret              = minlntvar->reg.fpr;
-    minlntvar->reg        = ARMGeneralRegs::None;
-    instcode->code +=
-        Generator::sprintln("# spill value %%%d", minlntvar->val->id());
-    if (stack->spillVar(minlntvar, 4))
-        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-    instcode->code += gen->cgVstr(
-        ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
-    return ret;
+void InstrOp::divmod(
+    ARMGeneralRegs rd1,
+    ARMGeneralRegs rd2,
+    ARMGeneralRegs lhs,
+    ARMGeneralRegs rhs) {
+    unreachable();
 }
 
-void Allocator::releaseRegister(Variable *var) {
-    if (var->is_general) {
-        releaseRegister(var->reg.gpr);
-        var->reg = ARMGeneralRegs::None;
-    } else {
-        releaseRegister(var->reg.fpr);
-        var->reg = ARMFloatRegs::None;
+void InstrOp::divmod(
+    ARMGeneralRegs rd1, ARMGeneralRegs rd2, ARMGeneralRegs lhs, int32_t rhs) {
+    unreachable();
+}
+
+void InstrOp::bitwiseAnd(
+    ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::AND, rd, lhs, rhs));
+}
+
+void InstrOp::bitwiseAnd(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::AND, rd, lhs, rhs));
+}
+
+void InstrOp::logicalShl(
+    ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::LSL, rd, lhs, rhs));
+}
+
+void InstrOp::logicalShl(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::LSL, rd, lhs, rhs));
+}
+
+void InstrOp::arithShr(
+    ARMGeneralRegs rd, ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg3(InstrKind::ASR, rd, lhs, rhs));
+}
+
+void InstrOp::arithShr(ARMGeneralRegs rd, ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegRegImm(InstrKind::ASR, rd, lhs, rhs));
+}
+
+void InstrOp::compare(ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg2(InstrKind::CMP, lhs, rhs));
+}
+
+void InstrOp::compare(ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegImm(InstrKind::CMP, lhs, rhs));
+}
+
+void InstrOp::compare(ARMFloatRegs lhs, ARMFloatRegs rhs) {
+    unreachable();
+}
+
+void InstrOp::test(ARMGeneralRegs lhs, ARMGeneralRegs rhs) {
+    instrs_.push_back(createReg2(InstrKind::TST, lhs, rhs));
+}
+
+void InstrOp::test(ARMGeneralRegs lhs, int32_t rhs) {
+    instrs_.push_back(createRegImm(InstrKind::TST, lhs, rhs));
+}
+
+void InstrOp::call(Function *dest) {
+    call(dest->name().data());
+}
+
+void InstrOp::call(const char *dest) {
+    instrs_.push_back(createLabel(InstrKind::BL, dest));
+}
+
+void InstrOp::call(ARMGeneralRegs dest) {
+    instrs_.push_back(createReg(InstrKind::BL, dest));
+}
+
+void InstrOp::ret() {
+    ret(ARMGeneralRegs::LR);
+}
+
+void InstrOp::ret(ARMGeneralRegs dest) {
+    instrs_.push_back(createReg(InstrKind::BX, dest));
+}
+
+void InstrOp::jmp(const char *dest) {
+    instrs_.push_back(createLabel(InstrKind::B, dest));
+}
+
+void InstrOp::jmp(ARMGeneralRegs dest) {
+    instrs_.push_back(createReg(InstrKind::B, dest));
+}
+
+void InstrOp::jmp(const char *dest, Predicate pred) {
+    InstrKind kind{};
+
+    switch (pred) {
+        case Predicate::TRUE: {
+            kind = InstrKind::B;
+        } break;
+        case Predicate::EQ: {
+            kind = InstrKind::BEQ;
+        } break;
+        case Predicate::OEQ:
+        case Predicate::NE: {
+            kind = InstrKind::BNE;
+        } break;
+        case Predicate::SLT: {
+            kind = InstrKind::BLT;
+        } break;
+        case Predicate::OGE:
+        case Predicate::SGT: {
+            kind = InstrKind::BGT;
+        } break;
+        case Predicate::OGT:
+        case Predicate::SLE: {
+            kind = InstrKind::BLE;
+        } break;
+        case Predicate::SGE: {
+            kind = InstrKind::BGE;
+        } break;
+        case Predicate::OLT: {
+            kind = InstrKind::BPL;
+        } break;
+        case Predicate::OLE: {
+            kind = InstrKind::BHI;
+        } break;
+        case Predicate::ONE: {
+            kind = InstrKind::BVS;
+        } break;
+        default: {
+            unreachable();
+        } break;
     }
+
+    instrs_.push_back(createLabel(kind, dest));
 }
 
-void Allocator::releaseRegister(ARMGeneralRegs reg) {
-    assert(regAllocatedMap[static_cast<int>(reg)] && "It must be a bug here!");
-    assert(static_cast<int>(reg) < 12);
-    regAllocatedMap[static_cast<int>(reg)] = false;
-}
+void InstrOp::jmp(ARMGeneralRegs dest, Predicate pred) {
+    InstrKind kind{};
 
-void Allocator::releaseRegister(ARMFloatRegs reg) {
-    assert(
-        floatRegAllocatedMap[static_cast<int>(reg)]
-        && "It must be a bug here!");
-    assert(static_cast<int>(reg) < 32);
-    floatRegAllocatedMap[static_cast<int>(reg)] = false;
-}
-
-void Allocator::freeAllRegister() {
-    memset(regAllocatedMap, false, 12);
-    memset(floatRegAllocatedMap, false, 30);
-}
-
-void Allocator::updateAllocation(
-    Generator *gen, InstCode *instcode, BasicBlock *block, Instruction *inst) {
-    std::set<Variable *> *operands    = getInstOperands(inst);
-    auto                  valVarTable = blockVarTable->find(block)->second;
-
-    for (auto e : *valVarTable) {
-        auto   var   = e.second;
-        size_t start = var->livIntvl->start;
-        size_t end   = var->livIntvl->end;
-
-        // if (inst->id() == InstructionID::GetElementPtr
-        //     && inst->unwrap() == var->val) {
-        //     auto arrbase =
-        //     valVarTable->find(inst->useAt(0).value())->second; if
-        //     (arrbase->is_global) {
-        //         assert(0 && "global array unsupported yet");
-        //     } else if(arrbase->is_alloca){
-        //         size_t arrsize = 1;
-        //         size_t offset = 0;
-        //         auto   e       =
-        //         inst->unwrap()->type()->tryGetElementType(); while (e !=
-        //         nullptr && e->isArray()) {
-        //             arrsize *= e->asArrayType()->size();
-        //             e     = e->tryGetElementType();
-        //         }
-
-        //         var->is_alloca = true;
-        //         var->stackpos  = arrbase->stackpos;
-        //     }
-        //     continue;
-        // }
-
-        if (cur_inst == start) {
-            liveVars->insertToTail(var);
-            if ((inst->id() == InstructionID::ICmp
-                 || inst->id() == InstructionID::FCmp)
-                && inst->unwrap() == var->val) {
-                Instruction *nextinst = gen->getNextInst(inst);
-                if (nextinst->id() == InstructionID::Br && end == cur_inst + 1)
-                    continue;
-            }
-
-            if (var->reg.gpr != ARMGeneralRegs::None) continue;
-
-            bool success = false;
-            if (var->is_general) {
-                var->reg = allocateGeneralRegister();
-                success  = var->reg != ARMGeneralRegs::None;
-            } else {
-                var->reg = allocateFloatRegister();
-                success  = var->reg != ARMFloatRegs::None;
-            }
-
-            if (!success && inst->id() != InstructionID::Call) {
-                //! NOTE: spill
-                Variable *minlntvar =
-                    getMinIntervalRegVar(*operands, var->is_general);
-                assert(!minlntvar->is_spilled);
-
-                var->reg = minlntvar->reg;
-                if (var->is_general)
-                    minlntvar->reg = ARMGeneralRegs::None;
-                else
-                    minlntvar->reg = ARMFloatRegs::None;
-                if (!minlntvar->is_global) {
-                    minlntvar->is_spilled = true;
-                    if (stack->spillVar(minlntvar, 4))
-                        instcode->code += gen->sprintln(
-                            "# spill value %%%d", minlntvar->val->id());
-                    instcode->code +=
-                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
-                    if (var->is_general)
-                        instcode->code += gen->cgStr(
-                            var->reg.gpr,
-                            ARMGeneralRegs::SP,
-                            stack->stackSize - minlntvar->stackpos);
-                    else
-                        instcode->code += gen->cgVstr(
-                            var->reg.fpr,
-                            ARMGeneralRegs::SP,
-                            stack->stackSize - minlntvar->stackpos);
-                }
-            }
-            if (var->is_global) {}
-        }
+    switch (pred) {
+        case Predicate::TRUE: {
+            kind = InstrKind::B;
+        } break;
+        case Predicate::EQ: {
+            kind = InstrKind::BEQ;
+        } break;
+        case Predicate::OEQ:
+        case Predicate::NE: {
+            kind = InstrKind::BNE;
+        } break;
+        case Predicate::SLT: {
+            kind = InstrKind::BLT;
+        } break;
+        case Predicate::OGE:
+        case Predicate::SGT: {
+            kind = InstrKind::BGT;
+        } break;
+        case Predicate::OGT:
+        case Predicate::SLE: {
+            kind = InstrKind::BLE;
+        } break;
+        case Predicate::SGE: {
+            kind = InstrKind::BGE;
+        } break;
+        case Predicate::OLT: {
+            kind = InstrKind::BPL;
+        } break;
+        case Predicate::OLE: {
+            kind = InstrKind::BHI;
+        } break;
+        case Predicate::ONE: {
+            kind = InstrKind::BVS;
+        } break;
+        default: {
+            unreachable();
+        } break;
     }
 
-    // check if current instruction holds spiiled variable
-    // CallInst is an exception because it may holds params more than num of
-    // register
-    for (auto var : *operands) {
-        if (var->is_spilled && inst->id() != InstructionID::Call) {
-            if (var->is_general)
-                var->reg =
-                    allocateGeneralRegister(true, operands, gen, instcode);
-            else
-                var->reg = allocateFloatRegister(true, operands, gen, instcode);
-            int offset      = stack->stackSize - var->stackpos;
-            instcode->code += Generator::sprintln(
-                "# load spilled value %%%d", var->val->id());
-            if (var->is_general) {
-                instcode->code +=
-                    gen->cgLdr(var->reg.gpr, ARMGeneralRegs::SP, offset);
-            } else {
-                instcode->code +=
-                    gen->cgVldr(var->reg.fpr, ARMGeneralRegs::SP, offset);
-            }
-            uint32_t releaseStackSpaces = stack->releaseOnStackVar(var);
-            if (releaseStackSpaces != 0)
-                instcode->code += gen->cgAdd(
-                    ARMGeneralRegs::SP, ARMGeneralRegs::SP, releaseStackSpaces);
-            var->is_spilled = false;
-        } else if (
-            var->is_global && var->reg == ARMGeneralRegs::None
-            && inst->id() != InstructionID::Load) {
-            if (var->is_general)
-                var->reg =
-                    allocateGeneralRegister(true, operands, gen, instcode);
-            else
-                var->reg = allocateFloatRegister(true, operands, gen, instcode);
-        }
-    }
+    instrs_.push_back(createReg(kind, dest));
+}
+
+void InstrOp::convert(ARMFloatRegs rd, ARMGeneralRegs rs, bool isSigned) {
+    instrs_.push_back(createReg2(
+        isSigned ? InstrKind::VCVT_F32_S32 : InstrKind::VCVT_F32_U32, rd, rs));
+}
+
+void InstrOp::convert(ARMGeneralRegs rd, ARMFloatRegs rs, bool isSigned) {
+    instrs_.push_back(createReg2(
+        isSigned ? InstrKind::VCVT_S32_F32 : InstrKind::VCVT_U32_F32, rd, rs));
+}
+
+void InstrOp::convert(ARMGeneralRegs rd, float imm, bool isSigned) {
+    unreachable();
+}
+
+void InstrOp::convert(ARMFloatRegs rd, int32_t imm) {
+    instrs_.push_back(createRegImm(InstrKind::VCVT_F32_S32, rd, imm));
+}
+
+void InstrOp::convert(ARMFloatRegs rd, uint32_t imm) {
+    instrs_.push_back(
+        createRegImm(InstrKind::VCVT_F32_U32, rd, static_cast<int32_t>(imm)));
+}
+
+std::string InstrOp::dumpAll() const {
+    std::stringstream ss;
+    dumpAll(ss);
+    return ss.str();
+}
+
+void InstrOp::dumpAll(std::ostream &os) const {
+    for (auto instr : instrs()) { os << instr.dump() << std::endl; }
 }
 
 } // namespace slime::backend

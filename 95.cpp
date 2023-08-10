@@ -1,75 +1,152 @@
 #include "96.h"
 
-#include "21.h"
-#include "51.h"
-#include "47.h"
-#include "94.h"
-#include <assert.h>
-#include <stack>
+#include "23.h"
+#include "90.h"
+#include <vector>
 
 namespace slime::visitor {
 
-using namespace ir;
 using namespace ast;
 
-ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
-    switch (type->typeId) {
-        case ast::TypeID::None:
-        case ast::TypeID::Unresolved: {
-            return nullptr;
-        } break;
-        case ast::TypeID::Builtin: {
-            auto buitin = type->asBuiltin();
-            switch (buitin->type) {
-                case BuiltinTypeID::Int: {
-                    return ir::Type::getIntegerType(IntegerKind::i32);
-                } break;
-                case BuiltinTypeID::Char: {
-                    return ir::Type::getIntegerType(IntegerKind::i8);
-                } break;
-                case BuiltinTypeID::Float: {
-                    return ir::Type::getFloatType();
-                } break;
-                case BuiltinTypeID::Void: {
-                    return ir::Type::getVoidType();
+Expr* ASTExprSimplifier::trySimplify(Expr* expr) {
+    //! TODO: algebra simplification
+    auto e = tryEvaluateCompileTimeExpr(expr);
+    return !e ? expr : e;
+}
+
+bool ASTExprSimplifier::trySmallLoopUnroll(LoopStmt* stmt) {
+    if (auto whileStmt = stmt->tryIntoWhileStmt()) {
+        auto cond = whileStmt->condition->tryIntoExprStmt();
+        if (cond == nullptr) { return false; }
+        auto op = cond->unwrap()->tryIntoBinary();
+        if (op == nullptr) { return false; }
+        switch (op->op) {
+            case BinaryOperator::LT:
+            case BinaryOperator::LE:
+            case BinaryOperator::GT:
+            case BinaryOperator::GE:
+            case BinaryOperator::EQ:
+            case BinaryOperator::NE: {
+            } break;
+            default: {
+                return false;
+            } break;
+        }
+    } else if (auto doStmt = stmt->tryIntoDoStmt()) {
+        //! TODO: detect small do loop
+        return false;
+    } else if (auto forStmt = stmt->tryIntoForStmt()) {
+        //! TODO: implement small for-loop unroll
+        return false;
+    }
+    return false;
+}
+
+IfStmt* ASTExprSimplifier::transformIntoDoWhileLoop(WhileStmt* stmt) {
+    auto cond    = stmt->condition->asExprStmt()->unwrap();
+    auto doStmt  = new (stmt) DoStmt(cond, stmt->loopBody);
+    auto wrapper = IfStmt::create(cond, doStmt);
+    return wrapper;
+}
+
+Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
+    switch (expr->exprId) {
+        case ExprID::DeclRef: {
+            auto e = expr->asDeclRef();
+            if (!e->source->specifier->isConst()) { return nullptr; }
+            switch (e->source->declId) {
+                case DeclID::Var: {
+                    auto var = e->source->asVarDecl();
+                    if (auto array = var->type()->tryIntoArray()) {
+                        return expr;
+                    } else if (auto builtin = var->type()->tryIntoBuiltin()) {
+                        return tryEvaluateCompileTimeExpr(var->initValue);
+                    } else {
+                        return nullptr;
+                    }
                 } break;
                 default: {
                     unreachable();
                 } break;
             }
         } break;
-        case ast::TypeID::Array: {
-            auto array = type->asArray();
-            auto type  = getCompatibleIRType(array->type);
-            auto it    = array->rbegin();
-            auto end   = array->rend();
-            while (it != end) {
-                type =
-                    ir::Type::createArrayType(type, (*it)->asConstant()->i32);
-                ++it;
-            }
-            return type;
+        case ExprID::Constant: {
+            return expr;
         } break;
-        case ast::TypeID::IncompleteArray: {
-            auto array = type->asIncompleteArray();
-            auto type  = getCompatibleIRType(array->type);
-            auto it    = array->rbegin();
-            auto end   = array->rend();
-            while (it != end) {
-                type =
-                    ir::Type::createArrayType(type, (*it)->asConstant()->i32);
-                ++it;
-            }
-            return ir::Type::createPointerType(type);
+        case ExprID::Unary: {
+            return tryEvaluateCompileTimeUnaryExpr(expr->asUnary());
         } break;
-        case ast::TypeID::FunctionProto: {
-            auto proto = type->asFunctionProto();
-            auto type  = getCompatibleIRType(proto->returnType);
-            std::vector<ir::Type *> params;
-            for (auto param : *proto) {
-                params.push_back(getCompatibleIRType(param));
+        case ExprID::Binary: {
+            return tryEvaluateCompileTimeBinaryExpr(expr->asBinary());
+        } break;
+        case ExprID::Comma: {
+            //! FIXME: only no-effect expr can be ignored
+            return tryEvaluateCompileTimeExpr(expr->asComma()->tail()->value());
+        } break;
+        case ExprID::Paren: {
+            return tryEvaluateCompileTimeExpr(expr->asParen()->inner);
+        } break;
+        case ExprID::Stmt: {
+            assert(false && "unsupported StmtExpr");
+            return nullptr;
+        } break;
+        case ExprID::Call: {
+            return tryEvaluateFunctionCall(expr->asCall());
+        } break;
+        case ExprID::Subscript: {
+            //! lookup array decl & init list and make indices
+            auto                            subscript = expr->asSubscript();
+            DeclRefExpr*                    seqlike   = nullptr;
+            utils::ListTrait<ConstantExpr*> indices;
+            while (subscript != nullptr) {
+                if (auto index = tryEvaluateCompileTimeExpr(subscript->rhs)) {
+                    indices.insertToHead(index->asConstant());
+                } else {
+                    return nullptr;
+                }
+                seqlike   = subscript->lhs->tryIntoDeclRef();
+                subscript = subscript->lhs->tryIntoSubscript();
             }
-            return ir::Type::createFunctionType(type, params);
+            if (seqlike == nullptr
+                || seqlike->valueType->typeId != TypeID::Array
+                || !seqlike->source->specifier->isConst()) {
+                return nullptr;
+            }
+            auto initval = trySimplify(seqlike->source->asVarDecl()->initValue)
+                               ->asInitList();
+            if (initval == nullptr) { return nullptr; }
+            //! decide zero value
+            ConstantExpr* zeroValue = nullptr;
+            auto builtin = seqlike->valueType->asArray()->type->asBuiltin();
+            if (builtin->isInt()) {
+                zeroValue = ConstantExpr::createI32(0);
+            } else if (builtin->isFloat()) {
+                zeroValue = ConstantExpr::createF32(0.f);
+            }
+            //! evaluate subscript expr
+            if (initval->size() == 0) { return zeroValue; }
+            int n = 0;
+            for (auto index : indices) {
+                if (index->i32 >= initval->size()) { return zeroValue; }
+                Expr* expr = nullptr;
+                int   i    = 0;
+                for (auto e : *initval) {
+                    if (i++ == index->i32) {
+                        expr = e;
+                        break;
+                    }
+                }
+                if (++n < indices.size()) {
+                    initval = expr->asInitList();
+                } else {
+                    return trySimplify(expr);
+                }
+            }
+            return nullptr;
+        } break;
+        case ExprID::InitList:
+        case ExprID::NoInit: {
+            return nullptr;
         } break;
         default: {
             unreachable();
@@ -77,838 +154,74 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
     }
 }
 
-Value *ASTToIRTranslator::getCompatibleIRValue(
-    Expr *value, ir::Type *desired, Module *module) {
-    //! NOTE: assume the value is already regulated
-    if (value->tryIntoNoInit() && desired != nullptr) {
-        switch (desired->kind()) {
-            case TypeKind::Integer: {
-                return !module ? ConstantData::createI32(0)
-                               : module->createI32(0);
-            } break;
-            case TypeKind::Float: {
-                return !module ? ConstantData::createF32(0.f)
-                               : module->createF32(0.f);
-            } break;
-            case TypeKind::Array: {
-                return ConstantArray::create(desired->asArrayType());
-            } break;
-            default: {
-                unreachable();
-            } break;
-        }
-    }
-    if (auto v = value->tryIntoConstant();
-        v && (!desired || desired->isBuiltinType())) {
-        if (!desired) {
-            switch (v->type) {
-                case ConstantType::i32: {
-                    return !module ? ConstantData::createI32(v->i32)
-                                   : module->createI32(v->i32);
-                } break;
-                case ConstantType::f32: {
-                    return !module ? ConstantData::createF32(v->f32)
-                                   : module->createF32(v->f32);
-                } break;
-                case ConstantType::str: {
-                    //! NOTE: string literal must be translated in
-                    //! translateConstantExpr
-                    unreachable();
-                } break;
-                default: {
-                    unreachable();
-                } break;
-            }
-        } else if (desired->isInteger()) {
-            auto value = v->type == ConstantType::i32
-                           ? v->i32
-                           : static_cast<int32_t>(v->f32);
-            return !module ? ConstantData::createI32(value)
-                           : module->createI32(value);
-        } else {
-            auto value = v->type == ConstantType::f32
-                           ? v->f32
-                           : static_cast<float>(v->i32);
-            return !module ? ConstantData::createF32(value)
-                           : module->createF32(value);
-        }
-    }
-    if (auto v = value->tryIntoInitList(); v && desired != nullptr) {
-        auto  value       = ConstantArray::create(desired->asArrayType());
-        auto &array       = *value;
-        auto  type        = desired->tryIntoArrayType();
-        auto  elementType = type->elementType();
-        int   index       = 0;
-        for (auto e : *v) {
-            auto element   = getCompatibleIRValue(e, elementType, module);
-            array[index++] = element->asConstantData();
-        }
-        return value;
-    }
-    return nullptr;
-}
-
-Value *ASTToIRTranslator::getMinimumBooleanExpression(
-    BooleanSimplifyResult &in, Module *module) {
-    auto v               = in.value;
-    auto type            = v->type();
-    in.changed           = false;
-    in.shouldReplace     = false;
-    in.shouldInsertFront = false;
-    assert(v != nullptr);
-    if (type->isBoolean()) { return v; }
-    if (v->isImmediate()) {
-        auto imm = v->asConstantData();
-        if (imm->type()->isInteger()) {
-            auto i32         = static_cast<ConstantInt *>(imm)->value;
-            in.changed       = true;
-            in.shouldReplace = true;
-            return ConstantData::getBoolean(i32 != 0);
-        } else {
-            assert(imm->type()->isFloat());
-            auto f32         = static_cast<ConstantFloat *>(imm)->value;
-            in.changed       = true;
-            in.shouldReplace = true;
-            return ConstantData::getBoolean(f32 != 0.f);
-        }
-    }
-    if (v->isGlobal() || v->isReadOnly()) {
-        //! global objects always represent as its address
-        in.changed       = true;
-        in.shouldReplace = true;
-        return ConstantData::getBoolean(true);
-    }
-    if (v->isParameter() || v->isInstruction()) {
-        Value *value = nullptr;
-        if (type->isInteger()) {
-            auto rhs =
-                !module ? ConstantData::createI32(0) : module->createI32(0);
-            value = ICmpInst::createNE(v, rhs);
-        } else if (type->isFloat()) {
-            auto rhs =
-                !module ? ConstantData::createF32(0.f) : module->createF32(0.f);
-            value = FCmpInst::createUNE(v, rhs);
-        }
-        if (value != nullptr) {
-            in.changed           = true;
-            in.shouldReplace     = true;
-            in.shouldInsertFront = true;
-        }
-        return value;
-    }
-    return nullptr;
-}
-
-Module *ASTToIRTranslator::translate(
-    std::string_view name, const TranslationUnit *unit) {
-    ASTToIRTranslator translator(name);
-    for (auto e : *unit) {
-        switch (e->declId) {
-            case DeclID::Var: {
-                translator.translateVarDecl(e->asVarDecl());
-            } break;
-            case DeclID::Function: {
-                translator.translateFunctionDecl(e->asFunctionDecl());
-            } break;
-            default: {
-                assert(false && "illegal top-level declaration");
-                unreachable();
-            } break;
-        }
-    }
-    auto module = translator.module_.release();
-
-    for (auto obj : module->globalObjects()) {
-        if (obj->isFunction()) {
-            auto fn = obj->asFunction();
-            auto it = fn->basicBlocks().begin();
-            while (it != fn->basicBlocks().end()) {
-                auto block = *it++;
-                if (block->totalInBlocks() == 0 && block != fn->front()) {
-                    auto ok = block->remove();
-                    assert(ok);
-                    continue;
+ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
+    auto e = expr->tryIntoUnary();
+    if (!e) { return nullptr; }
+    auto value = tryEvaluateCompileTimeExpr(e->operand);
+    if (!value) { return nullptr; }
+    switch (e->op) {
+        case UnaryOperator::Pos: {
+            return value->asConstant();
+        } break;
+        case UnaryOperator::Neg: {
+            if (auto builtin = value->valueType->tryIntoBuiltin()) {
+                ConstantExpr* retval = nullptr;
+                auto          c      = value->asConstant();
+                if (builtin->isInt()) {
+                    retval = ConstantExpr::createI32(-c->i32);
+                } else if (builtin->isFloat()) {
+                    retval = ConstantExpr::createF32(-c->f32);
+                } else {
+                    return nullptr;
                 }
-                if (block->isBranched()) {
-                    if (!block->control()->isImmediate()) { continue; }
-                    auto imm =
-                        static_cast<ConstantInt *>(block->control())->value;
-                    if (imm) {
-                        block->reset(block->branch());
-                    } else {
-                        block->reset(block->branchElse());
-                    }
-                    continue;
-                }
-                if (block->isIncomplete()) {
-                    auto ok = block->tryMarkAsTerminal();
-                    assert(ok);
-                    continue;
-                }
-            }
-        }
-    }
-
-    return module;
-}
-
-void ASTToIRTranslator::translateVarDecl(VarDecl *decl) {
-    auto &addressTable = state_.variableAddressTable;
-
-    assert(decl != nullptr);
-    assert(decl->initValue != nullptr);
-    auto type = getCompatibleIRType(decl->type());
-    assert(type != nullptr);
-
-    //! translate into local variable
-    if (decl->scope.depth > 0) {
-        assert(state_.currentBlock != nullptr);
-        auto address = Instruction::createAlloca(type);
-        address->insertToTail(state_.currentBlock);
-
-        if (!decl->initValue->tryIntoNoInit()) {
-            if (auto list = decl->initValue->tryIntoInitList()) {
-                assert(type->isArray());
-                size_t nbytes = 4;
-                auto   t      = type;
-                while (t->isArray()) {
-                    nbytes *= t->asArrayType()->size();
-                    t      = t->tryGetElementType();
-                }
-                module_->createMemset(address, 0, nbytes)
-                    ->insertToTail(state_.currentBlock);
-                translateArrayInitAssign(address, list);
+                return retval;
             } else {
-                assert(type->isBuiltinType());
-                auto value =
-                    translateExpr(state_.currentBlock, decl->initValue);
-                assert(value->type()->isBuiltinType());
-                if (type->isFloat() && value->type()->isInteger()) {
-                    auto inst = Instruction::createSIToFP(value);
-                    inst->insertToTail(state_.currentBlock);
-                    value = inst->unwrap();
-                } else if (type->isInteger() && value->type()->isFloat()) {
-                    auto inst = Instruction::createFPToSI(value);
-                    inst->insertToTail(state_.currentBlock);
-                    value = inst->unwrap();
+                return nullptr;
+            }
+        }
+        case UnaryOperator::Not: {
+            if (auto builtin = value->valueType->tryIntoBuiltin()) {
+                ConstantExpr* retval = nullptr;
+                auto          c      = value->asConstant();
+                if (builtin->isInt()) {
+                    retval = ConstantExpr::createI32(!c->i32);
+                } else if (builtin->isFloat()) {
+                    retval = ConstantExpr::createF32(!c->f32);
+                } else {
+                    return nullptr;
                 }
-                assert(value->type()->equals(type));
-                Instruction::createStore(address->unwrap(), value)
-                    ->insertToTail(state_.currentBlock);
+                return retval;
+            } else {
+                return nullptr;
             }
-        }
-
-        addressTable[decl]       = address->unwrap();
-        state_.addressOfPrevExpr = nullptr;
-        state_.valueOfPrevExpr   = nullptr;
-        return;
-    }
-
-    //! translate into global variable
-    auto value    = getCompatibleIRValue(decl->initValue, type, module_.get());
-    auto constant = decl->specifier->isConst();
-    auto var      = GlobalVariable::create(decl->name, type, constant);
-    assert(value != nullptr);
-    assert(value->tryIntoConstantData());
-    var->setInitData(value->asConstantData());
-
-    auto accepted = module_->acceptGlobalVariable(var);
-    assert(accepted); //<! assume that the input AST is regulated
-    if (!accepted) {
-        delete var;
-    } else {
-        addressTable[decl] = var;
-    }
-}
-
-void ASTToIRTranslator::translateFunctionDecl(FunctionDecl *decl) {
-    assert(decl != nullptr);
-    auto  proto        = getCompatibleIRType(decl->proto());
-    auto  fn           = Function::create(decl->name, proto->asFunctionType());
-    auto &addressTable = state_.variableAddressTable;
-
-    if (decl->body != nullptr) {
-        auto entryBlock = BasicBlock::create(fn);
-        entryBlock->insertOrMoveToHead();
-        state_.currentBlock      = entryBlock;
-        state_.valueOfPrevExpr   = nullptr;
-        state_.addressOfPrevExpr = nullptr;
-
-        int  index = 0;
-        auto it    = decl->begin();
-        for (auto param : *decl) {
-            auto type = fn->proto()->paramTypeAt(index);
-            fn->setParam(param->name, index);
-            if (!param->name.empty()) {
-                VarLikeDecl *ptr     = *it;
-                auto         address = Instruction::createAlloca(type);
-                address->insertToTail(entryBlock);
-                auto store = Instruction::createStore(
-                    address, const_cast<Parameter *>(fn->paramAt(index)));
-                store->insertToTail(entryBlock);
-                addressTable[ptr] = address->unwrap();
+        } break;
+        case UnaryOperator::Inv: {
+            if (auto builtin = value->valueType->tryIntoBuiltin();
+                builtin->isInt()) {
+                return ConstantExpr::createI32(~value->asConstant()->i32);
+            } else {
+                return nullptr;
             }
-            ++index;
-            ++it;
-        }
-
-        translateCompoundStmt(entryBlock, decl->body);
-    }
-
-    auto accepted = module_->acceptFunction(fn);
-    assert(accepted); //<! assume that the input AST is regulated
-    if (!accepted) { delete fn; }
-
-    state_.currentBlock      = nullptr;
-    state_.valueOfPrevExpr   = nullptr;
-    state_.addressOfPrevExpr = nullptr;
-}
-
-void ASTToIRTranslator::translateStmt(BasicBlock *block, Stmt *stmt) {
-    switch (stmt->stmtId) {
-        case ast::StmtID::Null: {
         } break;
-        case ast::StmtID::Decl: {
-            translateDeclStmt(block, stmt->asDeclStmt());
-        } break;
-        case ast::StmtID::Expr: {
-            translateExpr(block, stmt->asExprStmt()->unwrap());
-        } break;
-        case ast::StmtID::Compound: {
-            translateCompoundStmt(block, stmt->asCompoundStmt());
-        } break;
-        case ast::StmtID::If: {
-            translateIfStmt(block, stmt->asIfStmt());
-        } break;
-        case ast::StmtID::Do: {
-            translateDoStmt(block, stmt->asDoStmt());
-        } break;
-        case ast::StmtID::While: {
-            //! NOTE: convert while to if (...) { do-while }
-            translateWhileStmt(block, stmt->asWhileStmt());
-            // translateIfStmt(
-            //     block,
-            //     ASTExprSimplifier::transformIntoDoWhileLoop(stmt->asWhileStmt())
-            //         ->asIfStmt());
-        } break;
-        case ast::StmtID::For: {
-            translateForStmt(block, stmt->asForStmt());
-        } break;
-        case ast::StmtID::Break: {
-            translateBreakStmt(block, stmt->asBreakStmt());
-        } break;
-        case ast::StmtID::Continue: {
-            translateContinueStmt(block, stmt->asContinueStmt());
-        } break;
-        case ast::StmtID::Return: {
-            translateReturnStmt(block, stmt->asReturnStmt());
-        } break;
-    }
-}
-
-void ASTToIRTranslator::translateIfStmt(BasicBlock *block, IfStmt *stmt) {
-    assert(stmt->condition->tryIntoExprStmt());
-    auto e         = stmt->condition->asExprStmt()->unwrap();
-    auto condition = translateExpr(block, e);
-    block          = state_.currentBlock;
-    BooleanSimplifyResult in(condition);
-    condition = getMinimumBooleanExpression(in, module_.get());
-    assert(condition != nullptr);
-    if (in.shouldInsertFront) {
-        assert(condition->isInstruction());
-        condition->asInstruction()->insertToTail(block);
-    }
-
-    auto fn         = block->parent();
-    auto branchIf   = BasicBlock::create(fn);
-    auto branchExit = BasicBlock::create(fn);
-    branchIf->insertOrMoveAfter(block);
-    branchExit->insertOrMoveAfter(branchIf);
-
-    if (stmt->hasBranchElse()) {
-        auto branchElse = BasicBlock::create(fn);
-        branchElse->insertOrMoveAfter(branchIf);
-        block->reset(condition, branchIf, branchElse);
-        state_.currentBlock = branchElse;
-        translateStmt(branchElse, stmt->branchElse);
-        branchElse = state_.currentBlock;
-        branchElse->reset(branchExit);
-    } else {
-        block->reset(condition, branchIf, branchExit);
-    }
-
-    state_.currentBlock = branchIf;
-    translateStmt(branchIf, stmt->branchIf);
-    branchIf = state_.currentBlock;
-    branchIf->reset(branchExit);
-
-    state_.currentBlock = branchExit;
-}
-
-void ASTToIRTranslator::translateDoStmt(BasicBlock *block, DoStmt *stmt) {
-    LoopDescription desc;
-    auto            fn = block->parent();
-    desc.branchCond    = BasicBlock::create(fn);
-    desc.branchExit    = BasicBlock::create(fn);
-    desc.branchLoop    = BasicBlock::create(fn);
-    desc.branchLoop->insertOrMoveAfter(block);
-    desc.branchCond->insertOrMoveAfter(desc.branchLoop);
-    desc.branchExit->insertOrMoveAfter(desc.branchCond);
-
-    //! update loop table before body translation
-    state_.loopTable[stmt] = desc;
-
-    block->reset(desc.branchLoop);
-
-    state_.currentBlock = desc.branchLoop;
-    translateStmt(desc.branchLoop, stmt->loopBody);
-    auto loopEndBlock = state_.currentBlock;
-    loopEndBlock->reset(desc.branchCond);
-
-    state_.currentBlock = desc.branchCond;
-    assert(stmt->condition->tryIntoExprStmt());
-    auto e            = stmt->condition->asExprStmt()->unwrap();
-    auto condition    = translateExpr(desc.branchCond, e);
-    auto condEndBlock = state_.currentBlock;
-
-    BooleanSimplifyResult in(condition);
-    condition = getMinimumBooleanExpression(in, module_.get());
-    assert(condition != nullptr);
-    if (in.shouldInsertFront) {
-        assert(condition->isInstruction());
-        condition->asInstruction()->insertToTail(condEndBlock);
-    }
-
-    condEndBlock->reset(condition, desc.branchLoop, desc.branchExit);
-
-    state_.currentBlock = desc.branchExit;
-}
-
-void ASTToIRTranslator::translateWhileStmt(BasicBlock *block, WhileStmt *stmt) {
-    LoopDescription desc;
-    auto            fn = block->parent();
-    desc.branchCond    = BasicBlock::create(fn);
-    desc.branchExit    = BasicBlock::create(fn);
-    desc.branchLoop    = BasicBlock::create(fn);
-    desc.branchCond->insertOrMoveAfter(block);
-    desc.branchLoop->insertOrMoveAfter(desc.branchCond);
-    desc.branchExit->insertOrMoveAfter(desc.branchLoop);
-
-    //! update loop table before body translation
-    state_.loopTable[stmt] = desc;
-
-    block->reset(desc.branchCond);
-
-    state_.currentBlock = desc.branchCond;
-    assert(stmt->condition->tryIntoExprStmt());
-    auto e            = stmt->condition->asExprStmt()->unwrap();
-    auto condition    = translateExpr(desc.branchCond, e);
-    auto condEndBlock = state_.currentBlock;
-
-    BooleanSimplifyResult in(condition);
-    condition = getMinimumBooleanExpression(in, module_.get());
-    assert(condition != nullptr);
-    if (in.shouldInsertFront) {
-        assert(condition->isInstruction());
-        condition->asInstruction()->insertToTail(condEndBlock);
-    }
-
-    condEndBlock->reset(condition, desc.branchLoop, desc.branchExit);
-
-    state_.currentBlock = desc.branchLoop;
-    translateStmt(desc.branchLoop, stmt->loopBody);
-    auto loopEndBlock = state_.currentBlock;
-    loopEndBlock->reset(desc.branchCond);
-
-    state_.currentBlock = desc.branchExit;
-}
-
-void ASTToIRTranslator::translateForStmt(BasicBlock *block, ForStmt *stmt) {
-    translateStmt(block, stmt->init);
-    block = state_.currentBlock;
-
-    bool isEndlessLoop = stmt->condition->tryIntoNullStmt() != nullptr;
-
-    LoopDescription desc;
-    auto            fn = block->parent();
-    desc.branchCond    = BasicBlock::create(fn);
-    desc.branchLoop    = BasicBlock::create(fn);
-    desc.branchExit    = BasicBlock::create(fn);
-    desc.branchCond->insertOrMoveAfter(block);
-    desc.branchLoop->insertOrMoveAfter(desc.branchCond);
-    desc.branchExit->insertOrMoveAfter(desc.branchLoop);
-
-    //! update loop table before body translation
-    state_.loopTable[stmt] = desc;
-
-    block->reset(desc.branchCond);
-
-    if (!isEndlessLoop) {
-        state_.currentBlock = desc.branchCond;
-        assert(stmt->condition->tryIntoExprStmt());
-        auto e            = stmt->condition->asExprStmt()->unwrap();
-        auto condition    = translateExpr(desc.branchCond, e);
-        auto condEndBlock = state_.currentBlock;
-
-        BooleanSimplifyResult in(condition);
-        condition = getMinimumBooleanExpression(in, module_.get());
-        assert(condition != nullptr);
-        if (in.shouldInsertFront) {
-            assert(condition->isInstruction());
-            condition->asInstruction()->insertToTail(condEndBlock);
-        }
-
-        condEndBlock->reset(condition, desc.branchLoop, desc.branchExit);
-    } else {
-        desc.branchCond->reset(desc.branchLoop);
-    }
-
-    state_.currentBlock = desc.branchLoop;
-    translateStmt(desc.branchLoop, stmt->loopBody);
-    auto loopEndBlock = state_.currentBlock;
-    translateStmt(loopEndBlock, stmt->increment);
-    loopEndBlock = state_.currentBlock;
-    loopEndBlock->reset(desc.branchCond);
-
-    state_.currentBlock = desc.branchExit;
-}
-
-void ASTToIRTranslator::translateBreakStmt(BasicBlock *block, BreakStmt *stmt) {
-    assert(state_.loopTable.count(stmt->parent) == 1);
-    auto &desc = state_.loopTable[stmt->parent];
-    block->reset(desc.branchExit);
-    auto unreachable = BasicBlock::create(block->parent());
-    unreachable->insertOrMoveAfter(block);
-    state_.currentBlock = unreachable;
-}
-
-void ASTToIRTranslator::translateContinueStmt(
-    BasicBlock *block, ContinueStmt *stmt) {
-    assert(state_.loopTable.count(stmt->parent) == 1);
-    auto &desc = state_.loopTable[stmt->parent];
-    block->reset(desc.branchCond);
-    auto unreachable = BasicBlock::create(block->parent());
-    unreachable->insertOrMoveAfter(block);
-    state_.currentBlock = unreachable;
-}
-
-void ASTToIRTranslator::translateReturnStmt(
-    BasicBlock *block, ReturnStmt *stmt) {
-    Value *value = nullptr;
-    bool   ok    = true;
-    if (auto expr = stmt->returnValue->tryIntoExprStmt()) {
-        value = translateExpr(block, expr->unwrap());
-        block = state_.currentBlock;
-    } else if (!stmt->returnValue->tryIntoNullStmt()) {
-        ok = false;
-    }
-    assert(ok);
-    if (value != nullptr) {
-        auto retval =
-            bicastIntFP(value, block->parent()->proto()->returnType());
-        if (retval != value && retval->isInstruction()) {
-            retval->asInstruction()->insertToTail(block);
-        }
-        value = retval;
-    }
-    ok = block->tryMarkAsTerminal(value);
-    assert(ok);
-    assert(block->isTerminal());
-    state_.currentBlock = BasicBlock::create(block->parent());
-    state_.currentBlock->insertOrMoveAfter(block);
-    state_.addressOfPrevExpr = nullptr;
-    state_.valueOfPrevExpr   = nullptr;
-}
-
-Value *ASTToIRTranslator::translateExpr(BasicBlock *block, Expr *expr) {
-    switch (expr->exprId) {
-        case ExprID::DeclRef: {
-            return translateDeclRefExpr(block, expr->asDeclRef());
-        } break;
-        case ExprID::Constant: {
-            return translateConstantExpr(block, expr->asConstant());
-        } break;
-        case ExprID::Unary: {
-            return translateUnaryExpr(block, expr->asUnary());
-        } break;
-        case ExprID::Binary: {
-            return translateBinaryExpr(block, expr->asBinary());
-        } break;
-        case ExprID::Comma: {
-            return translateCommaExpr(block, expr->asComma());
-        } break;
-        case ExprID::Paren: {
-            return translateParenExpr(block, expr->asParen());
-        } break;
-        case ExprID::Call: {
-            return translateCallExpr(block, expr->asCall());
-        } break;
-        case ExprID::Subscript: {
-            return translateSubscriptExpr(block, expr->asSubscript());
+        case UnaryOperator::Paren: {
+            assert(false && "ParenExpr is unreachable in UnaryExpr");
+            return nullptr;
         } break;
         default: {
+            unreachable();
         } break;
     }
-    assert(false && "unreachable branch");
-    state_.addressOfPrevExpr = nullptr;
-    state_.valueOfPrevExpr   = nullptr;
-    return nullptr;
 }
 
-Value *ASTToIRTranslator::translateDeclRefExpr(
-    BasicBlock *block, DeclRefExpr *expr) {
-    state_.addressOfPrevExpr = nullptr;
-    auto src                 = expr->source;
-    if (auto decl = src->tryIntoFunctionDecl()) {
-        auto func = decl->name == block->parent()->name()
-                      ? block->parent() //<! recursive call
-                      : module_->lookupFunction(decl->name);
-        assert(func != nullptr);
-        state_.valueOfPrevExpr = func;
-        return state_.valueOfPrevExpr;
-    }
-    //! decl-ref is either a var-decl or a named param-var
-    assert(!src->tryIntoParamVarDecl() || !src->name.empty());
-    auto decl = static_cast<VarLikeDecl *>(src);
-    //! address of a var is constant and is definately stored in the
-    //! variableAddressTable
-    assert(state_.variableAddressTable.count(decl) == 1);
-    state_.addressOfPrevExpr = state_.variableAddressTable.at(decl);
-    auto address             = state_.addressOfPrevExpr;
-    auto valueType           = address->type()->tryGetElementType();
-    assert(valueType != nullptr);
-    Instruction *inst = nullptr;
-    if (valueType->isArray()) {
-        inst = Instruction::createGetElementPtr(
-            address, module_->createI32(0), module_->createI32(0));
-    } else {
-        inst = Instruction::createLoad(address);
-    }
-    inst->insertToTail(block);
-    state_.valueOfPrevExpr = inst->unwrap();
-    return state_.valueOfPrevExpr;
-}
-
-Value *ASTToIRTranslator::translateConstantExpr(
-    BasicBlock *block, ConstantExpr *expr) {
-    state_.addressOfPrevExpr = nullptr;
-    switch (expr->type) {
-        case ast::ConstantType::i32: {
-            state_.valueOfPrevExpr = module_->createI32(expr->i32);
-        } break;
-        case ast::ConstantType::f32: {
-            state_.valueOfPrevExpr = module_->createF32(expr->f32);
-        } break;
-        case ast::ConstantType::str: {
-            state_.addressOfPrevExpr = module_->createString(expr->str);
-            auto load                = GetElementPtrInst::create(
-                state_.addressOfPrevExpr, module_->createI32(0));
-            load->insertToTail(block);
-            state_.valueOfPrevExpr = load;
-        } break;
-    }
-    return state_.valueOfPrevExpr;
-}
-
-Value *ASTToIRTranslator::translateUnaryExpr(
-    BasicBlock *block, UnaryExpr *expr) {
-    assert(expr->op != UnaryOperator::Unreachable);
-    auto operand = translateExpr(block, expr->operand);
-    assert(operand != nullptr);
-    assert(operand == state_.valueOfPrevExpr);
-
-    //! synchronzie block location
-    block = state_.currentBlock;
-    //! unary expr is no more a lval
-    state_.addressOfPrevExpr = nullptr;
-
-    if (expr->op == UnaryOperator::Pos) { return operand; }
-
-    if (expr->op == UnaryOperator::Inv) {
-        assert(operand->type()->isInteger());
-        auto inst = Instruction::createXor(operand, module_->createI32(-1));
-        inst->insertToTail(block);
-        state_.valueOfPrevExpr = inst->unwrap();
-        return state_.valueOfPrevExpr;
-    }
-
-    if (operand->type()->isInteger()) {
-        Instruction *inst = nullptr;
-        if (expr->op == UnaryOperator::Not) {
-            inst = ICmpInst::createEQ(operand, module_->createI32(0));
-        } else if (expr->op == UnaryOperator::Neg) {
-            if (operand->type()->isBoolean()) {
-                auto inst = Instruction::createZExt(operand);
-                inst->insertToTail(block);
-                operand = inst->unwrap();
-            }
-            inst = Instruction::createSub(module_->createI32(0), operand);
-        }
-        assert(inst != nullptr);
-        inst->insertToTail(block);
-        state_.valueOfPrevExpr = inst->unwrap();
-        return state_.valueOfPrevExpr;
-    }
-
-    if (operand->type()->isFloat()) {
-        Instruction *inst = nullptr;
-        if (expr->op == UnaryOperator::Not) {
-            inst = FCmpInst::createOEQ(operand, module_->createF32(0.f));
-        } else if (expr->op == UnaryOperator::Neg) {
-            inst = Instruction::createFNeg(operand);
-        }
-        assert(inst != nullptr);
-        inst->insertToTail(block);
-        state_.valueOfPrevExpr = inst->unwrap();
-        return state_.valueOfPrevExpr;
-    }
-
-    assert(false && "translateUnaryExpr: unreachable branch");
-    state_.valueOfPrevExpr   = nullptr;
-    state_.addressOfPrevExpr = nullptr;
-    return nullptr;
-}
-
-Value *ASTToIRTranslator::translateBinaryExpr(
-    BasicBlock *block, BinaryExpr *expr) {
-    auto fn  = block->parent();
-    auto lhs = translateExpr(block, expr->lhs);
-    block    = state_.currentBlock;
-    assert(!lhs->isInstruction() || lhs->asInstruction()->parent() == block);
-    auto addressOfLhs = state_.addressOfPrevExpr;
-
-    //! implement '&&' short-circuit logic
-    //! ---
-    //! entry:
-    //!     %lhs = ...
-    //!     %1 = %lhs as i1
-    //!     br i1 %1, label %next, label %exit
-    //! next:
-    //!     %rhs = ...
-    //!     %2 = %rhs as i1
-    //!     br label %exit
-    //! exit:
-    //!     %result = phi i1 [ %1, %entry ], [ %2, %next ]
-    //! ===
-
-    //! implement '||' short-circuit logic
-    //! ---
-    //! entry:
-    //!     %lhs = ...
-    //!     %1 = %lhs as i1
-    //!     br i1 %1, label %exit, label %next
-    //! next:
-    //!     %rhs = ...
-    //!     %2 = %rhs as i1
-    //!     br label %exit
-    //! exit:
-    //!     %result = phi i1 [ %1, %entry ], [ %2, %next ]
-    //! ===
-
-    const bool isShortCircutLogic =
-        expr->op == BinaryOperator::LAnd || expr->op == BinaryOperator::LOr;
-    if (isShortCircutLogic) {
-        auto resultAddress =
-            Instruction::createAlloca(IntegerType::getBooleanType());
-        resultAddress->insertToTail(block);
-
-        BooleanSimplifyResult inLhs(lhs);
-        auto lhs = getMinimumBooleanExpression(inLhs, module_.get());
-        assert(lhs != nullptr);
-        if (inLhs.shouldInsertFront) {
-            assert(lhs->isInstruction());
-            lhs->asInstruction()->insertToTail(block);
-        }
-        Instruction::createStore(resultAddress, lhs)->insertToTail(block);
-
-        auto nextBlock = BasicBlock::create(fn);
-        auto exitBlock = BasicBlock::create(fn);
-        nextBlock->insertOrMoveAfter(block);
-        assert(nextBlock->isInserted());
-        exitBlock->insertOrMoveAfter(nextBlock);
-        assert(exitBlock->isInserted());
-
-        if (expr->op == BinaryOperator::LAnd) {
-            block->reset(lhs, nextBlock, exitBlock);
-        } else if (expr->op == BinaryOperator::LOr) {
-            block->reset(lhs, exitBlock, nextBlock);
-        } else {
-            assert(false && "translateBinaryExpr: unreachable branch");
-            state_.valueOfPrevExpr   = nullptr;
-            state_.addressOfPrevExpr = nullptr;
-            return nullptr;
-        }
-
-        state_.currentBlock = nextBlock;
-        auto rhs            = translateExpr(nextBlock, expr->rhs);
-        nextBlock           = state_.currentBlock;
-        assert(
-            !rhs->isInstruction()
-            || rhs->asInstruction()->parent() == nextBlock);
-
-        BooleanSimplifyResult inRhs(rhs);
-        rhs = getMinimumBooleanExpression(inRhs, module_.get());
-        assert(lhs != nullptr);
-        if (inRhs.shouldInsertFront) {
-            assert(rhs->isInstruction());
-            rhs->asInstruction()->insertToTail(nextBlock);
-        }
-        Instruction::createStore(resultAddress, rhs)->insertToTail(nextBlock);
-        nextBlock->reset(exitBlock);
-
-        auto result = Instruction::createLoad(resultAddress);
-        result->insertToHead(exitBlock);
-
-        state_.addressOfPrevExpr = nullptr;
-        state_.valueOfPrevExpr   = result->unwrap();
-        state_.currentBlock      = exitBlock;
-        return state_.valueOfPrevExpr;
-    }
-
-    auto rhs = translateExpr(block, expr->rhs);
-    block    = state_.currentBlock;
-    assert(!rhs->isInstruction() || rhs->asInstruction()->parent() == block);
-
-    assert(lhs->type()->isBuiltinType() && rhs->type()->isBuiltinType());
-    if (lhs->type()->isFloat() && rhs->type()->isInteger()) {
-        if (rhs->type()->isBoolean()) {
-            auto inst = Instruction::createZExt(rhs);
-            inst->insertToTail(block);
-            rhs = inst->unwrap();
-        }
-        auto inst = Instruction::createSIToFP(rhs);
-        inst->insertToTail(block);
-        rhs = inst->unwrap();
-    }
-    if (lhs->type()->isInteger() && rhs->type()->isFloat()) {
-        if (expr->op == BinaryOperator::Assign) {
-            auto inst = Instruction::createFPToSI(rhs);
-            inst->insertToTail(block);
-            rhs = inst->unwrap();
-        } else {
-            if (lhs->type()->isBoolean()) {
-                auto inst = Instruction::createZExt(lhs);
-                inst->insertToTail(block);
-                lhs = inst->unwrap();
-            }
-            auto inst = Instruction::createSIToFP(lhs);
-            inst->insertToTail(block);
-            lhs = inst->unwrap();
-        }
-    }
-
-    Instruction *inst = nullptr;
-    switch (expr->op) {
+ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
+    auto e = expr->tryIntoBinary();
+    if (!e) { return nullptr; }
+    auto lhs = tryEvaluateCompileTimeExpr(e->lhs);
+    auto rhs = tryEvaluateCompileTimeExpr(e->rhs);
+    if (!lhs || !rhs) { return nullptr; }
+    switch (e->op) {
         case BinaryOperator::Assign: {
-            assert(addressOfLhs != nullptr);
-            inst = Instruction::createStore(addressOfLhs, rhs);
-            inst->insertToTail(block);
-            inst = Instruction::createLoad(addressOfLhs);
-            inst->insertToTail(block);
-            //! assign-expr will forward lhs as lval
-            state_.addressOfPrevExpr = addressOfLhs;
-            state_.valueOfPrevExpr   = inst->unwrap();
-            return state_.valueOfPrevExpr;
+            return nullptr;
         } break;
         case BinaryOperator::Add:
         case BinaryOperator::Sub:
@@ -920,109 +233,91 @@ Value *ASTToIRTranslator::translateBinaryExpr(
         case BinaryOperator::GE:
         case BinaryOperator::EQ:
         case BinaryOperator::NE: {
-            assert(
-                lhs->type()->isBuiltinType()
-                && lhs->type()->equals(rhs->type()));
-            if (lhs->type()->isInteger()) {
-                auto ltype = lhs->type()->asIntegerType();
-                auto rtype = rhs->type()->asIntegerType();
-                if (ltype->kind() != rtype->kind()) {
-                    if (ltype->isBoolean()) {
-                        if (lhs->isImmediate()) {
-                            lhs = module_->createI32(
-                                static_cast<ConstantInt *>(lhs)->value);
-                        } else {
-                            auto inst = Instruction::createZExt(lhs);
-                            inst->insertToTail(block);
-                            lhs = inst->unwrap();
-                        }
-                    }
-                    if (rtype->isBoolean()) {
-                        if (rhs->isImmediate()) {
-                            rhs = module_->createI32(
-                                static_cast<ConstantInt *>(rhs)->value);
-                        } else {
-                            auto inst = Instruction::createZExt(rhs);
-                            inst->insertToTail(block);
-                            rhs = inst->unwrap();
-                        }
-                    }
-                }
-                switch (expr->op) {
+            auto lbuiltin = lhs->valueType->tryIntoBuiltin();
+            if (lbuiltin == nullptr || lbuiltin->isVoid()) { return nullptr; }
+            auto rbuiltin = rhs->valueType->tryIntoBuiltin();
+            if (rbuiltin == nullptr || rbuiltin->isVoid()) { return nullptr; }
+            if (lbuiltin->isFloat() || rbuiltin->isFloat()) {
+                auto lval = lbuiltin->isFloat()
+                              ? lhs->asConstant()->f32
+                              : static_cast<float>(lhs->asConstant()->i32);
+                auto rval = rbuiltin->isFloat()
+                              ? rhs->asConstant()->f32
+                              : static_cast<float>(rhs->asConstant()->i32);
+                switch (e->op) {
                     case BinaryOperator::Add: {
-                        inst = Instruction::createAdd(lhs, rhs);
+                        return ConstantExpr::createF32(lval + rval);
                     } break;
                     case BinaryOperator::Sub: {
-                        inst = Instruction::createSub(lhs, rhs);
+                        return ConstantExpr::createF32(lval - rval);
                     } break;
                     case BinaryOperator::Mul: {
-                        inst = Instruction::createMul(lhs, rhs);
+                        return ConstantExpr::createF32(lval * rval);
                     } break;
                     case BinaryOperator::Div: {
-                        inst = Instruction::createSDiv(lhs, rhs);
+                        return ConstantExpr::createF32(lval / rval);
                     } break;
                     case BinaryOperator::LT: {
-                        inst = ICmpInst::createSLT(lhs, rhs);
+                        return ConstantExpr::createI32(lval < rval);
                     } break;
                     case BinaryOperator::LE: {
-                        inst = ICmpInst::createSLE(lhs, rhs);
+                        return ConstantExpr::createI32(lval <= rval);
                     } break;
                     case BinaryOperator::GT: {
-                        inst = ICmpInst::createSGT(lhs, rhs);
+                        return ConstantExpr::createI32(lval > rval);
                     } break;
                     case BinaryOperator::GE: {
-                        inst = ICmpInst::createSGE(lhs, rhs);
+                        return ConstantExpr::createI32(lval >= rval);
                     } break;
                     case BinaryOperator::EQ: {
-                        inst = ICmpInst::createEQ(lhs, rhs);
+                        return ConstantExpr::createI32(lval == rval);
                     } break;
                     case BinaryOperator::NE: {
-                        inst = ICmpInst::createNE(lhs, rhs);
+                        return ConstantExpr::createI32(lval != rval);
                     } break;
                     default: {
+                        return nullptr;
                     } break;
                 }
             } else {
-                switch (expr->op) {
+                auto lval = lhs->asConstant()->i32;
+                auto rval = rhs->asConstant()->i32;
+                switch (e->op) {
                     case BinaryOperator::Add: {
-                        inst = Instruction::createFAdd(lhs, rhs);
+                        return ConstantExpr::createI32(lval + rval);
                     } break;
                     case BinaryOperator::Sub: {
-                        inst = Instruction::createFSub(lhs, rhs);
+                        return ConstantExpr::createI32(lval - rval);
                     } break;
                     case BinaryOperator::Mul: {
-                        inst = Instruction::createFMul(lhs, rhs);
+                        return ConstantExpr::createI32(lval * rval);
                     } break;
                     case BinaryOperator::Div: {
-                        inst = Instruction::createFDiv(lhs, rhs);
+                        return ConstantExpr::createI32(lval / rval);
                     } break;
                     case BinaryOperator::LT: {
-                        inst = FCmpInst::createOLT(lhs, rhs);
+                        return ConstantExpr::createI32(lval < rval);
                     } break;
                     case BinaryOperator::LE: {
-                        inst = FCmpInst::createOLE(lhs, rhs);
+                        return ConstantExpr::createI32(lval <= rval);
                     } break;
                     case BinaryOperator::GT: {
-                        inst = FCmpInst::createOGT(lhs, rhs);
+                        return ConstantExpr::createI32(lval > rval);
                     } break;
                     case BinaryOperator::GE: {
-                        inst = FCmpInst::createOGE(lhs, rhs);
+                        return ConstantExpr::createI32(lval >= rval);
                     } break;
                     case BinaryOperator::EQ: {
-                        inst = FCmpInst::createOEQ(lhs, rhs);
+                        return ConstantExpr::createI32(lval == rval);
                     } break;
                     case BinaryOperator::NE: {
-                        inst = FCmpInst::createONE(lhs, rhs);
+                        return ConstantExpr::createI32(lval != rval);
                     } break;
                     default: {
+                        return nullptr;
                     } break;
                 }
             }
-            if (!inst) { break; }
-            inst->insertToTail(block);
-            state_.addressOfPrevExpr = nullptr;
-            state_.valueOfPrevExpr   = inst->unwrap();
-            return state_.valueOfPrevExpr;
         } break;
         case BinaryOperator::Mod:
         case BinaryOperator::And:
@@ -1030,182 +325,168 @@ Value *ASTToIRTranslator::translateBinaryExpr(
         case BinaryOperator::Xor:
         case BinaryOperator::Shl:
         case BinaryOperator::Shr: {
-            assert(lhs->type()->isInteger() && rhs->type()->isInteger());
-            switch (expr->op) {
+            auto builtin = lhs->valueType->tryIntoBuiltin();
+            if (builtin == nullptr || !builtin->isInt()) { return nullptr; }
+            builtin = rhs->valueType->tryIntoBuiltin();
+            if (builtin == nullptr || !builtin->isInt()) { return nullptr; }
+            auto lval = lhs->asConstant()->i32;
+            auto rval = rhs->asConstant()->i32;
+            switch (e->op) {
                 case BinaryOperator::Mod: {
-                    inst = Instruction::createSRem(lhs, rhs);
+                    return ConstantExpr::createI32(lval % rval);
                 } break;
                 case BinaryOperator::And: {
-                    inst = Instruction::createAnd(lhs, rhs);
+                    return ConstantExpr::createI32(lval & rval);
                 } break;
                 case BinaryOperator::Or: {
-                    inst = Instruction::createOr(lhs, rhs);
+                    return ConstantExpr::createI32(lval | rval);
                 } break;
                 case BinaryOperator::Xor: {
-                    inst = Instruction::createXor(lhs, rhs);
+                    return ConstantExpr::createI32(lval ^ rval);
                 } break;
                 case BinaryOperator::Shl: {
-                    inst = Instruction::createShl(lhs, rhs);
+                    return ConstantExpr::createI32(lval << rval);
                 } break;
                 case BinaryOperator::Shr: {
-                    inst = Instruction::createAShr(lhs, rhs);
+                    return ConstantExpr::createI32(lval >> rval);
                 } break;
                 default: {
+                    return nullptr;
                 } break;
             }
-            if (!inst) { break; }
-            inst->insertToTail(block);
-            state_.addressOfPrevExpr = nullptr;
-            state_.valueOfPrevExpr   = inst->unwrap();
-            return state_.valueOfPrevExpr;
+        } break;
+        case BinaryOperator::LAnd:
+        case BinaryOperator::LOr: {
+            UnaryExpr l(UnaryOperator::Not, lhs);
+            UnaryExpr r(UnaryOperator::Not, rhs);
+            auto lval = tryEvaluateCompileTimeUnaryExpr(&l)->tryIntoConstant();
+            auto rval = tryEvaluateCompileTimeUnaryExpr(&r)->tryIntoConstant();
+            if (!lval || !rval) { return nullptr; }
+            switch (e->op) {
+                case BinaryOperator::LAnd: {
+                    return ConstantExpr::createI32(!lval->i32 && !lval->i32);
+                } break;
+                case BinaryOperator::LOr: {
+                    return ConstantExpr::createI32(!lval->i32 || !lval->i32);
+                } break;
+                default: {
+                    return nullptr;
+                } break;
+            }
+        } break;
+        case BinaryOperator::Unreachable: {
+            assert(false && "unreachable binary expression");
+            return nullptr;
         } break;
         default: {
+            unreachable();
         } break;
     }
+}
 
-    assert(false && "translateBinaryExpr: unreachable branch");
-    state_.addressOfPrevExpr = nullptr;
-    state_.valueOfPrevExpr   = nullptr;
+bool ASTExprSimplifier::isFunctionCallCompileTimeEvaluable(
+    FunctionDecl* function, size_t maxStmtAllowed) {
+    //! TODO: exclude non-const variable and extern function
+    return false;
+}
+
+ConstantExpr* ASTExprSimplifier::tryEvaluateFunctionCall(CallExpr* call) {
+    auto decl = call->callable->tryIntoDeclRef();
+    if (!decl) { return nullptr; }
+    auto fn = decl->source->tryIntoFunctionDecl();
+    if (!fn || !fn->canBeConstExpr) { return nullptr; }
+    //! TODO: execute AST evaluation machine
     return nullptr;
 }
 
-Value *ASTToIRTranslator::translateCommaExpr(
-    BasicBlock *block, CommaExpr *expr) {
-    assert(expr->size() > 0);
-    //! TODO: use Expr::isNoEffect to filter no-effect expr [optional]
-    //! NOTE: last value cannot ignore
-    Value *value = nullptr;
-    for (auto e : *expr) { value = translateExpr(state_.currentBlock, e); }
-    assert(value != nullptr);
-    //! comma-expr derives the attribute as paren-expr, so simply forward
-    //! valueOfPrevExpr and addressOfPrefExpr
-    assert(value == state_.valueOfPrevExpr);
-    return state_.valueOfPrevExpr;
-}
-
-Value *ASTToIRTranslator::translateCallExpr(BasicBlock *block, CallExpr *expr) {
-    assert(expr->callable->tryIntoDeclRef());
-    assert(expr->callable->asDeclRef()->source->tryIntoFunctionDecl());
-    auto result = translateDeclRefExpr(block, expr->callable->asDeclRef());
-    assert(block == state_.currentBlock);
-    assert(result != nullptr);
-    assert(result->isFunction());
-    auto callee = result->asFunction();
-    auto call   = CallInst::create(callee);
-    assert(callee->totalParams() == expr->argList.size());
-    assert(call->totalUse() == callee->totalParams() + 1);
-    int index = 1;
-    for (auto arg : expr->argList) {
-        call->op()[index++] = translateExpr(state_.currentBlock, arg);
-    }
-    call->insertToTail(state_.currentBlock);
-    state_.addressOfPrevExpr = nullptr;
-    state_.valueOfPrevExpr   = call->unwrap();
-    return state_.valueOfPrevExpr;
-}
-
-Value *ASTToIRTranslator::translateSubscriptExpr(
-    BasicBlock *block, SubscriptExpr *expr) {
-    auto         address  = translateExpr(state_.currentBlock, expr->lhs);
-    Instruction *valuePtr = nullptr;
-    if (state_.addressOfPrevExpr != nullptr) {
-        address          = state_.addressOfPrevExpr;
-        bool indexOnce   = false;
-        auto elementType = address->type()->tryGetElementType();
-        if (!elementType->isArray()) {
-            auto inst = Instruction::createLoad(address);
-            inst->insertToTail(state_.currentBlock);
-            address   = inst->unwrap();
-            indexOnce = true;
-        }
-        auto index = translateExpr(state_.currentBlock, expr->rhs);
-        valuePtr   = indexOnce ? GetElementPtrInst::create(address, index)
-                               : GetElementPtrInst::create(
-                                 address, module_->createI32(0), index);
-    } else {
-        assert(false && "only accept lhs as symref");
-    }
-    valuePtr->insertToTail(state_.currentBlock);
-    Instruction *value       = nullptr;
-    auto         elementType = valuePtr->unwrap()->type()->tryGetElementType();
-    if (elementType->isArray()) {
-        value = GetElementPtrInst::create(
-            valuePtr->unwrap(), module_->createI32(0), module_->createI32(0));
-    } else {
-        value = Instruction::createLoad(valuePtr->unwrap());
-    }
-    value->insertToTail(state_.currentBlock);
-    state_.addressOfPrevExpr = valuePtr->unwrap();
-    state_.valueOfPrevExpr   = value->unwrap();
-    return state_.valueOfPrevExpr;
-}
-
-void ASTToIRTranslator::translateArrayInitAssign(
-    Value *address, InitListExpr *data) {
-    //! assume that init-list is regulated
-    int  index = 0;
-    auto type  = address->type()->tryGetElementType()->tryGetElementType();
-    if (type->isArray()) {
-        for (auto e : *data) {
-            auto list = e->tryIntoInitList();
-            assert(list != nullptr);
-            if (list->size() > 0) {
-                auto inst = GetElementPtrInst::create(
-                    address, module_->createI32(0), module_->createI32(index));
-                inst->insertToTail(state_.currentBlock);
-                translateArrayInitAssign(inst->unwrap(), list);
-            }
-            ++index;
-        }
-    } else {
-        for (auto e : *data) {
-            auto inst = GetElementPtrInst::create(
-                address, module_->createI32(0), module_->createI32(index));
-            inst->insertToTail(state_.currentBlock);
-            auto value = translateExpr(state_.currentBlock, e);
-            assert(value->type()->isBuiltinType() && type->isBuiltinType());
-            if (!value->type()->equals(type)) {
-                if (type->isInteger()) {
-                    auto inst = Instruction::createFPToSI(value);
-                    inst->insertToTail(state_.currentBlock);
-                    value = inst->unwrap();
-                } else {
-                    auto inst = Instruction::createSIToFP(value);
-                    inst->insertToTail(state_.currentBlock);
-                    value = inst->unwrap();
+static InitListExpr* consumeArrayInitBlock(
+    BuiltinTypeID                elementType,
+    const std::vector<int>&      array,
+    int                          currentDim,
+    InitListExpr::iterator&      it,
+    const InitListExpr::iterator end) {
+    assert(elementType != BuiltinTypeID::Void);
+    assert(currentDim > 0);
+    auto result = InitListExpr::create();
+    if (currentDim == array.size()) {
+        int n = array[currentDim - 1];
+        while (it != end && n-- > 0) {
+            auto e = ASTExprSimplifier::trySimplify(*it);
+            if (e->exprId == ExprID::InitList) {
+                assert(e->asInitList()->size() == 0);
+                e = elementType == BuiltinTypeID::Int
+                      ? ConstantExpr::createI32(0)
+                      : ConstantExpr::createF32(0.f);
+            } else if (auto type = e->valueType->tryIntoBuiltin()) {
+                assert(type->type != BuiltinTypeID::Char);
+                if (type->type != elementType) {
+                    switch (elementType) {
+                        case BuiltinTypeID::Char: {
+                            e = ConstantExpr::createI32(static_cast<char>(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->f32));
+                        } break;
+                        case BuiltinTypeID::Int: {
+                            e = ConstantExpr::createI32(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->f32);
+                        } break;
+                        case BuiltinTypeID::Float: {
+                            e = ConstantExpr::createI32(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->i32);
+                        } break;
+                        default: {
+                            unreachable();
+                        } break;
+                    }
                 }
+            } else {
+                unreachable();
             }
-            assert(value->type()->equals(type));
-            Instruction::createStore(inst->unwrap(), value)
-                ->insertToTail(state_.currentBlock);
-            ++index;
+            result->insertToTail(e);
+            ++it;
+        }
+    } else {
+        for (int i = 0; i < array[currentDim - 1] && it != end; ++i) {
+            if ((*it)->exprId == ExprID::InitList) {
+                auto innerList = (*it)->asInitList();
+                auto innerIt   = innerList->begin();
+                result->insertToTail(consumeArrayInitBlock(
+                    elementType,
+                    array,
+                    currentDim + 1,
+                    innerIt,
+                    innerList->end()));
+                ++it;
+            } else {
+                result->insertToTail(consumeArrayInitBlock(
+                    elementType, array, currentDim + 1, it, end));
+            }
         }
     }
+    return result;
 }
 
-Value *ASTToIRTranslator::bicastIntFP(Value *value, ir::Type *expected) {
-    assert(value->type()->isInteger() || value->type()->isFloat());
-    assert(expected->isInteger() || expected->isFloat());
-    if (value->type()->equals(expected)) { return value; }
-    if (value->isImmediate()) {
-        if (expected->isFloat()) {
-            return module_->createF32(
-                static_cast<float>(static_cast<ConstantInt *>(value)->value));
-        } else {
-            auto e = static_cast<int32_t>(
-                static_cast<ConstantFloat *>(value)->value);
-            return expected->isBoolean() ? ConstantData::getBoolean(e)
-                                         : module_->createI32(e);
-        }
+InitListExpr* ASTExprSimplifier::regulateInitListForArray(
+    ArrayType* array, InitListExpr* list) {
+    //! 1. empty brace zeros corresponding dimension
+    //! 2. rest of given values are reset to zero
+    //! 3. plain values must fit the length before next brace
+    std::vector<int> arrayLength;
+    for (auto e : *array) {
+        auto n = tryEvaluateCompileTimeExpr(e);
+        assert(n != nullptr);
+        assert(n->tryIntoConstant() != nullptr);
+        assert(n->asConstant()->type == ConstantType::i32);
+        arrayLength.push_back(n->asConstant()->i32);
     }
-    Instruction *inst = nullptr;
-    if (expected->isFloat()) {
-        inst = Instruction::createSIToFP(value);
-    } else {
-        inst = Instruction::createFPToSI(value);
-    }
-    assert(inst != nullptr);
-    return inst->unwrap();
+    auto it = list->begin();
+    return consumeArrayInitBlock(
+        array->type->asBuiltin()->type, arrayLength, 1, it, list->end());
 }
 
 } // namespace slime::visitor

@@ -1,34 +1,17 @@
-#pragma once
-
-#include "85.h"
-
-#include <functional>
+#include "87.h"
 
 namespace slime::pass {
 
-class FunctionInliningPass : public UniversalIRPass {
+class DeadCodeEliminationPass final : public UniversalIRPass {
 public:
     void run(ir::Module *module) override;
     void runOnFunction(ir::Function *target) override;
 
 protected:
-    bool tryExecuteFunctionInlining(ir::BasicBlock *block, ir::CallInst *iter);
-
-    ir::BasicBlock *insertNewBlockAfter(ir::Instruction *inst);
-
-    inline bool isRecursiveFunction(ir::Function *fn) {
-        return depsMap[fn].count(fn) > 0;
-    }
-
-    void testAndSetRecursionFlag(ir::Function *function);
-
-    ir::Instruction *cloneInstruction(
-        ir::Instruction                        *instruction,
-        std::function<ir::Value *(ir::Value *)> mappingStrategy);
-
-private:
-    //! function dependency map
-    std::map<ir::Function *, std::set<ir::Function *>> depsMap;
+    //! address -> store
+    std::map<ir::Value *, ir::StoreInst *> defList;
+    //! store -> load
+    std::map<ir::StoreInst *, ir::LoadInst *> useList;
 };
 
 } // namespace slime::pass

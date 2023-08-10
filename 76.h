@@ -1,23 +1,34 @@
 #pragma once
 
-#include "85.h"
+#include "87.h"
 
-#include "47.h"
-#include <set>
-#include <map>
-#include <vector>
+#include <functional>
 
 namespace slime::pass {
 
-class MemoryToRegisterPass : public UniversalIRPass {
+class FunctionInliningPass : public UniversalIRPass {
 public:
+    void run(ir::Module *module) override;
     void runOnFunction(ir::Function *target) override;
 
 protected:
-    using BlockSetMap = std::map<ir::BasicBlock *, std::set<ir::BasicBlock *>>;
-    using BlockMap    = std::map<ir::BasicBlock *, ir::BasicBlock *>;
-    void computeDomFrontier(
-        BlockMap &idom, BlockSetMap &domfr, ir::Function *target);
+    bool tryExecuteFunctionInlining(ir::BasicBlock *block, ir::CallInst *iter);
+
+    ir::BasicBlock *insertNewBlockAfter(ir::Instruction *inst);
+
+    inline bool isRecursiveFunction(ir::Function *fn) {
+        return depsMap[fn].count(fn) > 0;
+    }
+
+    void testAndSetRecursionFlag(ir::Function *function);
+
+    ir::Instruction *cloneInstruction(
+        ir::Instruction                        *instruction,
+        std::function<ir::Value *(ir::Value *)> mappingStrategy);
+
+private:
+    //! function dependency map
+    std::map<ir::Function *, std::set<ir::Function *>> depsMap;
 };
 
 } // namespace slime::pass

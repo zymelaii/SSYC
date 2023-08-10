@@ -1,50 +1,43 @@
 #include "84.h"
 
-#include "53.h"
-#include "51.h"
-#include "47.h"
+#include "49.h"
 
 namespace slime::pass {
 
 using namespace ir;
 
-void ValueNumberingPass::runOnFunction(Function *target) {
-    nextId_ = 0;
-    doneSet_.clear();
+void SCCPPass::runOnFunction(Function *target) {
+    // if (target->size() == 0) { return; }
 
-    for (int i = 0; i < target->totalParams(); ++i) {
-        auto param = const_cast<Parameter *>(&target->params()[i]);
-        param->setIdUnsafe(nextId_++, 0);
-    }
+    // cfgWorkList_.push_back({nullptr, target->front()});
 
-    for (auto block : target->basicBlocks()) {
-        if (block->name().empty()) {
-            block->setIdUnsafe(nextId_++);
-            doneSet_.insert(block);
-        }
-        for (auto inst : block->instructions()) {
-            auto value = inst->unwrap();
-            if (value->type()->isVoid()) { continue; }
-            if (doneSet_.count(value) == 0) {
-                value->setIdUnsafe(nextId_++);
-                doneSet_.insert(value);
-            }
-        }
-    }
+    // for (auto block : target->basicBlocks()) {
+    //     for (auto inst : block->instructions()) {
+    //         valueStatus_[inst->unwrap()] = Status::TOP;
+    //     }
+    // }
 
-    if (target->size() > 1) {
-        auto       it        = target->begin();
-        const auto end       = target->end();
-        auto       prevBlock = *it++;
-        while (it != end) {
-            auto thisBlock = *it++;
-            if (prevBlock->id() > thisBlock->id()) {
-                auto id = prevBlock->id();
-                prevBlock->setIdUnsafe(thisBlock->id());
-                thisBlock->setIdUnsafe(id);
-            }
-        }
-    }
+    // int i = 0, j = 0;
+    // while (i < cfgWorkList_.size() && j < ssaWorkList_.size()) {
+    //     while (i < cfgWorkList_.size()) {
+    //         auto &e = cfgWorkList_[i++];
+    //         if (flags_.count(e) != 0) { continue; }
+    //         flags_.insert(e);
+    //         for (auto inst : e.to->instructions()) { runOnInstruction(inst);
+    //         }
+    //     }
+    //     while (j < ssaWorkList_.size()) {
+    //         auto inst = ssaWorkList_[j++];
+    //         for (auto block : inst->parent()->inBlocks()) {
+    //             if (flags_.count({block, inst->parent()}) != 0) {
+    //                 runOnInstruction(inst);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
 }
+
+void SCCPPass::runOnInstruction(Instruction *inst) {}
 
 } // namespace slime::pass
