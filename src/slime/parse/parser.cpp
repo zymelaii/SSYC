@@ -247,6 +247,28 @@ VarDecl *Parser::parseVarDef() {
     //! create var decl and update symbol table
     Diagnosis::assertTrue(
         symbolTableStack_.back()->count(name) == 0, "redefination of variable");
+    //! handle implicit conversion
+    if (auto type = spec->type->tryIntoBuiltin()) {
+        assert(init->valueType->tryIntoBuiltin());
+        auto valueType = init->valueType->asBuiltin()->type;
+        if (valueType != type->type && valueType != BuiltinTypeID::Char) {
+            switch (type->type) {
+                case BuiltinTypeID::Int: {
+                    init = ConstantExpr::createI32(init->asConstant()->f32);
+                } break;
+                case BuiltinTypeID::Char: {
+                    init = ConstantExpr::createI32(
+                        static_cast<char>(init->asConstant()->f32));
+                } break;
+                case BuiltinTypeID::Float: {
+                    init = ConstantExpr::createF32(init->asConstant()->i32);
+                } break;
+                default: {
+                    unreachable();
+                } break;
+            }
+        }
+    }
     decl = VarDecl::create(name, spec, init);
     addSymbol(decl);
     return decl;

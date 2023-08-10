@@ -417,6 +417,35 @@ static InitListExpr* consumeArrayInitBlock(
                 e = elementType == BuiltinTypeID::Int
                       ? ConstantExpr::createI32(0)
                       : ConstantExpr::createF32(0.f);
+            } else if (auto type = e->valueType->tryIntoBuiltin()) {
+                assert(type->type != BuiltinTypeID::Char);
+                if (type->type != elementType) {
+                    switch (elementType) {
+                        case BuiltinTypeID::Char: {
+                            e = ConstantExpr::createI32(static_cast<char>(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->f32));
+                        } break;
+                        case BuiltinTypeID::Int: {
+                            e = ConstantExpr::createI32(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->f32);
+                        } break;
+                        case BuiltinTypeID::Float: {
+                            e = ConstantExpr::createI32(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->i32);
+                        } break;
+                        default: {
+                            unreachable();
+                        } break;
+                    }
+                }
+            } else {
+                unreachable();
             }
             result->insertToTail(e);
             ++it;
