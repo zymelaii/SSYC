@@ -58,6 +58,8 @@ using FloatConstants  = LinkedList<std::pair<int, float>>;
 using FpConstVersoins = std::map<int, int>;
 
 class Generator {
+    friend class InstrOp;
+
     Generator(){};
 
 public:
