@@ -103,7 +103,7 @@ public:
         const auto longOpcodeWidth = 14;
         const auto indent          = 4;
         const auto space           = 2;
-        char       args[64]{};
+        char       args[128]{};
         va_list    ap;
         va_start(ap, fmt);
         vsprintf(args, fmt, ap);
