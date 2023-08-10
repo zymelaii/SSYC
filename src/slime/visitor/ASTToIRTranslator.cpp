@@ -1091,12 +1091,30 @@ Value *ASTToIRTranslator::translateCallExpr(BasicBlock *block, CallExpr *expr) {
     assert(result != nullptr);
     assert(result->isFunction());
     auto callee = result->asFunction();
+    auto proto  = callee->proto();
     auto call   = CallInst::create(callee);
     assert(callee->totalParams() == expr->argList.size());
     assert(call->totalUse() == callee->totalParams() + 1);
     int index = 1;
     for (auto arg : expr->argList) {
-        call->op()[index++] = translateExpr(state_.currentBlock, arg);
+        auto param = translateExpr(state_.currentBlock, arg);
+        if (!param->type()->equals(proto->paramTypeAt(index - 1))) {
+            assert(proto->paramTypeAt(index - 1)->isBuiltinType());
+            auto expected = proto->paramTypeAt(index - 1);
+            auto type     = param->type();
+            if (expected->isFloat() && type->isInteger()) {
+                auto inst = SIToFPInst::create(param);
+                inst->insertToTail(state_.currentBlock);
+                param = inst->unwrap();
+            } else if (expected->isInteger() && type->isFloat()) {
+                auto inst = FPToSIInst::create(param);
+                inst->insertToTail(state_.currentBlock);
+                param = inst->unwrap();
+            } else {
+                unreachable();
+            }
+        }
+        call->op()[index++] = param;
     }
     call->insertToTail(state_.currentBlock);
     state_.addressOfPrevExpr = nullptr;
