@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(
 	ssyc
-	VERSION 0.4.0
+	VERSION 0.5.0
 	DESCRIPTION "Slime SysY Compiler"
 	HOMEPAGE_URL "https://github.com/zymelaii/SSYC"
 	LANGUAGES C CXX
