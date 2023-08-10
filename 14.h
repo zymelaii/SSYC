@@ -1,12 +1,12 @@
-#include "51.h"
-#include "50.h"
-#include "2.h"
-#include "46.h"
 #include "53.h"
+#include "52.h"
+#include "2.h"
+#include "48.h"
+#include "55.h"
+#include "51.h"
+#include "90.h"
 #include "49.h"
-#include "88.h"
-#include "47.h"
-#include "39.h"
+#include "41.h"
 
 #include <set>
 #include <string>
@@ -58,6 +58,8 @@ using FloatConstants  = LinkedList<std::pair<int, float>>;
 using FpConstVersoins = std::map<int, int>;
 
 class Generator {
+    friend class InstrOp;
+
     Generator(){};
 
 public:
@@ -93,7 +95,7 @@ public:
         const auto longOpcodeWidth = 14;
         const auto indent          = 4;
         const auto space           = 2;
-        char       args[32]{};
+        char       args[64]{};
         va_list    ap;
         va_start(ap, fmt);
         vsprintf(args, fmt, ap);

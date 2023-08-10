@@ -1,189 +1,532 @@
 #pragma once
 
-#include "87.h"
-
-/*!
- * \brief magic macros and types for universal try-into inplements
- *
- *  1. declare your own base type
- *
- *  enum ID { A, B, C, D };
- *  class TypeBase {
- *  public:
- *      TypeBase(ID id) : id_{id} {}
- *      auto id() const { return id_; }
- *
- *  private:
- *      ID id_;
- *  };
- *
- *  using Type = TryIntoTraitWrapper<TypeBase, &TypeBase::id>;
- *
- *  2. declare your derived types
- *
- *  class DA : public Type {
- *  public:
- *      DA() : Type(ID::A) {}
- *  };
- *
- *  class DB : public Type {
- *  public:
- *      DB() : Type(ID::B) {}
- *  };
- *
- *  class DC : public Type {
- *  public:
- *      DC(ID id = ID::C) : Type(id) {}
- *  };
- *
- * class DD : public DC {
- *  public:
- *      DD() : DC(id) {}
- *  };
- *
- *  3. specify enum type for derived type
- *
- *  emit Type::declareTryIntoItem(DA, ID::A);
- *  emit Type::declareTryIntoItem(DB, ID::B);
- *  emit Type::declareTryIntoItem(DD, ID::D);
- *
- *  4. provide specilized is<G> check
- *
- *  template <>
- *  template <>
- *  bool Type::is<DC>() const {
- *      return wrapper()->id() == ID::C || is<DC>();
- *  }
- *
- *  5. enjoy yourself
- *
- *  int main() {
- *      Type* t = new DD;
- *      if (auto e = t->tryInto<DC>()) {
- *          //! TODO: ...
- *      }
- *      return 0;
- *  }
- */
+#include <stddef.h>
+#include <assert.h>
+#include <string.h>
+#include <type_traits>
+#include <iterator>
+#include <utility>
 
 namespace slime::utils {
 
-namespace detail {
-template <typename Self, typename E, auto FnEnum>
-class TryIntoTrait;
-}; // namespace detail
+template <typename T>
+class ListNode;
 
-template <
-    typename Self,
-    auto FnEnum,
-    typename Fn = decltype(FnEnum),
-    typename R  = std::invoke_result_t<Fn, Self>,
-    typename    = std::enable_if_t<std::is_scoped_enum_v<R>>,
-    typename    = std::enable_if_t<std::is_same_v<R (Self::*)() const, Fn>>>
-using TryIntoTraitWrapper = detail::TryIntoTrait<Self, R, FnEnum>;
+template <typename T>
+class ListTrait;
 
-namespace detail {
-
-template <typename Self, typename E, auto FnEnum>
-class TryIntoTrait : public Self {
-private:
-    using wrapper_type = TryIntoTraitWrapper<Self, FnEnum>;
-    using inner_type   = Self;
-
+template <typename T>
+class AbstractListTrait {
 public:
-    template <typename... Args>
-    TryIntoTrait(Args&&... args)
-        : Self(std::forward<Args>(args)...) {}
+    using node_type  = ListNode<T>;
+    using value_type = typename node_type::value_type;
 
-public:
-    template <typename G>
-    inline auto as() {
-        return static_cast<std::add_pointer_t<G>>(self());
+    friend node_type;
+
+    size_t size() const {
+        return size_;
     }
 
-    template <typename G>
-    inline auto as() const {
-        return static_cast<std::add_pointer_t<std::add_const_t<G>>>(self());
+    node_type *head() {
+        auto node = headGuard()->next_;
+        return node == tailGuard() ? nullptr : node;
     }
 
-    template <typename G>
-    inline auto into() const {
-        return static_cast<std::add_pointer_t<G>>(self());
+    node_type *tail() {
+        auto node = tailGuard()->prev_;
+        return node == headGuard() ? nullptr : node;
     }
 
-    template <typename G>
-    inline auto tryInto() const {
-        return is<G>() ? into<G>() : nullptr;
+    node_type *head() const {
+        return const_cast<AbstractListTrait<T> *>(this)->head();
     }
 
-    template <typename G>
-    inline bool is() const {
-        using wrapper_type = TryIntoTraitWrapper<Self, FnEnum>;
-        using this_type    = std::add_pointer_t<wrapper_type>;
-        using other_type   = std::add_pointer_t<G>;
-        return (this->*FnEnum)() == declare_t<G>;
+    node_type *tail() const {
+        return const_cast<AbstractListTrait<T> *>(this)->tail();
     }
 
-    template <>
-    inline constexpr bool is<wrapper_type>() const {
-        return true;
+protected:
+    node_type *headGuard() const {
+        return const_cast<AbstractListTrait<T> *>(this)->headGuard();
     }
 
-    template <>
-    inline constexpr bool is<inner_type>() const {
-        return true;
+    node_type *tailGuard() const {
+        return const_cast<AbstractListTrait<T> *>(this)->tailGuard();
     }
 
-    //! FIXME: -1 can be a valid of scoped enum E
-    template <typename G>
-    static inline constexpr E declare_t = static_cast<E>(-1);
+    virtual node_type *headGuard() = 0;
+
+    virtual node_type *tailGuard() = 0;
 
 private:
-    inline constexpr auto self() const {
-        return const_cast<std::add_pointer_t<wrapper_type>>(this);
-    }
+    size_t size_ = 0;
 };
 
-} // namespace detail
+template <typename T>
+class ListNode {
+public:
+    using value_type = T;
 
-#ifndef TRY_INTO_MAGIC_MACROS
-#define TRY_INTO_MAGIC_MACROS
+    friend AbstractListTrait<value_type>;
+    friend ListTrait<value_type>;
 
-#if defined(emit) || defined(declareTryIntoItem)
-#error macro `emit` or `declareTryIntoItem` is reserved for try-into trait
-#endif
+    ListNode()
+        : isPtr_{std::is_trivial_v<value_type>}
+        , prev_{nullptr}
+        , next_{nullptr}
+        , parent_{nullptr} {
+        if constexpr (std::is_trivial_v<value_type>) {
+            valuePtr_ = new value_type;
+        } else {
+            new (&valueObj_) value_type;
+        }
+    }
 
-#define emit \
- template <> \
- template <> \
- constexpr auto
+    ListNode(value_type &value)
+        : isPtr_{false}
+        , valueObj_(std::move(value))
+        , prev_{nullptr}
+        , next_{nullptr}
+        , parent_{nullptr} {}
 
-#define DECLARE_TRY_INTO_ITEM_M4(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
-#define DECLARE_TRY_INTO_ITEM_M3(...) \
- DECLARE_TRY_INTO_ITEM_M3(__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-#define DECLARE_TRY_INTO_ITEM_M2(n, a, b, ...) \
- TRY_INTO_DECLARE_DISPATCH_##n(a, b, ##__VA_ARGS__)
-#define DECLARE_TRY_INTO_ITEM_M1(...) DECLARE_TRY_INTO_ITEM_M2(__VA_ARGS__)
+    ~ListNode() {
+        if (isPtr_) {
+            delete valuePtr_;
+            valuePtr_ = nullptr;
+        }
+    }
 
-#define declareTryIntoItem(a, b, ...) \
- DECLARE_TRY_INTO_ITEM_M1(            \
-     DECLARE_TRY_INTO_ITEM_M3(b, ##__VA_ARGS__), a, b, ##__VA_ARGS__)
+    ListNode *prev() {
+        if (parent_ == nullptr) {
+            return prev_;
+        } else {
+            return prev_ == nullptr ? parent_->headGuard() : prev_;
+        }
+    }
 
-#define TRY_INTO_DECLARE_DISPATCH_1(a, b)          declare_t<a> = b
-#define TRY_INTO_DECLARE_DISPATCH_2(a, b, c)       declare_t<a, b> = c
-#define TRY_INTO_DECLARE_DISPATCH_3(a, b, c, d)    declare_t<a, b, c> = d
-#define TRY_INTO_DECLARE_DISPATCH_4(a, b, c, d, e) declare_t<a, b, c, d> = e
-#define TRY_INTO_DECLARE_DISPATCH_5(a, b, c, d, e, f) \
- declare_t<a, b, c, d, e> = f
-#define TRY_INTO_DECLARE_DISPATCH_6(a, b, c, d, e, f, g) \
- declare_t<a, b, c, d, e, f> = g
-#define TRY_INTO_DECLARE_DISPATCH_7(a, b, c, d, e, f, g, h) \
- declare_t<a, b, c, d, e, f, g> = h
-#define TRY_INTO_DECLARE_DISPATCH_8(a, b, c, d, e, f, g, h, i) \
- declare_t<a, b, c, d, e, f, g, h> = i
-#define TRY_INTO_DECLARE_DISPATCH_9(a, b, c, d, e, f, g, h, i, j) \
- declare_t<a, b, c, d, e, f, g, h, i> = j
+    ListNode *next() {
+        if (parent_ == nullptr) {
+            return next_;
+        } else {
+            return next_ == nullptr ? parent_->tailGuard() : next_;
+        }
+    }
 
-#endif
+    value_type &value() {
+        if (isPtr_) {
+            assert(valuePtr_ != nullptr);
+            return *valuePtr_;
+        } else {
+            return valueObj_;
+        }
+    }
+
+    void removeFromList() {
+        assert(parent_ != nullptr);
+        prev()->next_ = next_;
+        next()->prev_ = prev_;
+        --parent_->size_;
+        prev_   = nullptr;
+        next_   = nullptr;
+        parent_ = nullptr;
+    }
+
+    void insertBefore(ListNode *node) {
+        assert(node != nullptr);
+        assert(node->parent_ != nullptr);
+        if (parent_ != nullptr) { removeFromList(); }
+        parent_      = node->parent_;
+        prev_        = node->prev();
+        next_        = node;
+        next_->prev_ = this;
+        prev_->next_ = this;
+        ++parent_->size_;
+    }
+
+    void insertAfter(ListNode *node) {
+        assert(node != nullptr);
+        assert(node->parent_ != nullptr);
+        if (parent_ != nullptr) { removeFromList(); }
+        parent_      = node->parent_;
+        prev_        = node;
+        next_        = node->next();
+        prev_->next_ = this;
+        next_->prev_ = this;
+        ++parent_->size_;
+    }
+
+    void insertToHead(AbstractListTrait<T> &list) {
+        if (parent_ != nullptr) { removeFromList(); }
+        auto node          = list.headGuard();
+        prev_              = node;
+        next_              = node->next_;
+        node->next_->prev_ = this;
+        node->next_        = this;
+        parent_            = &list;
+        ++list.size_;
+    }
+
+    void insertToTail(AbstractListTrait<T> &list) {
+        if (parent_ != nullptr) { removeFromList(); }
+        auto node          = list.tailGuard();
+        prev_              = node->prev_;
+        next_              = node;
+        node->prev_->next_ = this;
+        node->prev_        = this;
+        parent_            = &list;
+        ++list.size_;
+    }
+
+    void moveToPrev() {
+        assert(parent_ != nullptr);
+        if (prev_ != nullptr) {
+            prev_->next_ = next_;
+            next_        = prev_;
+            prev_->prev_ = this;
+        }
+    }
+
+    void moveToNext() {
+        assert(parent_ != nullptr);
+        if (next_ != nullptr) {
+            next_->prev_ = prev_;
+            prev_        = next_;
+            next_->next_ = this;
+        }
+    }
+
+    template <typename... Args>
+    ListNode *emplaceAfterThis(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        node->insertAfter(this);
+        return node;
+    }
+
+    template <typename... Args>
+    ListNode *emplaceBeforeThis(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new ListNode(e);
+        node->insertBefore(this);
+        return node;
+    }
+
+private:
+    const bool isPtr_;
+
+    union {
+        value_type *valuePtr_;
+        value_type  valueObj_;
+    };
+
+    ListNode             *prev_;
+    ListNode             *next_;
+    AbstractListTrait<T> *parent_;
+}; // namespace slime::utils
+
+template <typename T>
+class ListTrait : public AbstractListTrait<T> {
+public:
+    using base_type  = AbstractListTrait<T>;
+    using node_type  = typename base_type::node_type;
+    using value_type = typename node_type::value_type;
+
+    class iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = ListTrait::value_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        iterator(const iterator &other)
+            : iterator(other.ptr_) {}
+
+        iterator &operator++() {
+            if (ptr_ != parent_->tailGuard()) { ptr_ = ptr_->next(); }
+            return *this;
+        }
+
+        iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->tailGuard());
+            return ptr_->value();
+        }
+
+        pointer operator->() {
+            return ptr_->value();
+        }
+
+        bool operator==(const iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
+    class const_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = ListTrait::value_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        const_iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        const_iterator(const const_iterator &other)
+            : const_iterator(other.ptr_) {}
+
+        const_iterator &operator++() {
+            if (ptr_ != parent_->tailGuard()) { ptr_ = ptr_->next(); }
+            return *this;
+        }
+
+        const_iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->tailGuard());
+            return ptr_->value();
+        }
+
+        pointer operator->() {
+            return &ptr_->value();
+        }
+
+        bool operator==(const const_iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const const_iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
+    class reverse_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = ListTrait::value_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        reverse_iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        reverse_iterator(const reverse_iterator &other)
+            : reverse_iterator(other.ptr_) {}
+
+        reverse_iterator &operator++() {
+            if (ptr_ != parent_->headGuard()) { ptr_ = ptr_->prev(); }
+            return *this;
+        }
+
+        reverse_iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->headGuard());
+            return ptr_->value();
+        }
+
+        pointer operator->() {
+            return ptr_->value();
+        }
+
+        bool operator==(const reverse_iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const reverse_iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
+    class node_iterator {
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = node_type;
+        using pointer           = value_type *;
+        using reference         = value_type &;
+
+        node_iterator(node_type *ptr)
+            : ptr_{ptr} {
+            assert(ptr_ != nullptr && ptr_->parent_ != nullptr);
+            parent_ = static_cast<ListTrait *>(ptr_->parent_);
+        }
+
+        node_iterator(const node_iterator &other)
+            : node_iterator(other.ptr_) {}
+
+        node_iterator &operator++() {
+            if (ptr_ != parent_->tailGuard()) { ptr_ = ptr_->next(); }
+            return *this;
+        }
+
+        node_iterator operator++(int) {
+            auto it = *this;
+            ++*this;
+            return it;
+        }
+
+        reference operator*() {
+            assert(ptr_ != parent_->tailGuard());
+            return *ptr_;
+        }
+
+        pointer operator->() {
+            return ptr_;
+        }
+
+        bool operator==(const node_iterator &other) const {
+            return parent_ == other.parent_ && ptr_ == other.ptr_;
+        }
+
+        bool operator!=(const node_iterator &other) const {
+            return parent_ != other.parent_ || ptr_ != other.ptr_;
+        }
+
+    private:
+        ListTrait *parent_;
+        node_type *ptr_;
+    };
+
+    iterator begin() {
+        return iterator(headGuard()->next_);
+    }
+
+    iterator end() {
+        return iterator(tailGuard());
+    }
+
+    const_iterator begin() const {
+        return cbegin();
+    }
+
+    const_iterator end() const {
+        return cend();
+    }
+
+    const_iterator cbegin() const {
+        return const_iterator(AbstractListTrait<T>::headGuard()->next_);
+    }
+
+    const_iterator cend() const {
+        return const_iterator(AbstractListTrait<T>::tailGuard());
+    }
+
+    reverse_iterator rbegin() {
+        return reverse_iterator(tailGuard()->prev_);
+    }
+
+    reverse_iterator rend() {
+        return reverse_iterator(headGuard());
+    }
+
+    node_iterator node_begin() {
+        return node_iterator(headGuard()->next_);
+    }
+
+    node_iterator node_end() {
+        return node_iterator(tailGuard());
+    }
+
+    ListTrait() {
+        memset(guard_, 0, sizeof(node_type) * 2);
+        guard_[0].parent_ = this;
+        guard_[1].parent_ = this;
+        guard_[0].next_   = &guard_[1];
+        guard_[1].prev_   = &guard_[0];
+    }
+
+    ListTrait(const ListTrait &list)
+        : ListTrait() {
+        for (auto &e : list) { insertToTail(e); }
+    }
+
+    ListTrait(ListTrait &&list)
+        : ListTrait() {
+        for (auto &e : list) { insertToTail(std::move(e)); }
+    }
+
+    ListTrait(const std::initializer_list<value_type> &list)
+        : ListTrait() {
+        for (const auto &e : list) { insertToTail(e); }
+    }
+
+    template <typename... Args>
+    static ListTrait *from(Args &&...args) {
+        return new ListTrait(
+            std::initializer_list<value_type>{std::forward<Args>(args)...});
+    }
+
+    template <typename... Args>
+    node_type *insertToHead(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new node_type(e);
+        node->insertToHead(*this);
+        return node;
+    }
+
+    template <typename... Args>
+    node_type *insertToTail(Args &&...args) {
+        value_type e(std::forward<Args>(args)...);
+        auto       node = new node_type(e);
+        node->insertToTail(*this);
+        return node;
+    }
+
+private:
+    node_type *headGuard() override {
+        return &guard_[0];
+    }
+
+    node_type *tailGuard() override {
+        return &guard_[1];
+    }
+
+private:
+    node_type guard_[2];
+};
 
 } // namespace slime::utils

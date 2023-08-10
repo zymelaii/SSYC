@@ -1,13 +1,13 @@
 #include "14.h"
-#include "16.h"
+#include "18.h"
 
-#include "21.h"
-#include "46.h"
-#include "49.h"
-#include "53.h"
+#include "23.h"
+#include "48.h"
 #include "51.h"
-#include "47.h"
-#include "88.h"
+#include "55.h"
+#include "53.h"
+#include "49.h"
+#include "90.h"
 #include <algorithm>
 #include <set>
 #include <stddef.h>
@@ -2166,18 +2166,22 @@ InstCode *Generator::genCallInst(CallInst *inst) {
 
     RegList   savedGenRegList;
     FpRegList savedFpRegList;
+    //! only external lib func need to mannually save the site
+    // if (libfunc.count(inst->callee()->name().data())) {
     for (int i = 1; i + usedParamGenRegs < maxParamGenRegs; ++i) {
         auto reg = static_cast<ARMGeneralRegs>(i);
         if (allocator->usedGeneralRegs.count(reg)) {
             savedGenRegList.insertToTail(reg);
         }
     }
-    for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
-        auto reg = static_cast<ARMFloatRegs>(i);
-        if (allocator->usedFloatRegs.count(reg)) {
-            savedFpRegList.insertToTail(reg);
-        }
-    }
+    //! never push the fp regs
+    // for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
+    //     auto reg = static_cast<ARMFloatRegs>(i);
+    //     if (allocator->usedFloatRegs.count(reg)) {
+    //         savedFpRegList.insertToTail(reg);
+    //     }
+    // }
+    //}
     callcode->code += cgPush(savedGenRegList);
     callcode->code += cgPush(savedFpRegList);
 

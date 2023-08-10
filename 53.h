@@ -1,613 +1,245 @@
 #pragma once
 
-#include "50.h"
-#include "44.h"
+#include "55.h"
 
-#include "88.h"
+#include "90.h"
+#include "91.h"
 #include <stdint.h>
-#include <string_view>
-#include <array>
-#include <vector>
-#include <set>
-#include <list>
+#include <stddef.h>
+#include <memory>
 
 namespace slime::ir {
 
-class Value;
-class Use;
-template <int N>
-class User;
-class Instruction;
-class ConstantData;
-class GlobalObject;
-class GlobalVariable;
-class Parameter;
+class BasicBlock;
 class Function;
+class ConstantData;
+class ConstantInt;
+class ConstantFloat;
+class ConstantArray;
 
-using UseList         = utils::ListTrait<Use *>;
-using InstructionList = utils::ListTrait<Instruction *>;
-using BasicBlockList  = utils::ListTrait<BasicBlock *>;
+using BasicBlockList   = utils::ListTrait<BasicBlock*>;
+using ConstantDataList = utils::ListTrait<ConstantData*>;
 
-enum class ValueTag : uint32_t {
-    //! static value
-    Static = 0x8000 << 1,
-    //! global object, always a function or global variable
-    Global = Static | (0x8000 << 2),
-    //! constant semantically
-    Constant = 0x8000 << 3,
-    //! read-only completely, usually store in .rodata segment
-    ReadOnly = Constant | Static | (0x8000 << 4),
-    //! value is a label
-    Label = 0x8000 << 5,
-    //! value is an immediate
-    Immediate = ReadOnly | (0x8000 << 6),
-    //! value is a function
-    Function = Global | ReadOnly | (0x8000 << 7),
-    //! value is from an instruction
-    Instruction = 0x8000 << 8,
-    //! value is from a cmp instruction
-    CompareInst = Instruction | (0x8000 << 9),
-    //! value is a parameter
-    Parameter = 0x8000 << 10,
+class Constant : public User<0> {
+public:
+    Constant(Type* type, uint32_t tag)
+        : User(type, tag) {}
 };
 
-inline uint32_t operator|(ValueTag tag1, ValueTag tag2);
-inline uint32_t operator|(uint32_t tag1, ValueTag tag2);
-inline uint32_t operator|(ValueTag tag1, uint32_t tag2);
-
-class Value {
-protected:
-    inline Value(Type *type, uint32_t tag = 0);
-
+class ConstantData : public Constant {
 public:
-    inline const UseList &uses() const;
+    ConstantData(Type* type, uint32_t tag)
+        : Constant(type, tag) {}
 
-    inline void addUse(Use *use) const;
-    inline void removeUse(Use *use) const;
+    static inline ConstantInt*   getBoolean(bool value);
+    static inline ConstantInt*   createI8(int8_t data);
+    static inline ConstantInt*   createI32(int32_t data);
+    static inline ConstantFloat* createF32(float data);
 
-    inline bool usedBy(const Use *use) const;
+    inline ConstantInt*   asConstantInt() const;
+    inline ConstantFloat* asConstantFloat() const;
+    inline ConstantArray* asConstantArray() const;
 
-    template <int N>
-    inline bool usedBy(const User<N> *user) const {
-        return user->contains(this);
-    }
-
-    inline Type            *type() const;
-    inline std::string_view name() const;
-    inline uint32_t         tag() const;
-    inline int32_t          id() const;
-    inline uint32_t         version() const;
-
-    inline bool isStatic() const;
-    inline bool isGlobal() const;
-    inline bool isConstant() const;
-    inline bool isReadOnly() const;
-    inline bool isLabel() const;
-    inline bool isImmediate() const;
-    inline bool isFunction() const;
-    inline bool isInstruction() const;
-    inline bool isCompareInst() const;
-    inline bool isParameter() const;
-
-    Instruction    *asInstruction();
-    GlobalObject   *asGlobalObject();
-    ConstantData   *asConstantData();
-    GlobalVariable *asGlobalVariable();
-    Function       *asFunction();
-
-    Instruction    *tryIntoInstruction();
-    GlobalObject   *tryIntoGlobalObject();
-    ConstantData   *tryIntoConstantData();
-    GlobalVariable *tryIntoGlobalVariable();
-    Function       *tryIntoFunction();
-
-    inline Value       *decay();
-    inline const Value *decay() const;
-
-    inline void  setPatch(void *patch) const;
-    inline void *patch() const;
-
-    inline void setName(std::string_view name, bool force = false);
-    inline void setIdUnsafe(int32_t id, uint32_t version = 0);
-    inline void resetValueTypeUnsafe(Type *valueType);
-
-private:
-    std::string_view name_      = "";
-    int32_t          id_        = 0;
-    uint32_t         version_   = 0;
-    Type            *valueType_ = nullptr;
-    uint32_t         tag_       = 0;
-    mutable UseList  useList_;
-
-    //! WARNING: under no circumstances should patch_ be initilaized since it
-    //! might be modified by the external object at any time, initialization
-    //! will probably cause the modification invalid
-    //! e.g. an instruction user is orderly constructed by Instruction, User<N>,
-    //! etc, where ctor of User<N> will construct the Value instance which may
-    //! cover the modification of Instruction ctor
-    mutable void *patch_;
+    inline ConstantInt*   tryIntoConstantInt() const;
+    inline ConstantFloat* tryIntoConstantFloat() const;
+    inline ConstantArray* tryIntoConstantArray() const;
 };
 
-class Use {
+class ConstantInt final
+    : public ConstantData
+    , public utils::BuildTrait<ConstantInt> {
 public:
-    inline void   reset(const Value *value = nullptr);
-    inline Use   &operator=(const Value *value);
-    inline Use   &operator=(Use &use); //<! always move the use
-    inline Value *value() const;
-    inline        operator Value *() const;
-    inline Value *operator->() const;
+    ConstantInt(int32_t value, Type* type = Type::getIntegerType())
+        : ConstantData(type, ValueTag::Immediate | 0)
+        , value{value} {}
 
-    inline void   attachTo(Value *user);
-    inline Value *owner() const;
-
-private:
-    const Value *value_  = nullptr;
-    Value       *parent_ = nullptr;
+public:
+    int32_t value;
 };
 
-template <int N>
-class User : public Value {
-protected:
-    User(Type *type, uint32_t tag)
-        : Value(type, tag) {
-        for (auto &use : operands_) { use.attachTo(this); }
-    }
+class ConstantFloat final
+    : public ConstantData
+    , public utils::BuildTrait<ConstantFloat> {
+public:
+    ConstantFloat(float value)
+        : ConstantData(Type::getFloatType(), ValueTag::Immediate | 0)
+        , value{value} {}
 
 public:
-    Use *op() const {
-        return const_cast<Use *>(operands_.data());
+    float value;
+};
+
+class ConstantArray final
+    : public ConstantData
+    , public utils::BuildTrait<ConstantArray> {
+public:
+    ConstantArray(ArrayType* type)
+        : ConstantData(type, ValueTag::ReadOnly | 0) {}
+
+    ConstantData*& operator[](size_t index) {
+        if (index >= values_.size()) { values_.resize(index + 1, nullptr); }
+        return values_[index];
     }
 
-    template <int I>
-    Use &op() const {
-        static_assert(I >= 0 && I < N);
-        return const_cast<Use &>(operands_[I]);
+    ConstantData* at(size_t index) {
+        return index < values_.size() ? values_[index] : nullptr;
     }
 
-    bool contains(const Value *use) const {
-        for (int i = 0; i < N; ++i) {
-            if (use == operands_[i]) { return true; }
-        }
-        return false;
-    }
-
-    constexpr size_t totalUse() const {
-        return N;
+    size_t size() const {
+        return values_.size();
     }
 
 private:
-    std::array<Use, N> operands_;
+    std::vector<ConstantData*> values_;
 };
 
-template <>
-class User<-1> : public Value {
-protected:
-    User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
-
+class GlobalObject : public Constant {
 public:
-    Use *op() const {
-        return const_cast<Use *>(operands_.data());
+    GlobalObject(Type* type, uint32_t tag)
+        : Constant(type, tag) {}
+};
+
+class GlobalVariable final
+    : public GlobalObject
+    , public utils::BuildTrait<GlobalVariable> {
+public:
+    GlobalVariable(std::string_view name, Type* type, bool constant = false)
+        : GlobalObject(
+            Type::createPointerType(type),
+            ValueTag::Global | (constant ? ValueTag::ReadOnly | 0 : 0)) {
+        setName(name);
     }
 
-    bool contains(const Value *use) const {
-        for (const auto &e : operands_) {
-            if (use == e) { return true; }
-        }
-        return false;
+    void setInitData(ConstantData* data) {
+        assert(data->type()->equals(type()->tryGetElementType()));
+        data_ = data;
     }
 
-    size_t totalUse() const {
-        return operands_.size();
+    void setInitData(int32_t data) {
+        setInitData(ConstantData::createI32(data));
     }
 
-    void resize(size_t n) {
-        //! NOTE: resize will lead to memmove, so as the address of Use, yet the
-        //! users and used values will sill hold the out-dated value, so rebind
-        //! to make it stay in active
-        std::vector<Value *> restore;
-        for (int i = 0; i < operands_.size(); ++i) {
-            restore.push_back(operands_[i].value());
-            operands_[i].reset();
-        }
-        operands_.resize(n);
-        for (int i = 0; i < restore.size(); ++i) {
-            operands_[i].reset(restore[i]);
-        }
-        for (auto &use : operands_) { use.attachTo(this); }
+    void setInitData(float data) {
+        setInitData(ConstantData::createF32(data));
+    }
+
+    const ConstantData* data() const {
+        return data_;
+    }
+
+    bool isConst() const {
+        return isConstant();
     }
 
 private:
-    std::vector<Use> operands_;
+    ConstantData* data_;
 };
 
-template <>
-class User<0> : public Value {
-protected:
-    User(Type *type, uint32_t tag)
-        : Value(type, tag) {}
-
+//! NOTE: function may contains uses of global variable, but we do not care
+//! about it at the definition stage
+class Function final
+    : public GlobalObject
+    , public BasicBlockList
+    , public utils::BuildTrait<Function> {
 public:
-    Use *op() const {
-        return nullptr;
+    Function(std::string_view name, FunctionType* proto)
+        : GlobalObject(proto, ValueTag::Function | 0)
+        , params_(new Parameter[proto->totalParams()]) {
+        setName(name);
     }
 
-    constexpr bool contains(const Use *use) const {
-        return false;
+    inline BasicBlockList& basicBlocks() {
+        return *this;
     }
 
-    constexpr size_t totalUse() const {
-        return 0;
-    }
-};
-
-template <>
-class User<1> : public Value {
-protected:
-    User(Type *type, uint32_t tag)
-        : Value(type, tag) {
-        operand_.attachTo(this);
+    inline const BasicBlockList& basicBlocks() const {
+        return *this;
     }
 
-public:
-    Use *op() const {
-        return const_cast<Use *>(&operand_);
+    inline BasicBlock* front() {
+        assert(size() > 0);
+        return head()->value();
     }
 
-    Use &operand() const {
-        return const_cast<Use &>(operand_);
+    inline BasicBlock* back() {
+        assert(size() > 0);
+        return tail()->value();
     }
 
-    bool contains(const Value *use) const {
-        return use == operand();
+    inline FunctionType* proto() const {
+        return const_cast<Function*>(this)->type()->asFunctionType();
     }
 
-    constexpr size_t totalUse() const {
-        return 1;
+    inline const Parameter* params() const {
+        return &params_.get()[0];
+    }
+
+    inline size_t totalParams() const {
+        return proto()->totalParams();
+    }
+
+    inline const Parameter* paramAt(size_t index) const {
+        return index < proto()->totalParams() ? &params_.get()[index] : nullptr;
+    }
+
+    inline void setParam(std::string_view name, size_t index) {
+        if (index >= totalParams()) { return; }
+        auto& param = params_.get()[index];
+        param.setName(name);
+        param.resetValueTypeUnsafe(proto()->paramTypeAt(index));
+        param.attachTo(this, index);
     }
 
 private:
-    Use operand_;
+    std::unique_ptr<Parameter> params_;
 };
 
-template <>
-class User<2> : public Value {
-protected:
-    User(Type *type, uint32_t tag)
-        : Value(type, tag) {
-        operands_[0].attachTo(this);
-        operands_[1].attachTo(this);
-    }
-
-public:
-    Use *op() const {
-        return const_cast<Use *>(operands_);
-    }
-
-    Use &lhs() const {
-        return const_cast<Use &>(operands_[0]);
-    }
-
-    Use &rhs() const {
-        return const_cast<Use &>(operands_[1]);
-    }
-
-    bool contains(const Value *use) const {
-        return use == lhs() || use == rhs();
-    }
-
-    constexpr size_t totalUse() const {
-        return 2;
-    }
-
-private:
-    Use operands_[2];
-};
-
-template <>
-class User<3> : public Value {
-protected:
-    User(Type *type, uint32_t tag)
-        : Value(type, tag) {
-        operands_[0].attachTo(this);
-        operands_[1].attachTo(this);
-        operands_[2].attachTo(this);
-    }
-
-public:
-    Use *op() const {
-        return const_cast<Use *>(operands_);
-    }
-
-    template <int I>
-    Use &op() const {
-        static_assert(I >= 0 && I < 3);
-        return const_cast<Use &>(operands_[I]);
-    }
-
-    bool contains(const Value *use) const {
-        return use == op<0>() || use == op<1>() || use == op<2>();
-    }
-
-    constexpr size_t totalUse() const {
-        return 3;
-    }
-
-private:
-    Use operands_[3];
-};
-
-class BasicBlock final
-    : public Value
-    , public CFGNode
-    , public InstructionList
-    , public utils::BuildTrait<BasicBlock> {
-public:
-    inline BasicBlock(Function *parent);
-
-    inline Function *parent() const;
-
-    inline bool isInserted() const;
-
-    inline InstructionList       &instructions();
-    inline const InstructionList &instructions() const;
-
-    void insertOrMoveToHead();
-    void insertOrMoveToTail();
-
-    bool insertOrMoveAfter(BasicBlock *block);
-    bool insertOrMoveBefore(BasicBlock *block);
-
-    bool remove();
-
-private:
-    Function *const            parent_;
-    BasicBlockList::node_type *node_;
-};
-
-class Parameter final
-    : public Value
-    , public utils::BuildTrait<Parameter> {
-public:
-    inline Parameter();
-
-    inline Function *parent() const;
-    inline size_t    index() const;
-
-    inline void attachTo(Function *fn, size_t index);
-
-    inline void setName(std::string_view name);
-
-private:
-    Function *parent_;
-    size_t    index_;
-};
-
-inline uint32_t operator|(ValueTag tag1, ValueTag tag2) {
-    return static_cast<uint32_t>(tag1) | static_cast<uint32_t>(tag2);
+inline ConstantInt* ConstantData::getBoolean(bool value) {
+    static ConstantInt trueSingleton(true, Type::getBooleanType());
+    static ConstantInt falseSingleton(false, Type::getBooleanType());
+    return value ? &trueSingleton : &falseSingleton;
 }
 
-inline uint32_t operator|(uint32_t tag1, ValueTag tag2) {
-    return tag1 | static_cast<uint32_t>(tag2);
+inline ConstantInt* ConstantData::createI8(int8_t data) {
+    return ConstantInt::create(data, IntegerType::get(IntegerKind::i8));
 }
 
-inline uint32_t operator|(ValueTag tag1, uint32_t tag2) {
-    return static_cast<uint32_t>(tag1) | tag2;
+inline ConstantInt* ConstantData::createI32(int32_t data) {
+    return ConstantInt::create(data);
 }
 
-inline Value::Value(Type *type, uint32_t tag)
-    : valueType_{type}
-    , tag_{tag} {}
-
-inline const UseList &Value::uses() const {
-    return useList_;
+inline ConstantFloat* ConstantData::createF32(float data) {
+    return ConstantFloat::create(data);
 }
 
-inline void Value::addUse(Use *use) const {
-    for (auto e : useList_) {
-        if (e == use) { return; }
-    }
-    useList_.insertToTail(use);
+inline ConstantInt* ConstantData::asConstantInt() const {
+    assert(isImmediate() && type()->isInteger());
+    return static_cast<ConstantInt*>(const_cast<ConstantData*>(this));
 }
 
-inline void Value::removeUse(Use *use) const {
-    for (auto it = useList_.node_begin(); it != useList_.node_end(); ++it) {
-        if (it->value() == use) {
-            it->removeFromList();
-            return;
-        }
-    }
-    assert(false);
+inline ConstantFloat* ConstantData::asConstantFloat() const {
+    assert(isImmediate() && type()->isFloat());
+    return static_cast<ConstantFloat*>(const_cast<ConstantData*>(this));
 }
 
-inline bool Value::usedBy(const Use *use) const {
-    for (auto e : useList_) {
-        if (e == use) { return true; }
-    }
-    return false;
+inline ConstantArray* ConstantData::asConstantArray() const {
+    assert(!isImmediate() && isReadOnly() && type()->isArray());
+    return static_cast<ConstantArray*>(const_cast<ConstantData*>(this));
 }
 
-inline Type *Value::type() const {
-    return valueType_;
+inline ConstantInt* ConstantData::tryIntoConstantInt() const {
+    bool convertible = isImmediate() && type()->isInteger();
+    return convertible ? asConstantInt() : nullptr;
 }
 
-inline std::string_view Value::name() const {
-    return name_;
+inline ConstantFloat* ConstantData::tryIntoConstantFloat() const {
+    bool convertible = isImmediate() && type()->isFloat();
+    return convertible ? asConstantFloat() : nullptr;
 }
 
-inline uint32_t Value::tag() const {
-    return tag_;
-}
-
-inline int32_t Value::id() const {
-    return id_;
-}
-
-inline uint32_t Value::version() const {
-    return version_;
-}
-
-inline bool Value::isStatic() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Static);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isGlobal() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Global);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isConstant() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Constant);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isReadOnly() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::ReadOnly);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isLabel() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Label);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isImmediate() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Immediate);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isFunction() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Function);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isInstruction() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Instruction);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isCompareInst() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::CompareInst);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline bool Value::isParameter() const {
-    auto testFlag = static_cast<uint32_t>(ValueTag::Parameter);
-    return (tag_ & testFlag) == testFlag;
-}
-
-inline Value *Value::decay() {
-    return static_cast<Value *>(this);
-}
-
-inline const Value *Value::decay() const {
-    return static_cast<const Value *>(this);
-}
-
-inline void Value::setPatch(void *patch) const {
-    patch_ = patch;
-}
-
-inline void *Value::patch() const {
-    return patch_;
-}
-
-inline void Value::setName(std::string_view name, bool force) {
-    //! FIXME: handle multiple rename
-    if (name_.empty() || force) { name_ = name; }
-}
-
-inline void Value::setIdUnsafe(int32_t id, uint32_t version) {
-    id_      = id;
-    version_ = version;
-}
-
-inline void Value::resetValueTypeUnsafe(Type *valueType) {
-    valueType_ = valueType;
-}
-
-inline void Use::reset(const Value *value) {
-    if (value != value_) {
-        if (value_ != nullptr) { value_->removeUse(this); }
-        if (value != nullptr) { value->addUse(this); }
-        value_ = value;
-    }
-}
-
-inline Use &Use::operator=(const Value *value) {
-    reset(value);
-    return *this;
-}
-
-inline Use &Use::operator=(Use &use) {
-    if (this != std::addressof(use)) {
-        use.reset();
-        reset(use.value_);
-    }
-    return *this;
-}
-
-inline Value *Use::value() const {
-    return const_cast<Value *>(value_);
-}
-
-inline Value *Use::operator->() const {
-    return value();
-}
-
-inline void Use::attachTo(Value *user) {
-    parent_ = user;
-}
-
-inline Value *Use::owner() const {
-    return const_cast<Use *>(this)->parent_;
-}
-
-inline Use::operator Value *() const {
-    return value();
-}
-
-inline BasicBlock::BasicBlock(Function *parent)
-    : Value(Type::getLabelType(), ValueTag::Label | 0)
-    , parent_{parent}
-    , node_{nullptr} {}
-
-inline Function *BasicBlock::parent() const {
-    return parent_;
-}
-
-inline bool BasicBlock::isInserted() const {
-    return node_ != nullptr;
-}
-
-inline InstructionList &BasicBlock::instructions() {
-    return *this;
-}
-
-inline const InstructionList &BasicBlock::instructions() const {
-    return *this;
-}
-
-inline Parameter::Parameter()
-    : Value(Type::getVoidType(), ValueTag::Parameter | 0) {}
-
-inline Function *Parameter::parent() const {
-    return parent_;
-}
-
-inline size_t Parameter::index() const {
-    return index_;
-}
-
-inline void Parameter::attachTo(Function *fn, size_t index) {
-    //! NOTE: this is a pseudo attach action, the realy one is done by Function
-    parent_ = fn;
-    index_  = index;
-}
-
-inline void Parameter::setName(std::string_view name) {
-    Value::setName(name, true);
+inline ConstantArray* ConstantData::tryIntoConstantArray() const {
+    bool convertible = !isImmediate() && isReadOnly() && type()->isArray();
+    return convertible ? asConstantArray() : nullptr;
 }
 
 } // namespace slime::ir

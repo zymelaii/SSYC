@@ -1,179 +1,128 @@
 #include "68.h"
 
-#include <stack>
-#include <set>
-#include <assert.h>
+#include <vector>
 
 namespace slime::pass {
 
 using namespace ir;
 
-void ControlFlowSimplificationPass::runOnFunction(ir::Function* target) {
-    std::stack<BasicBlock*> blocks;
-    std::set<BasicBlock*>   visited;
-    std::set<BasicBlock*>   deleteLater;
-
-    //! compute unreachable blocks
-    deleteLater.insert(
-        target->basicBlocks().begin(), target->basicBlocks().end());
-    blocks.push(target->front());
-    while (!blocks.empty()) {
-        auto block = blocks.top();
-        blocks.pop();
-        if (visited.count(block)) { continue; }
-
-        //! mark block as reachable
-        deleteLater.erase(block);
-        visited.insert(block);
-
-        //! fold dead branch
-        if (block->isBranched()) {
-            if (block->branch() == block->branchElse()) {
-                block->reset(block->branch());
-            } else if (block->control()->isImmediate()) {
-                if (auto selectFirst =
-                        static_cast<ConstantInt*>(block->control())->value) {
-                    block->reset(block->branch());
-                } else {
-                    block->reset(block->branchElse());
-                }
-            }
-        }
-
-        //! visit succ blocks
-        if (block->isBranched()) {
-            blocks.push(block->branch());
-            blocks.push(block->branchElse());
-        } else if (!block->isTerminal()) {
-            assert(block->isLinear());
-            blocks.push(block->branch());
-        }
-    }
-    visited.clear();
-
-    //! remove unreachable blocks
-    for (auto block : deleteLater) { block->reset(); }
-    for (auto block : deleteLater) {
-        auto ok = block->remove();
-        assert(ok);
-    }
-    deleteLater.clear();
-
-    //! simplify cfg
-    blocks.push(target->front());
-    while (!blocks.empty()) {
-        auto block = blocks.top();
-        blocks.pop();
-
-        //! skip removed or visited block
-        if (!block->parent() || visited.count(block)) { continue; }
-
-        visited.insert(block);
-
-        //! TODO: fold simple indirect jump
-        //! TODO: merge continous jump
-
-        //! visit succ blocks
-        if (block->isBranched()) {
-            blocks.push(block->branch());
-            blocks.push(block->branchElse());
-        } else if (!block->isTerminal()) {
-            assert(block->isLinear());
-            blocks.push(block->branch());
-        }
-    }
-
-    // auto& blocks    = target->basicBlocks();
-    // auto  blockIter = blocks.begin();
-    // while (blockIter != blocks.end()) {
-    //     auto thisBlockIter = blockIter;
-    //     auto block         = *blockIter++;
-
-    //    //! 1. fold constant branch
-    //    if (block->isBranched()) {
-    //        if (block->branch() == block->branchElse()) {
-    //            block->reset(block->branch());
-    //        } else {
-    //            if (!block->control()->isImmediate()) { continue; }
-    //            auto imm = static_cast<ConstantInt*>(block->control())->value;
-    //            if (imm) {
-    //                block->reset(block->branch());
-    //            } else {
-    //                block->reset(block->branchElse());
-    //            }
-    //        }
-    //    }
-
-    //    //! 2. remove unreachable incoming blocks
-    //    std::vector<BasicBlock*> inblocks;
-    //    for (auto inblock : block->inBlocks()) {
-    //        if (inblock->totalInBlocks() == 0) { inblocks.push_back(inblock);
-    //        }
-    //    }
-    //    for (auto inblock : inblocks) {
-    //        if (inblock != target->front()) {
-    //            auto ok = inblock->remove();
-    //            assert(ok);
-    //        }
-    //    }
-    //    auto it   = thisBlockIter;
-    //    blockIter = ++it;
-
-    //    //! 3. remove unreachable block
-    //    bool isEntry = block == target->front();
-    //    if (!isEntry && block->totalInBlocks() == 0) {
-    //        auto ok = block->remove();
-    //        assert(ok);
-    //        continue;
-    //    }
-    //    if (!block->isLinear() || block->isTerminal()) { continue; }
-    //    auto nextBlock = block->branch();
-    //    if (nextBlock == block) {
-    //        if (!isEntry && block->totalInBlocks() == 1) {
-    //            block->reset();
-    //            auto ok = block->remove();
-    //            assert(ok);
-    //        }
-    //        continue;
-    //    }
-
-    //    //! 4 check simplifiable
-    //    bool simplifiable = true;
-    //    for (auto use : block->uses()) {
-    //        if (use->owner()->asInstruction()->id() != InstructionID::Br) {
-    //            simplifiable = false;
-    //            break;
-    //        }
-    //    }
-    //    if (!simplifiable) { continue; }
-
-    //    //! 5. remove useless branch
-    //    if (block->size() == 1) {
-    //        std::vector<Use*> uses(block->uses().begin(),
-    //        block->uses().end()); for (auto use : uses) {
-    //            use->reset(nextBlock);
-    //            use->owner()
-    //                ->asInstruction()
-    //                ->parent()
-    //                ->syncFlowWithInstUnsafe();
-    //        }
-    //        auto ok = block->remove();
-    //        assert(ok);
-    //        continue;
-    //    }
-
-    //    //! 6. combine linear branch
-    //    if (nextBlock->totalInBlocks() == 1) {
-    //        block->reset();
-    //        std::vector<Instruction*> instrs(
-    //            nextBlock->begin(), nextBlock->end());
-    //        for (auto inst : instrs) { inst->insertToTail(block); }
-    //        block->syncFlowWithInstUnsafe();
-    //        auto ok = nextBlock->remove();
-    //        assert(ok);
-    //        blockIter = thisBlockIter;
-    //    }
-    //}
+inline intptr_t ptr2int(void* ptr) {
+    return reinterpret_cast<intptr_t>(ptr);
 }
 
+void CSEPass::runOnFunction(ir::Function* target) {
+    for (auto block : target->basicBlocks()) {
+        auto instIter = block->instructions().begin();
+        while (instIter != block->instructions().end()) {
+            auto inst           = *instIter++;
+            auto [succeed, key] = encode(inst);
+            if (succeed) {
+                if (numberingTable_.count(key)) {
+                    auto value = numberingTable_.at(key);
+                    assert(value != nullptr);
+                    auto&             uses = inst->unwrap()->uses();
+                    std::vector<Use*> useList(uses.begin(), uses.end());
+                    for (auto use : useList) { use->reset(value); }
+                    auto ok = inst->removeFromBlock();
+                    assert(ok);
+                } else {
+                    numberingTable_.insert_or_assign(key, inst->unwrap());
+                }
+                continue;
+            }
+            if (inst->id() == InstructionID::Store) {
+                auto                  address = inst->asStore()->lhs();
+                std::vector<key_type> dirtyValues;
+                for (auto& [k, v] : numberingTable_) {
+                    assert(v->isInstruction());
+                    auto inst = v->asInstruction();
+                    for (int i = 0; i < inst->totalOperands(); ++i) {
+                        auto& use = inst->useAt(i);
+                        if (use == nullptr) {
+                            //! FIXME: nullptr check due to unreasonable design
+                            //! of totalOperands
+                            break;
+                        }
+                        if (use->isInstruction()) {
+                            auto inst = use->asInstruction();
+                            if (inst->id() == InstructionID::Load
+                                && inst->asLoad()->operand() == address) {
+                                dirtyValues.push_back(k);
+                            }
+                        }
+                    }
+                }
+                for (auto key : dirtyValues) { numberingTable_.erase(key); }
+            }
+        }
+    }
+}
+
+std::pair<bool, CSEPass::key_type> CSEPass::encode(ir::Instruction* inst) {
+    //! only encode binary or unary instruction;
+    key_type ret{};
+    bool     ok = false;
+    if (auto user = inst->tryIntoUser<1>();
+        user && inst->id() != ir::InstructionID::Load
+        && inst->id() != ir::InstructionID::Ret) {
+        ret = key_type{inst->id(), ptr2int(user->operand()), 0, 0};
+        ok  = true;
+    } else if (auto user = inst->tryIntoUser<2>();
+               user && inst->id() != ir::InstructionID::Store) {
+        assert(ptr2int(user->rhs()) != 0);
+        auto lhs = ptr2int(user->lhs());
+        auto rhs = ptr2int(user->rhs());
+        switch (inst->id()) {
+            case ir::InstructionID::Sub:
+            case ir::InstructionID::UDiv:
+            case ir::InstructionID::SDiv:
+            case ir::InstructionID::URem:
+            case ir::InstructionID::SRem:
+            case ir::InstructionID::FSub:
+            case ir::InstructionID::FDiv:
+            case ir::InstructionID::FRem:
+            case ir::InstructionID::Shl:
+            case ir::InstructionID::LShr:
+            case ir::InstructionID::AShr: {
+            } break;
+            default: {
+                //! let swappable inst with lhs <= rhs
+                if (lhs > rhs) { std::swap(lhs, rhs); }
+            } break;
+        }
+        ret = key_type{inst->id(), lhs, rhs, 0};
+        ok  = true;
+    } else if (inst->id() == InstructionID::GetElementPtr) {
+        auto gep           = inst->asGetElementPtr();
+        auto address       = gep->op<0>();
+        bool isConstantPtr = false;
+        if (address->isGlobal()) {
+            isConstantPtr = true;
+        } else if (address->isInstruction()) {
+            auto iaddr = address->asInstruction();
+            if (iaddr->id() == InstructionID::Alloca) {
+                isConstantPtr = true;
+            } else if (
+                iaddr->id() == InstructionID::GetElementPtr
+                && constantPtrInst_.count(iaddr->asGetElementPtr())) {
+                isConstantPtr = true;
+            }
+        }
+        if (isConstantPtr) {
+            constantPtrInst_.insert(gep);
+            auto index1 = gep->op<1>();
+            auto index2 = gep->op<2>();
+            if (index1->isImmediate()
+                && (index2 == nullptr || index2->isImmediate())) {
+                ret = key_type{
+                    inst->id(),
+                    ptr2int(address),
+                    ptr2int(index1),
+                    ptr2int(index2)};
+                ok = true;
+            }
+        }
+    }
+    return std::pair{ok, ret};
+}
 } // namespace slime::pass

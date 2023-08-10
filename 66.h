@@ -1,29 +1,68 @@
 #pragma once
 
-#include "85.h"
-
-#include "47.h"
-#include <tuple>
+#include "6.h"
+#include <array>
 #include <stddef.h>
-#include <stdint.h>
+#include <assert.h>
 
-namespace slime::pass {
+namespace slime {
 
-//! Common Subexpression Elimiantion
-class CSEPass : public UniversalIRPass {
-private:
-    using key_type =
-        std::tuple<ir::InstructionID, intptr_t, intptr_t, intptr_t>;
+namespace detail {
+static inline constexpr size_t TOTAL_OPERATORS =
+    static_cast<int>(ast::UnaryOperator::Unreachable)
+    + static_cast<int>(ast::BinaryOperator::Unreachable);
+} // namespace detail
 
-public:
-    void runOnFunction(ir::Function* target) override;
+struct OperatorPriority {
+    constexpr OperatorPriority(int priority, bool assoc)
+        : priority{priority}
+        , assoc{assoc} {}
 
-protected:
-    std::pair<bool, key_type> encode(ir::Instruction* inst);
+    int priority;
 
-private:
-    std::map<key_type, ir::Value*>   numberingTable_;
-    std::set<ir::GetElementPtrInst*> constantPtrInst_;
+    //! false: right-assoc
+    //! true: left-assoc
+    bool assoc;
 };
 
-} // namespace slime::pass
+static constexpr auto PRIORITIES =
+    std::array<OperatorPriority, detail::TOTAL_OPERATORS>{
+        //! UnaryOperator
+        OperatorPriority(1, false), //<! Pos
+        OperatorPriority(1, false), //<! Neg
+        OperatorPriority(1, false), //<! Not
+        OperatorPriority(1, false), //<! Inv
+        //! BinaryOperator
+        OperatorPriority(12, false), //<! Assign
+        OperatorPriority(3, true),   //<! Add
+        OperatorPriority(3, true),   //<! Sub
+        OperatorPriority(2, true),   //<! Mul
+        OperatorPriority(2, true),   //<! Div
+        OperatorPriority(2, true),   //<! Mod
+        OperatorPriority(7, true),   //<! And
+        OperatorPriority(9, true),   //<! Or
+        OperatorPriority(8, true),   //<! Xor
+        OperatorPriority(10, true),  //<! LAnd
+        OperatorPriority(11, true),  //<! LOr
+        OperatorPriority(5, true),   //<! LT
+        OperatorPriority(5, true),   //<! LE
+        OperatorPriority(5, true),   //<! GT
+        OperatorPriority(5, true),   //<! GE
+        OperatorPriority(6, true),   //<! EQ
+        OperatorPriority(6, true),   //<! NE
+        OperatorPriority(4, true),   //<! Shl
+        OperatorPriority(4, true),   //<! Shr
+    };
+
+inline OperatorPriority lookupOperatorPriority(ast::UnaryOperator op) {
+    assert(op != ast::UnaryOperator::Paren);
+    return PRIORITIES[static_cast<int>(op)];
+}
+
+inline OperatorPriority lookupOperatorPriority(ast::BinaryOperator op) {
+    return PRIORITIES
+        [static_cast<int>(op)
+         + static_cast<int>(ast::UnaryOperator::Unreachable)];
+}
+
+} // namespace slime

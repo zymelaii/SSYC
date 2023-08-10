@@ -1,72 +1,90 @@
 #pragma once
 
+#include <set>
+#include <assert.h>
+
 namespace slime::ir {
 
-enum class InstructionID {
-    Alloca,        //<! alloca
-    Load,          //<! load
-    Store,         //<! store
-    Ret,           //<! return
-    Br,            //<! branch
-    GetElementPtr, //<! getelementptr
-    Add,           //<! add
-    Sub,           //<! sub
-    Mul,           //<! mul
-    UDiv,          //<! div (unsigned)
-    SDiv,          //<! div (signed)
-    URem,          //<! remainder (unsigned)
-    SRem,          //<! remainder (signed)
-    FNeg,          //<! neg (float)
-    FAdd,          //<! add (float)
-    FSub,          //<! sub (float)
-    FMul,          //<! mul (float)
-    FDiv,          //<! div (float)
-    FRem,          //<! remainder (float)
-    Shl,           //<! shl
-    LShr,          //<! shr (logical)
-    AShr,          //<! shr (arithmetic)
-    And,           //<! bitwise and
-    Or,            //<! bitwise or
-    Xor,           //<! xor
-    FPToUI,        //<! floating point -> unsigned int
-    FPToSI,        //<! floating point -> signed int
-    UIToFP,        //<! unsigned int -> floating point
-    SIToFP,        //<! signed int -> floating point
-    ZExt,          //<! zext (i1 -> i32)
-    ICmp,          //<! cmp (int)
-    FCmp,          //<! cmp (float)
-    Phi,           //<! Phi node instruction
-    Call,          //<! call
-    LAST_INST = Call,
+class BasicBlock;
+class Value;
+
+//! NOTE: CFGNode derives the BasicBlock
+class CFGNode {
+public:
+    inline bool isOrphan() const;
+    inline bool isIncomplete() const;
+    inline bool isTerminal() const;
+    inline bool isLinear() const;
+    inline bool isBranched() const;
+
+    inline Value*      control() const;
+    inline BasicBlock* branch() const;
+    inline BasicBlock* branchElse() const;
+
+    void reset();
+    void reset(BasicBlock* branch);
+    void reset(Value* control, BasicBlock* branch, BasicBlock* branchElse);
+
+    bool tryMarkAsTerminal(Value* hint = nullptr);
+    void syncFlowWithInstUnsafe();
+
+    inline size_t totalInBlocks() const {
+        return inBlocks_.size();
+    }
+
+    inline bool maybeFrom(BasicBlock* block) {
+        return inBlocks_.count(block) == 1;
+    }
+
+    inline const std::set<BasicBlock*>& inBlocks() const {
+        return inBlocks_;
+    }
+
+protected:
+    static BasicBlock* terminal();
+
+    void checkAndSolveOutdated();
+
+    void addIncoming(BasicBlock* inBlock);
+    void unlinkFrom(BasicBlock* inBlock);
+
+private:
+    Value*                control_    = nullptr;
+    BasicBlock*           branch_     = nullptr;
+    BasicBlock*           branchElse_ = nullptr;
+    std::set<BasicBlock*> inBlocks_;
 };
 
-enum class ComparePredicationType {
-    EQ,    //<! equal
-    NE,    //<! not equal
-    UGT,   //<! 1. unsigned greater than (icmp)
-           //<! 2. unordered or greater than (fcmp)
-    UGE,   //<! 1. unsigned greater or equal (icmp)
-           //<! 2. unordered or greater than or equal (fcmp)
-    ULT,   //<! 1. unsigned less than (icmp)
-           //<! 2. unordered or less than (fcmp)
-    ULE,   //<! 1. unsigned less or equal (icmp)
-           //<! 2. unordered or less than or equal (fcmp)
-    SGT,   //<! signed greater than
-    SGE,   //<! signed greater or equal
-    SLT,   //<! signed less than
-    SLE,   //<! signed less or equal
-    FALSE, //<! no comparison, always returns false
-    OEQ,   //<! ordered and equal
-    OGT,   //<! ordered and greater than
-    OGE,   //<! ordered and greater than or equal
-    OLT,   //<! ordered and less than
-    OLE,   //<! ordered and less than or equal
-    ONE,   //<! ordered and not equal
-    ORD,   //<! ordered (no nans)
-    UEQ,   //<! unordered or equal
-    UNE,   //<! unordered or not equal
-    UNO,   //<! unordered (either nans)
-    TRUE,  //<! no comparison, always returns true
-};
+inline bool CFGNode::isOrphan() const {
+    return branch_ == nullptr && inBlocks_.empty();
+}
+
+inline bool CFGNode::isIncomplete() const {
+    return branch_ == nullptr;
+}
+
+inline bool CFGNode::isTerminal() const {
+    return branch_ == terminal();
+}
+
+inline bool CFGNode::isLinear() const {
+    return branch_ != nullptr && branchElse_ == nullptr;
+}
+
+inline bool CFGNode::isBranched() const {
+    return branchElse_ != nullptr;
+}
+
+inline Value* CFGNode::control() const {
+    return control_;
+}
+
+inline BasicBlock* CFGNode::branch() const {
+    return branch_;
+}
+
+inline BasicBlock* CFGNode::branchElse() const {
+    return branchElse_;
+}
 
 } // namespace slime::ir
