@@ -2,8 +2,10 @@
 
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
+#include <slime/pass/ValueNumbering.h>
 #include <array>
 #include <iomanip>
+#include <sstream>
 #include <assert.h>
 
 namespace slime::visitor {
@@ -17,7 +19,9 @@ static inline std::ostream& operator<<(std::ostream&, std::ostream& other) {
 void IRDumpVisitor::dump(Module* module) {
     assert(!currentModule_);
     assert(module != nullptr);
+    pass::ValueNumberingPass{}.run(module);
     currentModule_ = module;
+    os() << "; module = " << currentModule_->name() << "\n\n";
     for (auto object : module->globalObjects()) {
         assert(object->isGlobal());
         if (object->isFunction()) {
@@ -35,7 +39,17 @@ std::ostream& IRDumpVisitor::dumpType(Type* type, bool decay) {
             os() << "void";
         } break;
         case TypeKind::Integer: {
-            os() << (type->isBoolean() ? "i1" : "i32");
+            switch (type->asIntegerType()->kind()) {
+                case IntegerKind::i1: {
+                    os() << "i1";
+                } break;
+                case IntegerKind::i8: {
+                    os() << "i8";
+                } break;
+                case IntegerKind::i32: {
+                    os() << "i32";
+                } break;
+            }
         } break;
         case TypeKind::Float: {
             os() << "float";
@@ -100,7 +114,28 @@ std::ostream& IRDumpVisitor::dumpConstant(ConstantData* data) {
         os() << fp;
     } else {
         assert(data->type()->isArray());
-        os() << dumpArrayData(static_cast<ConstantArray*>(data));
+        auto dataType = data->type()->tryGetElementType();
+        auto arrType  = data->type()->asArrayType();
+        auto arrData  = static_cast<ConstantArray*>(data);
+        if (arrType->size() == arrData->size() && dataType->isInteger()
+            && dataType->asIntegerType()->isI8()) {
+            os() << "c\"";
+            for (int i = 0; i < arrData->size(); ++i) {
+                uint8_t ch = static_cast<ConstantInt*>(arrData->at(i))->value;
+                if (ch == '\\') {
+                    os() << "\\\\";
+                } else if (ch >= 0x20 && ch <= 0x7e) {
+                    os() << static_cast<char>(ch);
+                } else {
+                    os() << "\\" << std::setw(2) << std::setfill('0')
+                         << std::hex << static_cast<uint32_t>(ch) << std::dec
+                         << std::setfill(' ') << std::setw(1);
+                }
+            }
+            os() << "\"";
+        } else {
+            os() << dumpArrayData(arrData);
+        }
     }
     return os();
 }
@@ -157,11 +192,22 @@ void IRDumpVisitor::dumpFunction(Function* func) {
 
     os() << ") {\n";
     for (auto block : func->basicBlocks()) {
+        std::stringstream ss;
         if (!block->name().empty()) {
-            os() << block->name() << ":\n";
+            ss << block->name() << ":";
         } else {
-            os() << block->id() << ":\n";
+            ss << block->id() << ":";
         }
+        os() << ss.str();
+        if (block->inBlocks().size() >= 1) {
+            os() << std::setw(48 - ss.str().size()) << "";
+            auto it = block->inBlocks().begin();
+            os() << "; preds = " << dumpValueRef(*it);
+            while (++it != block->inBlocks().end()) {
+                os() << ", " << dumpValueRef(*it);
+            }
+        }
+        os() << "\n";
         for (auto inst : block->instructions()) {
             os() << "    ";
             dumpInstruction(inst);
@@ -173,12 +219,19 @@ void IRDumpVisitor::dumpFunction(Function* func) {
 
 void IRDumpVisitor::dumpGlobalVariable(GlobalVariable* object) {
     assert(object->data() != nullptr);
-    auto type = object->type()->tryGetElementType();
+    auto type          = object->type()->tryGetElementType();
+    bool isI8ArrayType = false;
+    if (auto dataType = type->tryGetElementType()) {
+        if (auto itype = dataType->tryIntoIntegerType()) {
+            isI8ArrayType = itype->isI8();
+        }
+    }
     assert(type->isInteger() || type->isFloat() || type->isArray());
-    os() << "@" << object->name() << " = global "
+    os() << "@" << object->name() << " = "
+         << (object->isConst() ? "constant" : "global") << " "
          << dumpType(object->type()->tryGetElementType()) << " "
          << dumpConstant(const_cast<ConstantData*>(object->data()))
-         << ", align 4\n\n";
+         << ", align " << (isI8ArrayType ? 1 : 4) << "\n\n";
 }
 
 void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
@@ -282,6 +335,7 @@ void IRDumpVisitor::dumpInstruction(Instruction* instruction) {
         } break;
         case InstructionID::ZExt: {
             auto inst = static_cast<User<1>*>(value);
+            //! FIXME: handle i8
             os() << dumpValueRef(value) << " = " << name << " i1 "
                  << dumpValueRef(inst->operand()) << " to i32";
         } break;

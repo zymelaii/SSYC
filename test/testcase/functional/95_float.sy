@@ -28,7 +28,7 @@ int float_eq(float a, float b) {
     return 1 * 2. / 2;
   } else {
     return 0;
-  }
+}
 }
 
 void error() {

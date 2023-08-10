@@ -1,15 +1,11 @@
 #include "ASTToIRTranslator.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/ir/user.h>
 #include <slime/ir/instruction.h>
 #include <slime/visitor/ASTExprSimplifier.h>
-#include <slime/pass/Peekhole.h>
-#include <slime/pass/DeadCodeElimination.h>
-#include <slime/pass/FunctionInlining.h>
-#include <slime/pass/CSE.h>
-#include <slime/pass/ValueNumbering.h>
-#include <slime/pass/CopyPropagation.h>
 #include <assert.h>
+#include <stack>
 
 namespace slime::visitor {
 
@@ -26,13 +22,19 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
             auto buitin = type->asBuiltin();
             switch (buitin->type) {
                 case BuiltinTypeID::Int: {
-                    return ir::Type::getIntegerType();
+                    return ir::Type::getIntegerType(IntegerKind::i32);
+                } break;
+                case BuiltinTypeID::Char: {
+                    return ir::Type::getIntegerType(IntegerKind::i8);
                 } break;
                 case BuiltinTypeID::Float: {
                     return ir::Type::getFloatType();
                 } break;
                 case BuiltinTypeID::Void: {
                     return ir::Type::getVoidType();
+                } break;
+                default: {
+                    unreachable();
                 } break;
             }
         } break;
@@ -69,6 +71,9 @@ ir::Type *ASTToIRTranslator::getCompatibleIRType(ast::Type *type) {
             }
             return ir::Type::createFunctionType(type, params);
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -89,6 +94,7 @@ Value *ASTToIRTranslator::getCompatibleIRValue(
                 return ConstantArray::create(desired->asArrayType());
             } break;
             default: {
+                unreachable();
             } break;
         }
     }
@@ -103,6 +109,14 @@ Value *ASTToIRTranslator::getCompatibleIRValue(
                 case ConstantType::f32: {
                     return !module ? ConstantData::createF32(v->f32)
                                    : module->createF32(v->f32);
+                } break;
+                case ConstantType::str: {
+                    //! NOTE: string literal must be translated in
+                    //! translateConstantExpr
+                    unreachable();
+                } break;
+                default: {
+                    unreachable();
                 } break;
             }
         } else if (desired->isInteger()) {
@@ -198,27 +212,42 @@ Module *ASTToIRTranslator::translate(
             } break;
             default: {
                 assert(false && "illegal top-level declaration");
+                unreachable();
             } break;
         }
     }
     auto module = translator.module_.release();
 
-    pass::DeadCodeEliminationPass{}.run(module);
-    pass::PeekholePass{}.run(module);
-    pass::CopyPropagationPass{}.run(module);
-    pass::DeadCodeEliminationPass{}.run(module);
-
-    pass::FunctionInliningPass{}.run(module);
-
-    pass::PeekholePass{}.run(module);
-    pass::CSEPass{}.run(module);
-    pass::CopyPropagationPass{}.run(module);
-    pass::CSEPass{}.run(module);
-    pass::CopyPropagationPass{}.run(module);
-    pass::DeadCodeEliminationPass{}.run(module);
-
-    // pass::MemoryToRegisterPass{}.run(module);
-    pass::ValueNumberingPass{}.run(module);
+    for (auto obj : module->globalObjects()) {
+        if (obj->isFunction()) {
+            auto fn = obj->asFunction();
+            auto it = fn->basicBlocks().begin();
+            while (it != fn->basicBlocks().end()) {
+                auto block = *it++;
+                if (block->totalInBlocks() == 0 && block != fn->front()) {
+                    auto ok = block->remove();
+                    assert(ok);
+                    continue;
+                }
+                if (block->isBranched()) {
+                    if (!block->control()->isImmediate()) { continue; }
+                    auto imm =
+                        static_cast<ConstantInt *>(block->control())->value;
+                    if (imm) {
+                        block->reset(block->branch());
+                    } else {
+                        block->reset(block->branchElse());
+                    }
+                    continue;
+                }
+                if (block->isIncomplete()) {
+                    auto ok = block->tryMarkAsTerminal();
+                    assert(ok);
+                    continue;
+                }
+            }
+        }
+    }
 
     return module;
 }
@@ -670,6 +699,13 @@ Value *ASTToIRTranslator::translateConstantExpr(
         case ast::ConstantType::f32: {
             state_.valueOfPrevExpr = module_->createF32(expr->f32);
         } break;
+        case ast::ConstantType::str: {
+            state_.addressOfPrevExpr = module_->createString(expr->str);
+            auto load                = GetElementPtrInst::create(
+                state_.addressOfPrevExpr, module_->createI32(0));
+            load->insertToTail(block);
+            state_.valueOfPrevExpr = load;
+        } break;
     }
     return state_.valueOfPrevExpr;
 }
@@ -1055,12 +1091,30 @@ Value *ASTToIRTranslator::translateCallExpr(BasicBlock *block, CallExpr *expr) {
     assert(result != nullptr);
     assert(result->isFunction());
     auto callee = result->asFunction();
+    auto proto  = callee->proto();
     auto call   = CallInst::create(callee);
     assert(callee->totalParams() == expr->argList.size());
     assert(call->totalUse() == callee->totalParams() + 1);
     int index = 1;
     for (auto arg : expr->argList) {
-        call->op()[index++] = translateExpr(state_.currentBlock, arg);
+        auto param = translateExpr(state_.currentBlock, arg);
+        if (!param->type()->equals(proto->paramTypeAt(index - 1))) {
+            assert(proto->paramTypeAt(index - 1)->isBuiltinType());
+            auto expected = proto->paramTypeAt(index - 1);
+            auto type     = param->type();
+            if (expected->isFloat() && type->isInteger()) {
+                auto inst = SIToFPInst::create(param);
+                inst->insertToTail(state_.currentBlock);
+                param = inst->unwrap();
+            } else if (expected->isInteger() && type->isFloat()) {
+                auto inst = FPToSIInst::create(param);
+                inst->insertToTail(state_.currentBlock);
+                param = inst->unwrap();
+            } else {
+                unreachable();
+            }
+        }
+        call->op()[index++] = param;
     }
     call->insertToTail(state_.currentBlock);
     state_.addressOfPrevExpr = nullptr;

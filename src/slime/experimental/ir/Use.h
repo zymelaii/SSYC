@@ -13,46 +13,65 @@ class Use final {
     friend class SpecificUser;
 
 protected:
-    Use() = default;
+    inline Use();
 
-    void attachTo(User* user) {
-        user_ = user;
-    }
+    inline void attachTo(User* user);
 
 public:
-    Value* value() const {
-        return value_;
-    }
+    inline Value* value() const;
+    inline User*  user() const;
 
-    User* user() const {
-        return user_;
-    }
+    void        reset(const Value* value = nullptr);
+    inline void transfer(Use& dest);
 
-    void reset(const Value* value = nullptr);
+    inline Use& operator=(const Value* value);
+    inline Use& operator=(Use& other);
 
-    void transfer(Use& dest) {
-        dest.reset(value());
-        reset(nullptr);
-    }
-
-    Use& operator=(const Value* value) {
-        reset(value);
-        return *this;
-    }
-
-    Use& operator=(Use& other) {
-        transfer(other);
-        return *this;
-    }
-
-    Value* operator->() const {
-        assert(value() != nullptr);
-        return value();
-    }
+    inline Value* operator->() const;
 
 private:
-    User*  user_  = nullptr;
-    Value* value_ = nullptr;
+    User*  user_;
+    Value* value_;
 };
+
+} // namespace slime::experimental::ir
+
+namespace slime::experimental::ir {
+
+inline Use::Use()
+    : user_{nullptr}
+    , value_{nullptr} {}
+
+inline void Use::attachTo(User* user) {
+    user_ = user;
+}
+
+inline Value* Use::value() const {
+    return value_;
+}
+
+inline User* Use::user() const {
+    return user_;
+}
+
+inline void Use::transfer(Use& dest) {
+    dest.reset(value());
+    reset(nullptr);
+}
+
+inline Use& Use::operator=(const Value* value) {
+    reset(value);
+    return *this;
+}
+
+inline Use& Use::operator=(Use& other) {
+    transfer(other);
+    return *this;
+}
+
+inline Value* Use::operator->() const {
+    assert(value() != nullptr);
+    return value();
+}
 
 } // namespace slime::experimental::ir

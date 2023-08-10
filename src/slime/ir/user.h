@@ -15,6 +15,7 @@ class Function;
 class ConstantData;
 class ConstantInt;
 class ConstantFloat;
+class ConstantArray;
 
 using BasicBlockList   = utils::ListTrait<BasicBlock*>;
 using ConstantDataList = utils::ListTrait<ConstantData*>;
@@ -31,8 +32,17 @@ public:
         : Constant(type, tag) {}
 
     static inline ConstantInt*   getBoolean(bool value);
+    static inline ConstantInt*   createI8(int8_t data);
     static inline ConstantInt*   createI32(int32_t data);
     static inline ConstantFloat* createF32(float data);
+
+    inline ConstantInt*   asConstantInt() const;
+    inline ConstantFloat* asConstantFloat() const;
+    inline ConstantArray* asConstantArray() const;
+
+    inline ConstantInt*   tryIntoConstantInt() const;
+    inline ConstantFloat* tryIntoConstantFloat() const;
+    inline ConstantArray* tryIntoConstantArray() const;
 };
 
 class ConstantInt final
@@ -190,12 +200,46 @@ inline ConstantInt* ConstantData::getBoolean(bool value) {
     return value ? &trueSingleton : &falseSingleton;
 }
 
+inline ConstantInt* ConstantData::createI8(int8_t data) {
+    return ConstantInt::create(data, IntegerType::get(IntegerKind::i8));
+}
+
 inline ConstantInt* ConstantData::createI32(int32_t data) {
     return ConstantInt::create(data);
 }
 
 inline ConstantFloat* ConstantData::createF32(float data) {
     return ConstantFloat::create(data);
+}
+
+inline ConstantInt* ConstantData::asConstantInt() const {
+    assert(isImmediate() && type()->isInteger());
+    return static_cast<ConstantInt*>(const_cast<ConstantData*>(this));
+}
+
+inline ConstantFloat* ConstantData::asConstantFloat() const {
+    assert(isImmediate() && type()->isFloat());
+    return static_cast<ConstantFloat*>(const_cast<ConstantData*>(this));
+}
+
+inline ConstantArray* ConstantData::asConstantArray() const {
+    assert(!isImmediate() && isReadOnly() && type()->isArray());
+    return static_cast<ConstantArray*>(const_cast<ConstantData*>(this));
+}
+
+inline ConstantInt* ConstantData::tryIntoConstantInt() const {
+    bool convertible = isImmediate() && type()->isInteger();
+    return convertible ? asConstantInt() : nullptr;
+}
+
+inline ConstantFloat* ConstantData::tryIntoConstantFloat() const {
+    bool convertible = isImmediate() && type()->isFloat();
+    return convertible ? asConstantFloat() : nullptr;
+}
+
+inline ConstantArray* ConstantData::tryIntoConstantArray() const {
+    bool convertible = !isImmediate() && isReadOnly() && type()->isArray();
+    return convertible ? asConstantArray() : nullptr;
 }
 
 } // namespace slime::ir

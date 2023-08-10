@@ -111,13 +111,12 @@ public:
     inline auto as() const {
         using const_type   = std::add_const_t<G>;
         using forward_type = std::add_pointer_t<const_type>;
-        return static_cast<forward_type>(self());
+        return static_cast<forward_type>(self()->template as<G>());
     }
 
     template <typename G>
     inline auto into() const {
-        using forward_type = std::add_pointer_t<G>;
-        return static_cast<forward_type>(self());
+        return self()->template as<G>();
     }
 
     template <typename G>

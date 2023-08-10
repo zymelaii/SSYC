@@ -5,6 +5,7 @@
 #include <array>
 #include <memory>
 #include <type_traits>
+#include <string_view>
 
 namespace slime {
 
@@ -91,8 +92,8 @@ public:
     }
 
     template <typename T>
-    void reset(T& stream) {
-        state_.reset(stream);
+    void reset(T& stream, std::string_view source) {
+        state_.reset(stream, source);
         state_.next();
     }
 

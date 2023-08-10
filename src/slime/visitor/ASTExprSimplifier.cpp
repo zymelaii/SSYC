@@ -1,5 +1,6 @@
 #include "ASTExprSimplifier.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/utils/list.h>
 #include <vector>
 
@@ -64,12 +65,9 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
                         return nullptr;
                     }
                 } break;
-                case DeclID::ParamVar: {
-                    return nullptr;
+                default: {
+                    unreachable();
                 } break;
-                case DeclID::Function: {
-                    return expr;
-                }
             }
         } break;
         case ExprID::Constant: {
@@ -150,6 +148,9 @@ Expr* ASTExprSimplifier::tryEvaluateCompileTimeExpr(Expr* expr) {
         case ExprID::NoInit: {
             return nullptr;
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -164,30 +165,32 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
         } break;
         case UnaryOperator::Neg: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
-                auto c = value->asConstant();
+                ConstantExpr* retval = nullptr;
+                auto          c      = value->asConstant();
                 if (builtin->isInt()) {
-                    c->setData(-c->i32);
+                    retval = ConstantExpr::createI32(-c->i32);
                 } else if (builtin->isFloat()) {
-                    c->setData(-c->f32);
+                    retval = ConstantExpr::createF32(-c->f32);
                 } else {
                     return nullptr;
                 }
-                return c;
+                return retval;
             } else {
                 return nullptr;
             }
         }
         case UnaryOperator::Not: {
             if (auto builtin = value->valueType->tryIntoBuiltin()) {
-                auto c = value->asConstant();
+                ConstantExpr* retval = nullptr;
+                auto          c      = value->asConstant();
                 if (builtin->isInt()) {
-                    c->setData(!c->i32);
+                    retval = ConstantExpr::createI32(!c->i32);
                 } else if (builtin->isFloat()) {
-                    c->setData(!c->f32);
+                    retval = ConstantExpr::createF32(!c->f32);
                 } else {
                     return nullptr;
                 }
-                return value->asConstant();
+                return retval;
             } else {
                 return nullptr;
             }
@@ -195,8 +198,7 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
         case UnaryOperator::Inv: {
             if (auto builtin = value->valueType->tryIntoBuiltin();
                 builtin->isInt()) {
-                value->asConstant()->setData(~value->asConstant()->i32);
-                return value->asConstant();
+                return ConstantExpr::createI32(~value->asConstant()->i32);
             } else {
                 return nullptr;
             }
@@ -204,6 +206,9 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeUnaryExpr(Expr* expr) {
         case UnaryOperator::Paren: {
             assert(false && "ParenExpr is unreachable in UnaryExpr");
             return nullptr;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
@@ -373,6 +378,9 @@ ConstantExpr* ASTExprSimplifier::tryEvaluateCompileTimeBinaryExpr(Expr* expr) {
             assert(false && "unreachable binary expression");
             return nullptr;
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -409,6 +417,35 @@ static InitListExpr* consumeArrayInitBlock(
                 e = elementType == BuiltinTypeID::Int
                       ? ConstantExpr::createI32(0)
                       : ConstantExpr::createF32(0.f);
+            } else if (auto type = e->valueType->tryIntoBuiltin()) {
+                assert(type->type != BuiltinTypeID::Char);
+                if (type->type != elementType) {
+                    switch (elementType) {
+                        case BuiltinTypeID::Char: {
+                            e = ConstantExpr::createI32(static_cast<char>(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->f32));
+                        } break;
+                        case BuiltinTypeID::Int: {
+                            e = ConstantExpr::createI32(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->f32);
+                        } break;
+                        case BuiltinTypeID::Float: {
+                            e = ConstantExpr::createI32(
+                                ASTExprSimplifier::tryEvaluateCompileTimeExpr(e)
+                                    ->asConstant()
+                                    ->i32);
+                        } break;
+                        default: {
+                            unreachable();
+                        } break;
+                    }
+                }
+            } else {
+                unreachable();
             }
             result->insertToTail(e);
             ++it;

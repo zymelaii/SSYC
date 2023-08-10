@@ -80,7 +80,7 @@ export def "timing invoke" [
     let result = (do -i $job | complete)
     let duration = ((date now) - $start_time)
     let time_used = (if $no_convert {
-            $duration | into string
+            $'($duration)'
         } else if not ($convert | is-empty) {
             $duration | into duration -c $convert
         } else if $duration > 100ms {

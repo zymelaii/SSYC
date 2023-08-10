@@ -29,7 +29,7 @@ foreach(CATEGORY ${CATEGORY_LIST})
             DEPENDS slimec ${SLIME_STDLIB}
             SOURCES ${SOURCE}
             COMMENT "Building standard program for testcase ${CATEGORY}/${TESTCASE}"
-            COMMAND gcc -w -m32 -Ui386
+            COMMAND gcc -w -m32 -Ui386 -O2
                 -include ${LIBSLIME_INCLUDEDIR}/libslime/stdslime.h
                 -x c ${SOURCE}
                 -L${LIBSLIME_LIBDIR}

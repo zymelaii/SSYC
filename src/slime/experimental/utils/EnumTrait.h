@@ -7,7 +7,7 @@ namespace slime {
 template <typename E>
 static constexpr inline auto is_scoped_enum =
 #if __cplusplus >= 202002L
-    std::is_scis_scoped_enum_v<E>
+    std::is_scoped_enum_v<E>
 #else
     std::bool_constant<
         std::is_enum_v<E>

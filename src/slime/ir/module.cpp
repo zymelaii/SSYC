@@ -2,6 +2,7 @@
 #include "user.h"
 #include "instruction.h"
 
+#include <string>
 #include <string.h>
 
 namespace slime::ir {
@@ -19,6 +20,13 @@ Module::~Module() {
     for (auto& [k, v] : f32DataMap_) { delete v; }
 }
 
+ConstantInt* Module::createI8(int8_t value) {
+    if (i8DataMap_.count(value) == 0) {
+        i8DataMap_[value] = ConstantData::createI32(value);
+    }
+    return i8DataMap_.at(value);
+}
+
 ConstantInt* Module::createI32(int32_t value) {
     if (i32DataMap_.count(value) == 0) {
         i32DataMap_[value] = ConstantData::createI32(value);
@@ -31,6 +39,25 @@ ConstantFloat* Module::createF32(float value) {
         f32DataMap_[value] = ConstantData::createF32(value);
     }
     return f32DataMap_.at(value);
+}
+
+GlobalVariable* Module::createString(std::string_view value) {
+    if (strDataMap_.count(value.data()) == 0) {
+        auto type = ArrayType::create(
+            IntegerType::get(IntegerKind::i8), value.size() + 1);
+        auto name =
+            strdup((".str." + std::to_string(strDataMap_.size())).c_str());
+        auto str  = GlobalVariable::create(name, type, true);
+        auto data = ConstantArray::create(type);
+        for (int i = 0; i < value.size() + 1; ++i) {
+            (*data)[i] = createI8(value[i]);
+        }
+        str->setInitData(data);
+        auto ok = acceptGlobalVariable(str);
+        assert(ok);
+        strDataMap_[value.data()] = str;
+    }
+    return strDataMap_.at(value.data());
 }
 
 bool Module::acceptFunction(Function* fn) {

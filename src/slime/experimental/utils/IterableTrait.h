@@ -15,11 +15,11 @@ struct is_iterable_as {
     template <typename G>
     static constexpr auto check(int) -> decltype(
         //! check begin, end, operator!=
-        void(std::declval<T&>().begin() != std::declval<T&>().end()),
+        void(std::declval<G&>().begin() != std::declval<G&>().end()),
         //! check operator++
-        void(++std::declval<decltype(std::declval<T&>().end())&>()),
+        void(++std::declval<decltype(std::declval<G&>().end())&>()),
         //! check operator* and value type
-        check<decltype(*std::declval<T&>().begin())>(0, 0));
+        check<decltype(*std::declval<G&>().begin())>(0, 0));
 
     template <typename G>
     static constexpr std::false_type check(...);

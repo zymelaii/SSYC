@@ -1,5 +1,6 @@
 #pragma once
 
+#include <slime/experimental/Utility.h>
 #include <slime/utils/list.h>
 #include <slime/utils/cast.def>
 #include <vector>
@@ -28,6 +29,7 @@ enum class TypeID {
 
 enum class BuiltinTypeID {
     Int,
+    Char,
     Float,
     Void,
 };
@@ -88,6 +90,9 @@ struct BuiltinType : public Type {
             case BuiltinTypeID::Int: {
                 return getIntType();
             } break;
+            case BuiltinTypeID::Char: {
+                return getCharType();
+            } break;
             case BuiltinTypeID::Float: {
                 return getFloatType();
             } break;
@@ -99,6 +104,11 @@ struct BuiltinType : public Type {
 
     static BuiltinType* getIntType() {
         static BuiltinType singleton(BuiltinTypeID::Int);
+        return &singleton;
+    }
+
+    static BuiltinType* getCharType() {
+        static BuiltinType singleton(BuiltinTypeID::Char);
         return &singleton;
     }
 
@@ -148,7 +158,7 @@ struct ArrayType
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
-        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename First = nth_type<0, Args...>,
         typename       = std::enable_if_t<std::is_convertible_v<First, Expr*>>>
     ArrayType(Type* type, Args... args)
         : ArrayType(type, std::initializer_list<Expr*>{args...}) {}
@@ -184,7 +194,7 @@ struct IncompleteArrayType : public ArrayType {
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
-        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename First = nth_type<0, Args...>,
         typename       = std::enable_if_t<std::is_convertible_v<First, Expr*>>>
     IncompleteArrayType(Type* type, Args... args)
         : ArrayType(type, std::initializer_list<Expr*>{args...}) {
@@ -214,7 +224,7 @@ struct FunctionProtoType
     template <
         typename... Args,
         typename Guard = std::enable_if_t<(sizeof...(Args) > 0)>,
-        typename First = decltype(std::get<0>(std::tuple<Args...>())),
+        typename First = nth_type<0, Args...>,
         typename       = std::enable_if_t<std::is_convertible_v<First, Type*>>>
     FunctionProtoType(Type* type, Args... args)
         : FunctionProtoType(type, std::initializer_list<Type*>{args...}) {}

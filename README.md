@@ -20,6 +20,7 @@ SSYC, full name slime SysY compiler, is a compiler for C-like language SysY.
 - Hand written frontend
 - Strong typed IR in SSA form similar to LLVM-IR
 - Minimal standard library for IO, debug and profiling
+- Pretty assembly output
 
 # Installation
 
@@ -61,12 +62,22 @@ cmake --build build --target testcase
 ## Usage
 
 ```sh
-slimec [<source>] [options]
-```
+$ slimec -h
+ARM-v7a assembly compiler for SysY wriiten in C++ 17
+
+Usage: slimec [options] file...
 
 Options:
-
-- `--lex-only` perform lex only
-- `--dump-ast` dump AST to stderr
-- `--emit-ir` create MIR code
-- `-S` create assembler code
+  -h, --help           Print help information
+  -v, --version        Print version information
+  --                   Read from stdin
+  -E                   Only run the preprocessor
+  --lex-only           Only run the lexer
+  -S                   Only run preprocess and compilation steps
+  --dump-ast           Use the AST representation for output
+  --emit-ir            Use the MIR representation for assembler
+  -o, --output <file>  Write output to <file>
+  -p, --pipe           Always output to stdout
+  -O<opt-level>        Specify optimize level [UNCOMPLETE]
+  -f<flag>             Provide extra flag [UNCOMPLETE]
+```

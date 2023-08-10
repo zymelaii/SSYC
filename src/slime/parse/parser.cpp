@@ -3,11 +3,11 @@
 #include "diagnosis.h"
 
 #include <slime/visitor/ASTExprSimplifier.h>
-#include <cstddef>
-#include <iostream>
+#include <stddef.h>
 #include <sstream>
 #include <map>
 #include <array>
+#include <stack>
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>
@@ -247,6 +247,29 @@ VarDecl *Parser::parseVarDef() {
     //! create var decl and update symbol table
     Diagnosis::assertTrue(
         symbolTableStack_.back()->count(name) == 0, "redefination of variable");
+    //! handle implicit conversion
+    if (auto type = spec->type->tryIntoBuiltin();
+        type && state_.cur_depth == 0 && !init->tryIntoNoInit()) {
+        assert(init->valueType->tryIntoBuiltin());
+        auto valueType = init->valueType->asBuiltin()->type;
+        if (valueType != type->type && valueType != BuiltinTypeID::Char) {
+            switch (type->type) {
+                case BuiltinTypeID::Int: {
+                    init = ConstantExpr::createI32(init->asConstant()->f32);
+                } break;
+                case BuiltinTypeID::Char: {
+                    init = ConstantExpr::createI32(
+                        static_cast<char>(init->asConstant()->f32));
+                } break;
+                case BuiltinTypeID::Float: {
+                    init = ConstantExpr::createF32(init->asConstant()->i32);
+                } break;
+                default: {
+                    unreachable();
+                } break;
+            }
+        }
+    }
     decl = VarDecl::create(name, spec, init);
     addSymbol(decl);
     return decl;
@@ -285,6 +308,10 @@ ParamVarDeclList Parser::parseFunctionParams() {
             } break;
             case TOKEN::TK_INT: {
                 spec->type = BuiltinType::getIntType();
+                lexer_.next();
+            } break;
+            case TOKEN::TK_CHAR: {
+                spec->type = BuiltinType::getCharType();
                 lexer_.next();
             } break;
             case TOKEN::TK_FLOAT: {
@@ -380,6 +407,7 @@ Stmt *Parser::parseStmt(bool standalone) {
         case TOKEN::TK_EXTERN:
         case TOKEN::TK_VOID:
         case TOKEN::TK_INT:
+        case TOKEN::TK_CHAR:
         case TOKEN::TK_FLOAT: {
             if (standalone) { enterBlock(); }
             stmt = parseDeclStmt();
@@ -551,8 +579,8 @@ Expr *Parser::parsePrimaryExpr() {
             lexer_.next();
         } break;
         case TOKEN::TK_STRING: {
-            //! TODO: #featrue(string)
-            Diagnosis::assertAlwaysFalse("string literal is not supported yet");
+            expr = ConstantExpr::createString(token().detail);
+            lexer_.next();
         } break;
         case TOKEN::TK_LPAREN: {
             lexer_.next();
@@ -623,6 +651,118 @@ Expr *Parser::parseUnaryExpr() {
                    : parsePostfixExpr();
 }
 
+Expr *foldExprList(BinaryOperator op, Expr **list, int first, int last) {
+    assert(first <= last);
+    if (first == last) {
+        return list[first];
+    } else if (first + 1 == last) {
+        return BinaryExpr::create(op, list[first], list[last]);
+    } else {
+        int m = (first + last) / 2;
+        return BinaryExpr::create(
+            op,
+            foldExprList(op, list, first, m - 1),
+            foldExprList(op, list, m, last));
+    }
+}
+
+Expr *Parser::parseBinaryExpr() {
+    auto first = parseUnaryExpr();
+    auto tok   = token();
+
+    Expr *expr = nullptr;
+
+    if (auto isUnary =
+            tok.isSemicolon() || tok.isComma() || tok.isRightBracket()) {
+        expr = first;
+    } else {
+        std::vector<Expr *>                        operands{first};
+        std::vector<BinaryOperator>                ops;
+        std::stack<Expr *>                         stack;
+        std::stack<std::pair<int, BinaryOperator>> opStack;
+        do {
+            ops.emplace_back(lookupBinaryOperator(tok));
+            lexer_.next();
+            operands.emplace_back(parseUnaryExpr());
+            tok = token();
+            isUnary =
+                tok.isSemicolon() || tok.isComma() || tok.isRightBracket();
+        } while (!isUnary);
+        stack.push(first);
+        for (int i = 0; i < ops.size(); ++i) {
+            const auto &op   = ops[i];
+            const auto  desc = lookupOperatorPriority(op);
+
+            //! FIXME: consider priority of left-assoc op is new ops are
+            //! introduced
+            if (!desc.assoc) { //<! left-assoc
+                stack.push(operands[i + 1]);
+                opStack.push({i, op});
+                continue;
+            }
+
+            //! combine swappable ops sequence without side effects
+            if (op == BinaryOperator::Add || op == BinaryOperator::Mul) {
+                //! get op range longest continuous sequence
+                auto seqFirst = i;
+                auto seqLast  = seqFirst + 1;
+                while (seqLast < ops.size()) {
+                    if (ops[seqLast] != op) { break; }
+                    ++seqLast;
+                }
+                --seqLast;
+                if (seqFirst > 0) {
+                    const auto &prevOp = ops[seqFirst - 1];
+                    if (prevOp != BinaryOperator::Unreachable && prevOp != op) {
+                        const auto prevDesc = lookupOperatorPriority(prevOp);
+                        if (prevDesc.priority <= desc.priority) { ++seqFirst; }
+                    }
+                }
+                if (seqLast + 1 < ops.size()) {
+                    const auto nextDesc =
+                        lookupOperatorPriority(ops[seqLast + 1]);
+                    if (nextDesc.priority <= desc.priority) { --seqLast; }
+                }
+                if (i == seqFirst && seqFirst < seqLast) {
+                    stack.top() = foldExprList(
+                        op, operands.data(), seqFirst, seqLast + 1);
+                    i = seqLast;
+                    continue;
+                }
+            }
+
+            //! default rpn solution
+            while (!opStack.empty()) {
+                const auto [index, lastOp] = opStack.top();
+                const auto lastDesc        = lookupOperatorPriority(lastOp);
+                if (lastDesc.assoc && lastDesc.priority <= desc.priority) {
+                    auto rhs = stack.top();
+                    stack.pop();
+                    stack.top() = BinaryExpr::create(lastOp, stack.top(), rhs);
+                    ops[index]  = index == 0 ? BinaryOperator::Unreachable
+                                             : ops[index - 1]; //<! update ops
+                    opStack.pop();
+                } else {
+                    break;
+                }
+            }
+            stack.push(operands[i + 1]);
+            opStack.push({i, op});
+        }
+        while (!opStack.empty()) {
+            auto [index, op] = opStack.top();
+            opStack.pop();
+            auto rhs = stack.top();
+            stack.pop();
+            stack.top() = BinaryExpr::create(op, stack.top(), rhs);
+        }
+        assert(stack.size() == 1);
+        expr = stack.top()->intoSimplified();
+    }
+
+    return expr;
+}
+
 Expr *Parser::parseCommaExpr() {
     auto expr = parseBinaryExpr();
     Diagnosis::assertWellFormedCommaExpression(expr);
@@ -688,6 +828,10 @@ void Parser::enterDecl() {
             } break;
             case TOKEN::TK_INT: {
                 spec->type = BuiltinType::getIntType();
+                done       = true;
+            } break;
+            case TOKEN::TK_CHAR: {
+                spec->type = BuiltinType::getCharType();
                 done       = true;
             } break;
             case TOKEN::TK_FLOAT: {
@@ -816,15 +960,20 @@ void Parser::addPresetSymbols() {
     ParamVarDeclList params{};
 
     auto specInt         = DeclSpecifier::create();
+    auto specChar        = DeclSpecifier::create();
     auto specFloat       = DeclSpecifier::create();
     specInt->type        = BuiltinType::getIntType();
+    specChar->type       = BuiltinType::getCharType();
     specFloat->type      = BuiltinType::getFloatType();
     auto specIntArray    = specInt->clone();
+    auto specCharArray   = specChar->clone();
     auto specFloatArray  = specFloat->clone();
     specIntArray->type   = IncompleteArrayType::create(specIntArray->type);
+    specCharArray->type  = IncompleteArrayType::create(specCharArray->type);
     specFloatArray->type = IncompleteArrayType::create(specFloatArray->type);
     auto paramInt        = ParamVarDecl::create(specInt);
     auto paramIntArray   = ParamVarDecl::create(specIntArray);
+    auto paramCharArray  = ParamVarDecl::create(specCharArray);
     auto paramFloat      = ParamVarDecl::create(specFloat);
     auto paramFloatArray = ParamVarDecl::create(specFloatArray);
 
@@ -879,7 +1028,19 @@ void Parser::addPresetSymbols() {
     auto pFloat = params.insertToTail(paramFloat);
     addExternalFunction("putfloat", BuiltinType::getVoidType(), params);
 
-    //! TODO: void putf(char[], ...)
+    //! FIXME: handle var-args
+    //! void putf(char[], ...)
+    pFloat->removeFromList();
+    params.insertToHead(paramCharArray);
+    addExternalFunction("putf", BuiltinType::getVoidType(), params);
+
+    //! void __slime_starttime(const char*, int);
+    params.insertToTail(paramInt);
+    addExternalFunction(
+        "__slime_starttime", BuiltinType::getVoidType(), params);
+
+    //! void __slime_stoptime(const char*, int);
+    addExternalFunction("__slime_stoptime", BuiltinType::getVoidType(), params);
 }
 
 void Parser::dropUnusedExternalSymbols() {

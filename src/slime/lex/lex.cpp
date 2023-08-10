@@ -1,4 +1,5 @@
 #include "lex.h"
+#include "preproc.h"
 
 #include <string.h>
 #include <set>
@@ -26,7 +27,7 @@ struct Buffer {
 };
 
 struct LexStatePrivate {
-    std::unique_ptr<std::istream>          stream;   //<! input stream
+    InputStreamTransformer                 stream;   //<! input stream
     std::shared_ptr<std::set<const char*>> strtable; //<! buffered string table
     Buffer                                 buffer;   //<! raw input buffer
     bool                                   bufenabled; //<! save chars to buffer
@@ -141,16 +142,19 @@ const char* tok2str(TOKEN token) {
         } break;
         case TOKEN::TK_VOID: {
             return "void";
-        }
+        } break;
         case TOKEN::TK_INT: {
             return "int";
-        }
+        } break;
         case TOKEN::TK_FLOAT: {
             return "float";
-        }
+        } break;
+        case TOKEN::TK_CHAR: {
+            return "char";
+        } break;
         case TOKEN::TK_CONST: {
             return "const";
-        }
+        } break;
         case TOKEN::TK_STATIC: {
             return "static";
         } break;
@@ -162,83 +166,83 @@ const char* tok2str(TOKEN token) {
         } break;
         case TOKEN::TK_IF: {
             return "if";
-        }
+        } break;
         case TOKEN::TK_ELSE: {
             return "else";
-        }
+        } break;
         case TOKEN::TK_FOR: {
             return "for";
-        }
+        } break;
         case TOKEN::TK_DO: {
             return "do";
-        }
+        } break;
         case TOKEN::TK_WHILE: {
             return "while";
-        }
+        } break;
         case TOKEN::TK_SWITCH: {
             return "switch";
-        }
+        } break;
         case TOKEN::TK_CASE: {
             return "case";
-        }
+        } break;
         case TOKEN::TK_DEFAULT: {
             return "default";
-        }
+        } break;
         case TOKEN::TK_BREAK: {
             return "break";
-        }
+        } break;
         case TOKEN::TK_CONTINUE: {
             return "continue";
-        }
+        } break;
         case TOKEN::TK_RETURN: {
             return "return";
-        }
+        } break;
         case TOKEN::TK_EQ: {
             return "==";
-        }
+        } break;
         case TOKEN::TK_NE: {
             return "!=";
-        }
+        } break;
         case TOKEN::TK_LE: {
             return "<=";
-        }
+        } break;
         case TOKEN::TK_GE: {
             return ">=";
-        }
+        } break;
         case TOKEN::TK_LOR: {
             return "||";
-        }
+        } break;
         case TOKEN::TK_LAND: {
             return "&&";
-        }
+        } break;
         case TOKEN::TK_SHL: {
             return "<<";
-        }
+        } break;
         case TOKEN::TK_SHR: {
             return ">>";
-        }
+        } break;
         case TOKEN::TK_IDENT: {
             return "<ident>";
-        }
+        } break;
         case TOKEN::TK_INTVAL: {
             return "<integer>";
-        }
+        } break;
         case TOKEN::TK_FLTVAL: {
             return "<float>";
-        }
+        } break;
         case TOKEN::TK_STRING: {
             return "<string>";
-        }
+        } break;
         case TOKEN::TK_EOF: {
             return "<eof>";
-        }
+        } break;
         case TOKEN::TK_COMMENT:
         case TOKEN::TK_MLCOMMENT: {
             return "<comment>";
-        }
+        } break;
         default: {
             return "<single>";
-        }
+        } break;
     }
 }
 
@@ -256,7 +260,7 @@ TOKEN to_reserved(const char* s) {
 inline void next(LexState& ls) {
     if (ls.cur != '\0') { ls.d->linebuffer.push_back(ls.cur); }
     if (ls.d->bufenabled) { ls.d->bufsave(ls.cur); }
-    ls.cur = ls.d->stream->get();
+    ls.cur = ls.d->stream.get();
     ++ls.column;
 }
 
@@ -304,6 +308,7 @@ void into_newline(LexState& ls) {
 
 //! escape string
 int try_escape(LexState& ls, char* s) {
+    //! FIXME: input string may have non-terminal '\0'
     char*          origin = s;
     constexpr int  N      = 11;
     constexpr char ESCAPE_TABLE[N][2]{
@@ -611,9 +616,9 @@ LexState& LexState::operator=(LexState&& other) {
     return *this;
 }
 
-void LexState::resetstream(std::istream* input) {
+void LexState::resetstream(std::istream* input, std::string_view source) {
     assert(!input->eof());
-    d->stream.reset(input);
+    d->stream.reset(input, source);
 }
 
 void LexState::next() {
@@ -663,7 +668,7 @@ const char* pretty_tok2str(Token token, char* buffer, size_t len) {
             snprintf(buffer, len, "%s %s", id, token.detail.data());
         } break;
         case TOKEN::TK_STRING: {
-            snprintf(buffer, len, "<string> length: %llu", token.detail.size());
+            snprintf(buffer, len, "<string> length: %zu", token.detail.size());
         } break;
         case TOKEN::TK_EOF: {
             strcpy_s(buffer, len, "<eof>");

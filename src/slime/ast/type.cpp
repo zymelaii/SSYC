@@ -1,5 +1,6 @@
 #include "type.h"
 
+#include <slime/experimental/Utility.h>
 #include <slime/visitor/ASTExprSimplifier.h>
 #include <vector>
 
@@ -44,6 +45,9 @@ Type* Type::getElementType(Type* type) {
                 return ArrayType::create(t->type, lengthList);
             }
         } break;
+        default: {
+            unreachable();
+        } break;
     }
 }
 
@@ -61,6 +65,9 @@ Type* Type::extendIntoArrayType(Expr* length) {
         case TypeID::Array: {
             asArray()->insertToTail(length);
             return this;
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
@@ -84,6 +91,9 @@ bool Type::equals(const Type* other) const {
         } break;
         case TypeID::FunctionProto: {
             return self->asFunctionProto()->equals(other);
+        } break;
+        default: {
+            unreachable();
         } break;
     }
 }
