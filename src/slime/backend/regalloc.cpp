@@ -375,8 +375,8 @@ ARMGeneralRegs Allocator::allocateGeneralRegister(
     minlntvar->reg        = ARMGeneralRegs::None;
     instcode->code +=
         Generator::sprintln("# spill value %%%d", minlntvar->val->id());
-    if (stack->spillVar(minlntvar, 4))
-        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+    if (stack->spillVar(minlntvar, 8))
+        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 8);
     instcode->code += gen->cgStr(
         ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
     return ret;
@@ -398,7 +398,7 @@ ARMFloatRegs Allocator::allocateFloatRegister(
             }
         }
     } else {
-        int regAllocaBase = maxFloatArgs > 8 ? 8 : maxFloatArgs;
+        int regAllocaBase = 8;
         for (int i = regAllocaBase; i < 32; i++) {
             if (!floatRegAllocatedMap[i]) {
                 floatRegAllocatedMap[i] = true;
@@ -422,8 +422,8 @@ ARMFloatRegs Allocator::allocateFloatRegister(
     minlntvar->reg        = ARMGeneralRegs::None;
     instcode->code +=
         Generator::sprintln("# spill value %%%d", minlntvar->val->id());
-    if (stack->spillVar(minlntvar, 4))
-        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+    if (stack->spillVar(minlntvar, 8))
+        instcode->code += gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 8);
     instcode->code += gen->cgVstr(
         ret, ARMGeneralRegs::SP, stack->stackSize - minlntvar->stackpos);
     return ret;
@@ -526,11 +526,11 @@ void Allocator::updateAllocation(
                     minlntvar->reg = ARMFloatRegs::None;
                 if (!minlntvar->is_global) {
                     minlntvar->is_spilled = true;
-                    if (stack->spillVar(minlntvar, 4))
+                    if (stack->spillVar(minlntvar, 8))
                         instcode->code += gen->sprintln(
                             "# spill value %%%d", minlntvar->val->id());
                     instcode->code +=
-                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 4);
+                        gen->cgSub(ARMGeneralRegs::SP, ARMGeneralRegs::SP, 8);
                     if (var->is_general)
                         instcode->code += gen->cgStr(
                             var->reg.gpr,
