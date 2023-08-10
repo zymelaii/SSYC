@@ -1761,7 +1761,7 @@ InstCode *Generator::genFPToSIInst(FPToSIInst *inst) {
         rm = generator_.allocator->allocateFloatRegister(
             true, whitelist, this, fptosicode);
         fptosicode->code += loadFloatConstant(
-            rm, static_cast<ConstantInt *>(src->asConstantData())->value);
+            rm, src->asConstantData()->asConstantFloat()->value);
         rd          = rm;
         rmAllocFlag = true;
     } else {
@@ -1795,8 +1795,8 @@ InstCode *Generator::genSIToFPInst(SIToFPInst *inst) {
     if (!Allocator::isVariable(src)) {
         auto tmpreg = generator_.allocator->allocateGeneralRegister(
             true, whitelist, this, sitofpcode);
-        sitofpcode->code += cgLdr(
-            tmpreg, static_cast<ConstantInt *>(src->asConstantData())->value);
+        sitofpcode->code +=
+            cgLdr(tmpreg, src->asConstantData()->asConstantInt()->value);
         sitofpcode->code += cgVmov(rm, tmpreg);
         generator_.allocator->releaseRegister(tmpreg);
     } else {
@@ -2167,21 +2167,21 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     RegList   savedGenRegList;
     FpRegList savedFpRegList;
     //! only external lib func need to mannually save the site
-    // if (libfunc.count(inst->callee()->name().data())) {
-    for (int i = 1; i + usedParamGenRegs < maxParamGenRegs; ++i) {
-        auto reg = static_cast<ARMGeneralRegs>(i);
-        if (allocator->usedGeneralRegs.count(reg)) {
-            savedGenRegList.insertToTail(reg);
+    if (libfunc.count(inst->callee()->name().data())) {
+        for (int i = 1; i + usedParamGenRegs < maxParamGenRegs; ++i) {
+            auto reg = static_cast<ARMGeneralRegs>(i);
+            if (allocator->usedGeneralRegs.count(reg)) {
+                savedGenRegList.insertToTail(reg);
+            }
+        }
+        //! never push the fp regs
+        for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
+            auto reg = static_cast<ARMFloatRegs>(i);
+            if (allocator->usedFloatRegs.count(reg)) {
+                savedFpRegList.insertToTail(reg);
+            }
         }
     }
-    //! never push the fp regs
-    // for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
-    //     auto reg = static_cast<ARMFloatRegs>(i);
-    //     if (allocator->usedFloatRegs.count(reg)) {
-    //         savedFpRegList.insertToTail(reg);
-    //     }
-    // }
-    //}
     callcode->code += cgPush(savedGenRegList);
     callcode->code += cgPush(savedFpRegList);
 
