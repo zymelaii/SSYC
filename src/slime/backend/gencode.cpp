@@ -2532,8 +2532,13 @@ std::string Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
 std::string Generator::cgStr(
     ARMGeneralRegs src, ARMGeneralRegs dst, int32_t offset) {
     if (offset != 0) {
-        return instrln(
-            "str", "%s, [%s, #%d]", reg2str(src), reg2str(dst), offset);
+        //! TODO: check validity of imm offset
+        auto tmpReg = generator_.allocator->allocateGeneralRegister(true);
+        auto code   = cgLdr(tmpReg, offset);
+        code        += instrln(
+            "str", "%s, [%s, %s]", reg2str(src), reg2str(dst), reg2str(tmpReg));
+        generator_.allocator->releaseRegister(tmpReg);
+        return code;
     } else {
         return instrln("str", "%s, [%s]", reg2str(src), reg2str(dst));
     }
