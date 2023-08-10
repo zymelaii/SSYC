@@ -41,7 +41,7 @@ std::string Generator::genCode(Module *module) {
             generator_.cur_func = static_cast<Function *>(e);
             if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             modulecode += genAssembly(static_cast<Function *>(e));
-        modulecode += genInFuncDataSection();
+            modulecode += genInFuncDataSection();
             modulecode += sprintln("    .pool\n");
             ++generator_.cur_funcnum;
         } else {
@@ -2498,8 +2498,14 @@ std::string Generator::cgMov(
 std::string Generator::cgLdr(
     ARMGeneralRegs dst, ARMGeneralRegs src, int32_t offset) {
     if (offset != 0) {
-        return instrln(
-            "ldr", "%s, [%s, #%d]", reg2str(dst), reg2str(src), offset);
+        //! TODO: check validity of imm offset
+        return cgLdr(dst, offset)
+             + instrln(
+                   "ldr",
+                   "%s, [%s, %s]",
+                   reg2str(dst),
+                   reg2str(src),
+                   reg2str(dst));
     } else {
         return instrln("ldr", "%s, [%s]", reg2str(dst), reg2str(src));
     }
