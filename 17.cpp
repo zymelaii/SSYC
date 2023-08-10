@@ -194,7 +194,7 @@ void Allocator::checkLiveInterval(std::string *instcode) {
                     *instcode += Generator::sprintln(
                         "# release spilled value %%%d", var->val->id());
                     if (releaseStackSpaces != 0) {
-                        *instcode += Generator::instrln(
+                        *instcode += parent->instrln(
                             "add",
                             "%s, %s, #%d",
                             Generator::reg2str(ARMGeneralRegs::SP),
@@ -398,7 +398,7 @@ ARMFloatRegs Allocator::allocateFloatRegister(
             }
         }
     } else {
-        int regAllocaBase = 8;
+        int regAllocaBase = maxFloatArgs > 8 ? 8 : maxFloatArgs;
         for (int i = regAllocaBase; i < 32; i++) {
             if (!floatRegAllocatedMap[i]) {
                 floatRegAllocatedMap[i] = true;
@@ -518,6 +518,8 @@ void Allocator::updateAllocation(
                 assert(!minlntvar->is_spilled);
 
                 var->reg = minlntvar->reg;
+                assert(var->is_general == minlntvar->is_general);
+
                 if (var->is_general)
                     minlntvar->reg = ARMGeneralRegs::None;
                 else
@@ -555,7 +557,7 @@ void Allocator::updateAllocation(
                     allocateGeneralRegister(true, operands, gen, instcode);
             else
                 var->reg = allocateFloatRegister(true, operands, gen, instcode);
-            int offset      = stack->stackSize - var->stackpos;
+            int offset     = stack->stackSize - var->stackpos;
             instcode->code += Generator::sprintln(
                 "# load spilled value %%%d", var->val->id());
             if (var->is_general) {
