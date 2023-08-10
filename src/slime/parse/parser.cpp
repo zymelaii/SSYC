@@ -248,7 +248,8 @@ VarDecl *Parser::parseVarDef() {
     Diagnosis::assertTrue(
         symbolTableStack_.back()->count(name) == 0, "redefination of variable");
     //! handle implicit conversion
-    if (auto type = spec->type->tryIntoBuiltin()) {
+    if (auto type = spec->type->tryIntoBuiltin();
+        type && state_.cur_depth == 0) {
         assert(init->valueType->tryIntoBuiltin());
         auto valueType = init->valueType->asBuiltin()->type;
         if (valueType != type->type && valueType != BuiltinTypeID::Char) {
