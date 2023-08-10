@@ -518,6 +518,8 @@ void Allocator::updateAllocation(
                 assert(!minlntvar->is_spilled);
 
                 var->reg = minlntvar->reg;
+                assert(var->is_general == minlntvar->is_general);
+
                 if (var->is_general)
                     minlntvar->reg = ARMGeneralRegs::None;
                 else
