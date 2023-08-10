@@ -249,7 +249,7 @@ VarDecl *Parser::parseVarDef() {
         symbolTableStack_.back()->count(name) == 0, "redefination of variable");
     //! handle implicit conversion
     if (auto type = spec->type->tryIntoBuiltin();
-        type && state_.cur_depth == 0) {
+        type && state_.cur_depth == 0 && !init->tryIntoNoInit()) {
         assert(init->valueType->tryIntoBuiltin());
         auto valueType = init->valueType->asBuiltin()->type;
         if (valueType != type->type && valueType != BuiltinTypeID::Char) {
