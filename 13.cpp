@@ -531,25 +531,45 @@ std::string Generator::genIndirectFpConstantAddrs() {
 }
 
 std::string Generator::saveCallerReg() {
-    RegList regList;
-    auto    usedGeneralRegs = generator_.allocator->usedGeneralRegs;
+    RegList   regList;
+    FpRegList fpRegList;
+    auto      usedGeneralRegs = generator_.allocator->usedGeneralRegs;
+    auto      usedFloatRegs   = generator_.allocator->usedFloatRegs;
     if (generator_.allocator->maxIntegerArgs > 4)
         usedGeneralRegs.insert(ARMGeneralRegs::R11);
     usedGeneralRegs.erase(ARMGeneralRegs::R0);
+    for (int i = 0; i < 4; i++) {
+        usedFloatRegs.erase(static_cast<ARMFloatRegs>(i));
+    }
+    if ((usedGeneralRegs.size() + 1 + usedFloatRegs.size()) % 8 != 0) {
+        usedGeneralRegs.insert(ARMGeneralRegs::IP);
+    }
     for (auto reg : usedGeneralRegs) { regList.insertToTail(reg); }
+    for (auto reg : usedFloatRegs) { fpRegList.insertToTail(reg); }
+
     regList.insertToTail(ARMGeneralRegs::LR);
-    return cgPush(regList);
+    return cgPush(regList) + cgPush(fpRegList);
 }
 
 std::string Generator::restoreCallerReg() {
-    RegList regList;
-    auto    usedGeneralRegs = generator_.allocator->usedGeneralRegs;
+    RegList   regList;
+    FpRegList fpRegList;
+    auto      usedGeneralRegs = generator_.allocator->usedGeneralRegs;
+    auto      usedFloatRegs   = generator_.allocator->usedFloatRegs;
     if (generator_.allocator->maxIntegerArgs > 4)
         usedGeneralRegs.insert(ARMGeneralRegs::R11);
+    for (int i = 0; i < 4; i++) {
+        usedFloatRegs.erase(static_cast<ARMFloatRegs>(i));
+    }
     usedGeneralRegs.erase(ARMGeneralRegs::R0);
+    if ((usedGeneralRegs.size() + 1 + usedFloatRegs.size()) % 8 != 0) {
+        usedGeneralRegs.insert(ARMGeneralRegs::IP);
+    }
     for (auto reg : usedGeneralRegs) { regList.insertToTail(reg); }
+    for (auto reg : usedFloatRegs) { fpRegList.insertToTail(reg); }
+
     regList.insertToTail(ARMGeneralRegs::LR);
-    return cgPop(regList) + cgBx(ARMGeneralRegs::LR);
+    return cgPop(fpRegList) + cgPop(regList) + cgBx(ARMGeneralRegs::LR);
 }
 
 std::string Generator::unpackInstCodeList(InstCodeList &instCodeList) {
@@ -904,8 +924,8 @@ int Generator::genAllocaInst(AllocaInst *inst) {
     }
     auto var       = findVariable(inst->unwrap());
     var->is_alloca = true;
-    generator_.stack->spillVar(var, size * 4);
-    return size * 4;
+    generator_.stack->spillVar(var, size * 8);
+    return size * 8;
 }
 
 InstCode *Generator::genLoadInst(LoadInst *inst) {
@@ -2194,21 +2214,24 @@ InstCode *Generator::genCallInst(CallInst *inst) {
     RegList   savedGenRegList;
     FpRegList savedFpRegList;
     //! only external lib func need to mannually save the site
-    if (libfunc.count(inst->callee()->name().data())) {
-        for (int i = 1; i + usedParamGenRegs < maxParamGenRegs; ++i) {
-            auto reg = static_cast<ARMGeneralRegs>(i);
-            if (allocator->usedGeneralRegs.count(reg)) {
-                savedGenRegList.insertToTail(reg);
-            }
-        }
-        //! never push the fp regs
-        for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
-            auto reg = static_cast<ARMFloatRegs>(i);
-            if (allocator->usedFloatRegs.count(reg)) {
-                savedFpRegList.insertToTail(reg);
-            }
+    // if (libfunc.count(inst->callee()->name().data())) {
+    for (int i = 1; i + usedParamGenRegs < maxParamGenRegs; ++i) {
+        auto reg = static_cast<ARMGeneralRegs>(i);
+        if (allocator->usedGeneralRegs.count(reg)) {
+            savedGenRegList.insertToTail(reg);
         }
     }
+    //! never push the fp regs
+    for (int i = 1; i + usedParamFpRegs < maxParamFpRegs; ++i) {
+        auto reg = static_cast<ARMFloatRegs>(i);
+        if (allocator->usedFloatRegs.count(reg)) {
+            savedFpRegList.insertToTail(reg);
+        }
+    }
+    //}
+
+    if ((((savedFpRegList.size() + savedFpRegList.size()) * 4) % 8 != 0))
+        savedGenRegList.insertToTail(ARMGeneralRegs::IP);
     callcode->code += cgPush(savedGenRegList);
     callcode->code += cgPush(savedFpRegList);
 
