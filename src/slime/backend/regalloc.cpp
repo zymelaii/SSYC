@@ -194,7 +194,7 @@ void Allocator::checkLiveInterval(std::string *instcode) {
                     *instcode += Generator::sprintln(
                         "# release spilled value %%%d", var->val->id());
                     if (releaseStackSpaces != 0) {
-                        *instcode += Generator::instrln(
+                        *instcode += parent->instrln(
                             "add",
                             "%s, %s, #%d",
                             Generator::reg2str(ARMGeneralRegs::SP),
@@ -557,7 +557,7 @@ void Allocator::updateAllocation(
                     allocateGeneralRegister(true, operands, gen, instcode);
             else
                 var->reg = allocateFloatRegister(true, operands, gen, instcode);
-            int offset      = stack->stackSize - var->stackpos;
+            int offset     = stack->stackSize - var->stackpos;
             instcode->code += Generator::sprintln(
                 "# load spilled value %%%d", var->val->id());
             if (var->is_general) {

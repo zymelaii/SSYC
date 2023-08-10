@@ -61,6 +61,10 @@ class Generator {
     friend class InstrOp;
 
     Generator(){};
+    size_t relInstrCursor = 0; //<! helps to insert constant data
+    size_t nextLabelId    = 0;
+    size_t nextImmId      = 0;
+    std::map<int32_t, size_t> recentUsedImmediates;
 
 public:
     static Generator *generate();
@@ -72,6 +76,9 @@ public:
     std::string genFloatConstans();
     std::string genUsedGlobVars();
     std::string genAssembly(Function *func);
+    std::string genInFuncDataSection();
+    std::string requireImmediate(int32_t imm);
+    std::string genImmediatePool();
 
     Variable          *findVariable(Value *val);
     static const char *reg2str(ARMGeneralRegs reg);
@@ -90,7 +97,8 @@ public:
         return std::string(strbuf);
     }
 
-    static std::string instrln(const char *instr, const char *fmt, ...) {
+    std::string instrln(const char *instr, const char *fmt, ...) {
+        ++relInstrCursor;
         const auto opcodeWidth     = 5;
         const auto longOpcodeWidth = 14;
         const auto indent          = 4;
@@ -100,7 +108,7 @@ public:
         va_start(ap, fmt);
         vsprintf(args, fmt, ap);
         va_end(ap);
-        return sprintln(
+        auto code = sprintln(
             "%*s%-*s%*s%s",
             indent,
             "",
@@ -109,6 +117,16 @@ public:
             space,
             "",
             args);
+        if (relInstrCursor % 512 == 0) {
+            auto section = genInFuncDataSection();
+            if (!section.empty()) {
+                code += instrln("b", ".LBDATA.%d", nextLabelId);
+                code += section;
+                code += sprintln(".LBDATA.%d:", nextLabelId);
+                ++nextLabelId;
+            }
+        }
+        return code;
     }
 
 protected:

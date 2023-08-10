@@ -322,6 +322,8 @@ class Allocator {
     }
 
 public:
+    Generator *parent;
+
     uint64_t       cur_inst;
     uint64_t       total_inst;
     ValVarTable   *funcValVarTable;
@@ -349,8 +351,8 @@ public:
     std::set<Variable *> *getInstOperands(Instruction *inst);
     Variable             *getVarOfAllocatedReg(ARMGeneralRegs reg);
     Variable             *getVarOfAllocatedReg(ARMFloatRegs reg);
-    Variable             *getMinIntervalRegVar(std::set<Variable *>, bool is_general);
-    Variable             *createVariable(Value *val);
+    Variable *getMinIntervalRegVar(std::set<Variable *>, bool is_general);
+    Variable *createVariable(Value *val);
 
     ARMGeneralRegs allocateGeneralRegister(
         bool                  force     = false,

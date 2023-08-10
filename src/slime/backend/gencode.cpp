@@ -26,6 +26,7 @@ Generator *Generator::generate() {
 std::string Generator::genCode(Module *module) {
     // generator_.os;
     generator_.allocator         = Allocator::create();
+    generator_.allocator->parent = this;
     generator_.stack             = generator_.allocator->stack;
     generator_.usedGlobalVars    = new UsedGlobalVars;
     generator_.floatConstants    = new FloatConstants;
@@ -40,11 +41,9 @@ std::string Generator::genCode(Module *module) {
             generator_.cur_func = static_cast<Function *>(e);
             if (libfunc.find(e->name().data()) != libfunc.end()) continue;
             modulecode += genAssembly(static_cast<Function *>(e));
-            modulecode += genIndirectFpConstantAddrs();
-            modulecode += genUsedGlobVars();
-            refreshUsedGlobalVar();
-            generator_.cur_funcnum++;
+        modulecode += genInFuncDataSection();
             modulecode += sprintln("    .pool\n");
+            ++generator_.cur_funcnum;
         } else {
             if (e->tryIntoGlobalVariable() != nullptr)
                 global_var->insertToTail(e);
@@ -54,6 +53,35 @@ std::string Generator::genCode(Module *module) {
     modulecode += genFloatConstants();
     for (auto e : *global_var) { modulecode += genGlobalDef(e); }
     return modulecode;
+}
+
+std::string Generator::genInFuncDataSection() {
+    std::string section;
+    section += genImmediatePool();
+    section += genIndirectFpConstantAddrs();
+    section += genUsedGlobVars();
+    refreshUsedGlobalVar();
+    relInstrCursor = 0;
+    return section;
+}
+
+std::string Generator::requireImmediate(int32_t imm) {
+    if (!recentUsedImmediates.count(imm)) {
+        recentUsedImmediates[imm] = nextImmId++;
+    }
+    char buffer[16]{};
+    sprintf(buffer, ".IMM.%d", recentUsedImmediates[imm]);
+    return {buffer};
+}
+
+std::string Generator::genImmediatePool() {
+    std::string pool;
+    for (auto [imm, id] : recentUsedImmediates) {
+        pool += sprintln(
+            "%s:\n    .long 0x%08x", requireImmediate(imm).c_str(), imm);
+    }
+    recentUsedImmediates.clear();
+    return pool;
 }
 
 const char *Generator::reg2str(ARMGeneralRegs reg) {
@@ -358,7 +386,6 @@ std::string Generator::genUsedGlobVars() {
         globvars += sprintln("%s:", e.second.data());
         globvars += sprintln("    .long %s", e.first->val->name().data());
     }
-    if (!globvars.empty()) { globvars += sprintln(""); }
     return globvars;
 }
 
@@ -2485,7 +2512,8 @@ std::string Generator::cgLdr(
 }
 
 std::string Generator::cgLdr(ARMGeneralRegs dst, int32_t imm) {
-    return instrln("ldr", "%s, =%d", reg2str(dst), imm);
+    return instrln(
+        "ldr", "%s, %s", reg2str(dst), requireImmediate(imm).c_str());
 }
 
 std::string Generator::cgLdr(ARMGeneralRegs dst, Variable *var) {
@@ -2704,11 +2732,6 @@ std::string Generator::cgB(Value *brTarget, ComparePredicationType cond) {
             instr = "bhi";
         } break;
         case ComparePredicationType::ONE: {
-            instrln(
-                "beq",
-                ".F%dBB.%d",
-                generator_.cur_funcnum,
-                getBlockNum(blockid));
             instr = "bvs";
             break;
         }
