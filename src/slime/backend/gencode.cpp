@@ -1761,7 +1761,7 @@ InstCode *Generator::genFPToSIInst(FPToSIInst *inst) {
         rm = generator_.allocator->allocateFloatRegister(
             true, whitelist, this, fptosicode);
         fptosicode->code += loadFloatConstant(
-            rm, static_cast<ConstantInt *>(src->asConstantData())->value);
+            rm, src->asConstantData()->asConstantFloat()->value);
         rd          = rm;
         rmAllocFlag = true;
     } else {
@@ -1795,8 +1795,8 @@ InstCode *Generator::genSIToFPInst(SIToFPInst *inst) {
     if (!Allocator::isVariable(src)) {
         auto tmpreg = generator_.allocator->allocateGeneralRegister(
             true, whitelist, this, sitofpcode);
-        sitofpcode->code += cgLdr(
-            tmpreg, static_cast<ConstantInt *>(src->asConstantData())->value);
+        sitofpcode->code +=
+            cgLdr(tmpreg, src->asConstantData()->asConstantInt()->value);
         sitofpcode->code += cgVmov(rm, tmpreg);
         generator_.allocator->releaseRegister(tmpreg);
     } else {
