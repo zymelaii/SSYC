@@ -1,37 +1,43 @@
 #include "82.h"
 
-#include "55.h"
-#include "49.h"
+#include "47.h"
 
 namespace slime::pass {
 
 using namespace ir;
 
-void ResortPass::runOnFunction(Function *target) {
-    Instruction *lastAlloc    = nullptr;
-    auto         blockIter    = target->basicBlocks().begin();
-    bool         isFirstBlock = true;
-    while (blockIter != target->basicBlocks().end()) {
-        auto block = *blockIter++;
-        auto it    = block->instructions().begin();
-        while (it != block->instructions().end()) {
-            auto inst = *it++;
-            if (inst->id() != InstructionID::Alloca) { continue; }
-            if (lastAlloc == nullptr) {
-                inst->insertToHead(target->front());
-                lastAlloc = inst;
-                continue;
-            }
-            inst->insertAfter(lastAlloc);
-            lastAlloc = inst;
-        }
-        if (block->isOrphan() && !isFirstBlock) {
-            block->remove();
-        } else if (block->isIncomplete()) {
-            block->tryMarkAsTerminal();
-        }
-        isFirstBlock = false;
-    }
+void SCCPPass::runOnFunction(Function *target) {
+    // if (target->size() == 0) { return; }
+
+    // cfgWorkList_.push_back({nullptr, target->front()});
+
+    // for (auto block : target->basicBlocks()) {
+    //     for (auto inst : block->instructions()) {
+    //         valueStatus_[inst->unwrap()] = Status::TOP;
+    //     }
+    // }
+
+    // int i = 0, j = 0;
+    // while (i < cfgWorkList_.size() && j < ssaWorkList_.size()) {
+    //     while (i < cfgWorkList_.size()) {
+    //         auto &e = cfgWorkList_[i++];
+    //         if (flags_.count(e) != 0) { continue; }
+    //         flags_.insert(e);
+    //         for (auto inst : e.to->instructions()) { runOnInstruction(inst);
+    //         }
+    //     }
+    //     while (j < ssaWorkList_.size()) {
+    //         auto inst = ssaWorkList_[j++];
+    //         for (auto block : inst->parent()->inBlocks()) {
+    //             if (flags_.count({block, inst->parent()}) != 0) {
+    //                 runOnInstruction(inst);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
 }
+
+void SCCPPass::runOnInstruction(Instruction *inst) {}
 
 } // namespace slime::pass

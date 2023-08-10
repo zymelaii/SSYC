@@ -1,21 +1,33 @@
 #include "36.h"
 
-#include <vector>
-#include <algorithm>
-
 namespace slime::experimental::ir {
 
-void ValueBaseImpl::addUse(Use *use) const {
-    for (auto e : uses()) {
-        if (e == use) { return; }
-    }
-    useList_.insertToTail(use);
+void BasicBlock::moveToHead() {
+    //! FIXME: decide wether motion has side effect
+    self_->moveToHead();
 }
 
-void ValueBaseImpl::removeUse(Use *use) const {
-    if (auto it = uses().find(use); it != uses().node_end()) {
-        it->removeFromList();
-    }
+void BasicBlock::moveToTail() {
+    //! FIXME: decide wether motion has side effect
+    self_->moveToTail();
+}
+
+bool BasicBlock::insertOrMoveAfter(BasicBlock *block) {
+    //! FIXME: decide wether motion has side effect
+    self_->insertOrMoveAfter(block->self_);
+    return true;
+}
+
+bool BasicBlock::insertOrMoveBefore(BasicBlock *block) {
+    //! FIXME: decide wether motion has side effect
+    self_->insertOrMoveBefore(block->self_);
+    return true;
+}
+
+bool BasicBlock::remove() {
+    if (totalInBlocks() > 0) { return false; }
+    self_->removeFromList();
+    return true;
 }
 
 } // namespace slime::experimental::ir

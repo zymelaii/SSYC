@@ -1,29 +1,21 @@
 #include "34.h"
 
+#include <vector>
+#include <algorithm>
+
 namespace slime::experimental::ir {
 
-UserBase::FnPtrTable<&UserBase::used> UserBase::used_FNPTR_TABLE{
-    &UserBase::usedForwardFn<SpecificUser<-1>>,
-    &UserBase::usedForwardFn<SpecificUser<0>>,
-    &UserBase::usedForwardFn<SpecificUser<1>>,
-    &UserBase::usedForwardFn<SpecificUser<2>>,
-    &UserBase::usedForwardFn<SpecificUser<3>>,
-};
+void ValueBaseImpl::addUse(Use *use) const {
+    for (auto e : uses()) {
+        if (e == use) { return; }
+    }
+    useList_.insertToTail(use);
+}
 
-UserBase::FnPtrTable<&UserBase::totalUse> UserBase::totalUse_FNPTR_TABLE{
-    &UserBase::totalUseForwardFn<SpecificUser<-1>>,
-    &UserBase::totalUseForwardFn<SpecificUser<0>>,
-    &UserBase::totalUseForwardFn<SpecificUser<1>>,
-    &UserBase::totalUseForwardFn<SpecificUser<2>>,
-    &UserBase::totalUseForwardFn<SpecificUser<3>>,
-};
-
-UserBase::FnPtrTable<&UserBase::uses> UserBase::uses_FNPTR_TABLE{
-    &UserBase::usesForwardFn<SpecificUser<-1>>,
-    &UserBase::usesForwardFn<SpecificUser<0>>,
-    &UserBase::usesForwardFn<SpecificUser<1>>,
-    &UserBase::usesForwardFn<SpecificUser<2>>,
-    &UserBase::usesForwardFn<SpecificUser<3>>,
-};
+void ValueBaseImpl::removeUse(Use *use) const {
+    if (auto it = uses().find(use); it != uses().node_end()) {
+        it->removeFromList();
+    }
+}
 
 } // namespace slime::experimental::ir

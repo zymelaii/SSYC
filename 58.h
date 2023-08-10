@@ -1,115 +1,33 @@
 #pragma once
 
-#include "57.h"
-
-#include <array>
+#include <iostream>
 #include <memory>
-#include <type_traits>
 #include <string_view>
+#include <assert.h>
+#include <limits.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 260
+#endif
 
 namespace slime {
 
-namespace detail {
-
-template <TOKEN... Tokens>
-constexpr bool isUniqueTokenSequence() {
-    constexpr std::array tokens{Tokens...};
-    for (int i = 0; i < tokens.size(); ++i) {
-        for (int j = i + 1; j < tokens.size(); ++j) {
-            if (tokens[i] == tokens[j]) { return false; }
-        }
-    }
-    return true;
-}
-
-template <typename P, TOKEN... Ts>
-class IncompleteLexerTrait;
-
-template <TOKEN... Ts>
-class IncompleteLexerTrait<void, Ts...> {
+class InputStreamTransformer {
 public:
-    static constexpr inline bool isDiscard(TOKEN token) {
-        if constexpr (discards_.size() == 0) {
-            return false;
-        } else if constexpr (discards_.size() == 1) {
-            return token == discards_[0];
-        } else if constexpr (discards_.size() == 2) {
-            return token == discards_[0] || token == discards_[1];
-        } else {
-            for (auto e : discards_) {
-                if (token == e) { return true; }
-            }
-            return false;
-        }
-    }
+    void reset(std::istream *stream, std::string_view source);
+    char get();
 
-public:
-    IncompleteLexerTrait()
-        : state_() {}
-
-    IncompleteLexerTrait(IncompleteLexerTrait&& other)
-        : state_(std::move(other.state_)) {}
-
-    IncompleteLexerTrait& operator=(IncompleteLexerTrait&& other) {
-        new (this) IncompleteLexerTrait(std::move(other));
-    }
-
-    IncompleteLexerTrait(const IncompleteLexerTrait&)            = delete;
-    IncompleteLexerTrait& operator=(const IncompleteLexerTrait&) = delete;
-
-public:
-    const Token& this_token() const {
-        return state_.token;
-    }
-
-    const Token& exact_next() const {
-        state_.next();
-        return state_.token;
-    }
-
-    const Token& exact_lookahead() const {
-        if (state_.nexttoken.isNone()) { state_.lookahead(); }
-        return state_.nexttoken;
-    }
-
-    const Token& next() const {
-        do { state_.next(); } while (isDiscard(state_.token.id));
-        return state_.token;
-    }
-
-    const Token& lookahead() const {
-        if (isDiscard(state_.nexttoken.id) || state_.nexttoken.isNone()) {
-            do {
-                state_.nexttoken.id = TOKEN::TK_NONE;
-                state_.lookahead();
-            } while (isDiscard(state_.nexttoken.id));
-        }
-        return state_.nexttoken;
-    }
-
-    auto& strtable() const {
-        return state_.strtable;
-    }
-
-    template <typename T>
-    void reset(T& stream, std::string_view source) {
-        state_.reset(stream, source);
-        state_.next();
-    }
+protected:
+    void transform();
 
 private:
-    static constexpr std::array discards_{Ts...};
+    std::unique_ptr<std::istream> stream_;
+    std::string                   buffer_;
+    size_t                        cursor_;
+    char                          source_[PATH_MAX];
 
-    mutable LexState state_;
+    size_t lineMacro_;
+    char   pathMacro_[PATH_MAX];
 };
-
-} // namespace detail
-
-template <TOKEN... Ts>
-using LexerTrait = detail::IncompleteLexerTrait<
-    std::enable_if_t<detail::isUniqueTokenSequence<Ts...>()>,
-    Ts...>;
-
-using Lexer = LexerTrait<TOKEN::TK_COMMENT, TOKEN::TK_MLCOMMENT>;
 
 } // namespace slime

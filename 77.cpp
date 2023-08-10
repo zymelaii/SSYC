@@ -1,520 +1,375 @@
 #include "78.h"
-#include "86.h"
 
-#include <assert.h>
-#include <algorithm>
-#include <sstream>
-#include <stack>
-#include <functional>
+#include "47.h"
+#include <math.h>
 
 namespace slime::pass {
 
 using namespace ir;
 
-void MemoryToRegisterPass::runOnFunction(Function *target) {
-    std::set<Value *>       promotableVarSet;
-    std::set<Instruction *> deleteLater;
-
-    auto &blocks = target->basicBlocks();
-
-    //! compute deep first order
-    std::map<BasicBlock *, int> dfn;
-    int                         dfOrder = -1;
-    for (auto block : blocks) { dfn[block] = dfOrder; }
-    std::stack<BasicBlock *> dfStack;
-    dfStack.push(target->front());
-    while (!dfStack.empty()) {
-        auto block = dfStack.top();
-        dfStack.pop();
-        if (dfn[block] != -1) { continue; }
-        dfn[block] = ++dfOrder;
-        if (block->isBranched()) {
-            dfStack.push(block->branch());
-            dfStack.push(block->branchElse());
-        } else if (block->isLinear() && !block->isTerminal()) {
-            dfStack.push(block->branch());
-        }
-    }
-    std::vector<BasicBlock *> sortedBlocks(blocks.begin(), blocks.end());
-    std::sort(
-        sortedBlocks.begin(),
-        sortedBlocks.end(),
-        [&dfn](const auto &lhs, const auto &rhs) {
-            return dfn[lhs] < dfn[rhs];
-        });
-
-    //! simplify inblock memory operations
-    for (auto block : sortedBlocks) {
-        if (dfn[block] == -1) { continue; }
-
-        auto &instrs   = block->instructions();
-        auto  instIter = instrs.begin();
-
-        std::map<Value *, StoreInst *> def;
-        while (instIter != instrs.end()) {
-            auto inst = *instIter++;
-
-            //! get promotable alloca
-            if (inst->id() == InstructionID::Alloca) {
-                auto alloca     = inst->asAlloca();
-                bool promotable = true;
-                for (auto use : alloca->uses()) {
-                    const auto id = use->owner()->asInstruction()->id();
-                    if (id != InstructionID::Load
-                        && id != InstructionID::Store) {
-                        promotable = false;
-                        break;
+void PeekholePass::runOnFunction(Function *target) {
+    for (auto block : target->basicBlocks()) {
+        auto it = block->instructions().begin();
+        while (it != block->instructions().end()) {
+            auto inst = *it++;
+            if (auto user = inst->tryIntoUser<2>()) {
+                if (user->lhs().value() != nullptr
+                    && user->rhs().value() != nullptr) {
+                    bool lhsImm = user->lhs()->isImmediate();
+                    bool rhsImm = user->rhs()->isImmediate();
+                    if (lhsImm && rhsImm) {
+                        foldConstant(inst);
+                    } else if (rhsImm) {
+                        binUserPeekholeOptimize(user);
                     }
                 }
-                if (promotable) { promotableVarSet.insert(alloca); }
-                continue;
             }
-
-            //! update most recent store
-            if (inst->id() == InstructionID::Store) {
-                auto store  = inst->asStore();
-                auto target = store->lhs();
-                if (!promotableVarSet.count(target)) { continue; }
-                auto &lastStore = def[target];
-                if (lastStore != nullptr) {
-                    auto ok = lastStore->removeFromBlock();
-                    assert(ok);
-                }
-                lastStore = store;
-                continue;
-            }
-
-            //! forward use-def
-            if (inst->id() == InstructionID::Load) {
-                auto load   = inst->asLoad();
-                auto target = load->operand();
-                if (!promotableVarSet.count(target)) { continue; }
-                if (load->uses().size() == 0) {
-                    auto ok = load->removeFromBlock();
-                    assert(ok);
-                    continue;
-                }
-                auto &lastStore = def[target];
-                if (lastStore == nullptr) {
-                    //! value is from preds or is a non-def
-                    continue;
-                }
-                std::vector<Use *> uses(
-                    load->uses().begin(), load->uses().end());
-                for (auto use : uses) { use->reset(lastStore->rhs()); }
-                auto ok = load->removeFromBlock();
-                assert(ok);
-                continue;
-            }
-        }
-    }
-
-    //! remove unused alloca
-    for (auto var : promotableVarSet) {
-        auto alloca  = var->asInstruction()->asAlloca();
-        bool hasUser = false;
-        for (auto use : alloca->uses()) {
-            auto inst = use->owner()->asInstruction();
-            if (inst->id() == InstructionID::Load) {
-                auto load = inst->asLoad();
-                if (load->uses().size() > 0) {
-                    hasUser = true;
-                    break;
+            if (auto user = inst->tryIntoUser<1>()) {
+                if (user->operand().value() != nullptr) {
+                    if (user->operand()->isImmediate()) { foldConstant(inst); }
                 }
             }
-        }
-        if (!hasUser) {
-            std::vector<Use *> uses(
-                alloca->uses().begin(), alloca->uses().end());
-            for (auto use : uses) {
-                auto ok = use->owner()->asInstruction()->removeFromBlock();
-                assert(ok);
-            }
-            deleteLater.insert(alloca);
-        }
-    }
-    for (auto var : deleteLater) {
-        auto ok = var->removeFromBlock();
-        assert(ok);
-        promotableVarSet.erase(var->unwrap());
-    }
-    deleteLater.clear();
-
-    //! compute dom tree and frontiers
-    BlockMap    idom;
-    BlockSetMap domfr;
-    BlockSetMap idomSuccs;
-    computeDomFrontier(idom, domfr, target);
-    for (auto &[succ, dominator] : idom) { idomSuccs[dominator].insert(succ); }
-
-    //! place phi node
-    std::map<PhiInst *, AllocaInst *> phiSource;
-    std::set<PhiInst *>               phiSet;
-    for (auto var : promotableVarSet) {
-        std::set<BasicBlock *>   visted;
-        std::stack<BasicBlock *> worklist;
-
-        auto alloca = var->asInstruction()->asAlloca();
-        for (auto use : alloca->uses()) {
-            auto user = use->owner()->asInstruction();
-            if (user->id() != InstructionID::Store) { continue; }
-            auto store = user->asStore();
-            worklist.push(store->parent());
-        }
-
-        while (!worklist.empty()) {
-            auto df = worklist.top();
-            worklist.pop();
-            for (auto frontier : domfr[df]) {
-                if (visted.count(frontier)) { continue; }
-                auto phi = PhiInst::create(alloca->type()->tryGetElementType());
-                phi->insertToHead(frontier);
-                phiSource[phi] = alloca;
-                phiSet.insert(phi);
-                visted.insert(frontier);
-                worklist.push(frontier);
-            }
-        }
-    }
-
-    //! place non-def load
-    std::set<LoadInst *> nondefSet;
-    for (auto var : promotableVarSet) {
-        auto nondef = LoadInst::create(var);
-        nondefSet.insert(nondef);
-        nondef->insertAfter(var->asInstruction());
-    }
-
-    //! compute reach defines
-    using DefineListTable = std::map<Value *, std::set<Instruction *>>;
-    std::map<BasicBlock *, DefineListTable> reachDefines;
-    std::set<StoreInst *>                   storeSet;
-    for (auto block : sortedBlocks) {
-        if (dfn[block] == -1) { continue; }
-        std::map<Value *, Instruction *> defineTable;
-
-        auto &incomingValues = reachDefines[block];
-        auto &instrs         = block->instructions();
-        auto  instIter       = instrs.begin();
-        while (instIter != instrs.end()) {
-            auto inst = *instIter++;
-            //! define from phi
-            if (inst->id() == InstructionID::Phi) {
-                auto phi    = inst->asPhi();
-                auto target = phiSource[phi];
-                assert(promotableVarSet.count(target));
-                defineTable[target] = phi;
-                continue;
-            }
-            //! define from store
-            if (inst->id() == InstructionID::Store) {
-                auto store  = inst->asStore();
-                auto target = store->lhs();
-                if (!promotableVarSet.count(target)) { continue; }
-                defineTable[target] = store;
-                storeSet.insert(store);
-                continue;
-            }
-            //! nondef from load
-            if (inst->id() == InstructionID::Load) {
-                auto load   = inst->asLoad();
-                auto target = load->operand();
-                if (!nondefSet.count(load)) { continue; }
-                defineTable[target] = load;
-                continue;
-            }
-        }
-
-        std::vector<BasicBlock *> succs;
-        if (block->isBranched()) {
-            succs.push_back(block->branch());
-            succs.push_back(block->branchElse());
-        } else if (block->isLinear() && !block->isTerminal()) {
-            succs.push_back(block->branch());
-        }
-        for (auto succ : succs) {
-            auto &incomings = reachDefines[succ];
-            for (auto &[var, def] : defineTable) { incomings[var].insert(def); }
-            for (auto &[var, defs] : incomingValues) {
-                if (!defineTable.count(var)) {
-                    auto &incomings = reachDefines[succ];
-                    incomings[var].insert(defs.begin(), defs.end());
-                }
-            }
-        }
-    }
-
-    //! apply reach defines
-    for (auto block : sortedBlocks) {
-        if (dfn[block] == -1) { continue; }
-        std::map<Value *, Instruction *> defineTable;
-
-        auto &incomingValues = reachDefines[block];
-        auto &instrs         = block->instructions();
-        auto  instIter       = instrs.begin();
-        while (instIter != instrs.end()) {
-            auto inst = *instIter++;
-
-            if (inst->id() == InstructionID::Phi) {
-                auto phi    = inst->asPhi();
-                auto target = phiSource[phi];
-                for (auto value : incomingValues[target]) {
-                    auto source = value->parent();
-                    auto define = value->unwrap();
-                    if (value->id() == InstructionID::Store) {
-                        define = value->asStore()->rhs();
-                    }
-                    phi->addIncomingValue(define, source);
-                }
-                defineTable[target] = phi;
-                continue;
-            }
-
-            if (inst->id() == InstructionID::Store) {
-                auto store  = inst->asStore();
-                auto target = store->lhs();
-                if (!promotableVarSet.count(target)) { continue; }
-                defineTable[target] = store;
-                continue;
-            }
-
-            if (inst->id() == InstructionID::Load) {
-                auto load   = inst->asLoad();
-                auto target = load->operand();
-                if (!promotableVarSet.count(target)) { continue; }
-                if (nondefSet.count(load)) {
-                    defineTable[target] = load;
-                    continue;
-                }
-
-                Value *value = nullptr;
-                if (defineTable.count(target)) {
-                    value = defineTable[target]->unwrap();
-                } else if (
-                    incomingValues.count(target)
-                    && incomingValues[target].size() == 1) {
-                    value = (*incomingValues[target].begin())->unwrap();
-                }
-                if (value->asInstruction()->id() == InstructionID::Store) {
-                    value = value->asInstruction()->asStore()->rhs();
-                }
-                assert(value != nullptr);
-
-                std::vector<Use *> uses(
-                    load->uses().begin(), load->uses().end());
-                for (auto use : uses) { use->reset(value); }
-
-                auto ok = load->removeFromBlock();
-                assert(ok);
-
-                continue;
-            }
-        }
-    }
-
-    //! clean up insts
-    for (auto phi : phiSet) {
-        bool shouldRemove = phi->uses().size() == 0;
-        if (auto singleIncoming = phi->totalOperands() == 2) {
-            auto source = static_cast<BasicBlock *>(phi->op()[1].value());
-            auto value  = phi->op()[0];
-            std::vector<Use *> uses(phi->uses().begin(), phi->uses().end());
-            for (auto use : uses) {
-                auto owner = use->owner()->asInstruction();
-                use->reset(value);
-                if (owner->id() == InstructionID::Phi) {
-                    (use + 1)->reset(source);
-                }
-            }
-            shouldRemove = true;
-        }
-        if (shouldRemove) {
-            auto ok = phi->removeFromBlock();
-            assert(ok);
-        }
-    }
-
-    for (auto load : nondefSet) {
-        if (load->uses().size() == 0) {
-            auto ok = load->removeFromBlock();
-            assert(ok);
-            deleteLater.insert(load);
-        }
-    }
-    for (auto load : deleteLater) { nondefSet.erase(load->asLoad()); }
-    deleteLater.clear();
-
-    for (auto store : storeSet) {
-        auto ok = store->removeFromBlock();
-        assert(ok);
-    }
-
-    for (auto alloca : promotableVarSet) {
-        assert(alloca->uses().size() <= 1);
-        if (alloca->uses().size() == 0) {
-            auto ok = alloca->asInstruction()->asAlloca()->removeFromBlock();
-            assert(ok);
         }
     }
 }
 
-void MemoryToRegisterPass::computeDomFrontier(
-    BlockMap &idom, BlockSetMap &domfr, Function *target) {
-    const auto n = target->size();
-
-    //! NOTE: using linked list to represent graph
-    using edge_t = struct {
-        int succ;
-        int nextEdge;
-    };
-
-    std::vector<edge_t> edges;
-    std::vector<int>    graph(n, -1);
-    std::vector<int>    graphInv(n, -1);
-    std::vector<int>    semiTree(n, -1);
-
-    //! encode BasicBlock* into int
-    std::map<BasicBlock *, int> index;
-    std::vector<BasicBlock *>   revIndex(n);
-    int                         i = 0;
-    for (auto block : target->basicBlocks()) {
-        index[block]  = i;
-        revIndex[i++] = block;
+void PeekholePass::foldConstant(Instruction *inst) {
+    if (auto user = inst->tryIntoUser<1>()) {
+        foldUnaryConstant(user);
+    } else if (auto user = inst->tryIntoUser<2>()) {
+        foldBinaryConstant(user);
     }
+}
 
-    //! build graph
-    for (auto block : target->basicBlocks()) {
-        for (auto pred : block->inBlocks()) {
-            auto from = index[pred];
-            auto to   = index[block];
-            edges.push_back({to, graph[from]});
-            graph[from] = edges.size() - 1;
-            edges.push_back({from, graphInv[to]});
-            graphInv[to] = edges.size() - 1;
-        }
+void PeekholePass::foldUnaryConstant(User<1> *inst) {
+    auto   self  = inst->asInstruction();
+    Value *value = nullptr;
+    switch (self->id()) {
+        case InstructionID::FNeg: {
+            value = ConstantData::createF32(
+                -static_cast<ConstantFloat *>(inst->operand().value())->value);
+        } break;
+        case InstructionID::FPToUI:
+        case InstructionID::FPToSI: {
+            value = ConstantData::createI32(static_cast<int32_t>(
+                static_cast<ConstantFloat *>(inst->operand().value())->value));
+        } break;
+        case InstructionID::UIToFP:
+        case InstructionID::SIToFP: {
+            value = ConstantData::createF32(static_cast<float>(
+                static_cast<ConstantInt *>(inst->operand().value())->value));
+        } break;
+        case InstructionID::ZExt: {
+            value = ConstantData::createI32(
+                static_cast<ConstantInt *>(inst->operand().value())->value);
+        } break;
+        default: {
+        } break;
     }
+    if (value != nullptr) {
+        auto it = inst->uses().begin();
+        while (it != inst->uses().end()) { (*it++)->reset(value); }
+        auto ok = self->removeFromBlock(true);
+        assert(ok);
+    }
+}
 
-    std::vector<int> idom_(n);
-
-    //! Lengauer-Tarjan algorithm
-    //! 1. compute deep-first order
-    //! 2. compute semi-dom
-    //! 3. compute idom
-
-    //! dfn[k] := deep-first order of node k
-
-    //! semi[k] := x with min dfn[x],
-    //!     where x->xi...->k, dfn[xi] > dfn[k], i >= 1
-
-    //! if dfn[x] < dfn[k] then semi[k] may be x
-    //! if dfn[x] > dfn[k] then semi[k] may be semi[u],
-    //!     where u is ancestor of k, dfn[u] > dfn[k],
-    //!     where x->k
-
-    //! if x = v then idom[k] = x
-    //! if dfn[x] > dfn[v] then idom[k] = idom[u],
-    //!     where x = semi[k], k->...->x, v = semi[u],
-    //!     where u with min dfn[u], u belongs k->...
-
-    std::vector<int> dfn(n, -1);
-    std::vector<int> father(n);
-    std::vector<int> unionSet(n);
-    std::vector<int> semi(n);
-    std::vector<int> minNode(n);
-    std::vector<int> nodeAt;
-
-    std::function<void(int)> tarjan = [&](int k) {
-        dfn[k] = nodeAt.size();
-        nodeAt.push_back(k);
-        for (int i = graph[k]; i != -1; i = edges[i].nextEdge) {
-            if (dfn[edges[i].succ] == -1) {
-                father[edges[i].succ] = k;
-                tarjan(edges[i].succ);
+void PeekholePass::foldBinaryConstant(User<2> *inst) {
+    auto   self  = inst->asInstruction();
+    Value *value = nullptr;
+    switch (self->id()) {
+        case InstructionID::Add:
+        case InstructionID::Sub:
+        case InstructionID::Mul:
+        case InstructionID::UDiv:
+        case InstructionID::SDiv:
+        case InstructionID::URem:
+        case InstructionID::SRem:
+        case InstructionID::Shl:
+        case InstructionID::LShr:
+        case InstructionID::AShr:
+        case InstructionID::And:
+        case InstructionID::Or:
+        case InstructionID::Xor:
+        case InstructionID::ICmp: {
+            auto lhs = static_cast<ConstantInt *>(inst->lhs().value())->value;
+            auto rhs = static_cast<ConstantInt *>(inst->rhs().value())->value;
+            switch (self->id()) {
+                case InstructionID::Add: {
+                    value = ConstantInt::create(lhs + rhs);
+                } break;
+                case InstructionID::Sub: {
+                    value = ConstantInt::create(lhs - rhs);
+                } break;
+                case InstructionID::Mul: {
+                    value = ConstantInt::create(lhs * rhs);
+                } break;
+                case InstructionID::UDiv: {
+                    value = ConstantInt::create(
+                        static_cast<uint32_t>(lhs)
+                        / static_cast<uint32_t>(rhs));
+                } break;
+                case InstructionID::SDiv: {
+                    value = ConstantInt::create(lhs / rhs);
+                } break;
+                case InstructionID::URem: {
+                    value = ConstantInt::create(
+                        static_cast<uint32_t>(lhs)
+                        % static_cast<uint32_t>(rhs));
+                } break;
+                case InstructionID::SRem: {
+                    value = ConstantInt::create(lhs % rhs);
+                } break;
+                case InstructionID::Shl: {
+                    value = ConstantInt::create(lhs << rhs);
+                } break;
+                case InstructionID::LShr: {
+                    value =
+                        ConstantInt::create(static_cast<uint32_t>(lhs) >> rhs);
+                } break;
+                case InstructionID::AShr: {
+                    value = ConstantInt::create(lhs >> rhs);
+                } break;
+                case InstructionID::And: {
+                    value = ConstantInt::create(lhs & rhs);
+                } break;
+                case InstructionID::Or: {
+                    value = ConstantInt::create(lhs | rhs);
+                } break;
+                case InstructionID::Xor: {
+                    value = ConstantInt::create(lhs ^ rhs);
+                } break;
+                case InstructionID::ICmp: {
+                    switch (self->asICmp()->predicate()) {
+                        case ComparePredicationType::EQ: {
+                            value = ConstantData::getBoolean(lhs == rhs);
+                        } break;
+                        case ComparePredicationType::NE: {
+                            value = ConstantData::getBoolean(lhs != rhs);
+                        } break;
+                        case ComparePredicationType::UGT: {
+                            value = ConstantData::getBoolean(
+                                static_cast<uint32_t>(lhs)
+                                > static_cast<uint32_t>(rhs));
+                        } break;
+                        case ComparePredicationType::UGE: {
+                            value = ConstantData::getBoolean(
+                                static_cast<uint32_t>(lhs)
+                                >= static_cast<uint32_t>(rhs));
+                        } break;
+                        case ComparePredicationType::ULT: {
+                            value = ConstantData::getBoolean(
+                                static_cast<uint32_t>(lhs)
+                                <= static_cast<uint32_t>(rhs));
+                        } break;
+                        case ComparePredicationType::ULE: {
+                            value = ConstantData::getBoolean(
+                                static_cast<uint32_t>(lhs)
+                                <= static_cast<uint32_t>(rhs));
+                        } break;
+                        case ComparePredicationType::SGT: {
+                            value = ConstantData::getBoolean(lhs > rhs);
+                        } break;
+                        case ComparePredicationType::SGE: {
+                            value = ConstantData::getBoolean(lhs >= rhs);
+                        } break;
+                        case ComparePredicationType::SLT: {
+                            value = ConstantData::getBoolean(lhs < rhs);
+                        } break;
+                        case ComparePredicationType::SLE: {
+                            value = ConstantData::getBoolean(lhs <= rhs);
+                        } break;
+                        default: {
+                        } break;
+                    }
+                } break;
+                default: {
+                } break;
             }
-        }
-    };
-
-    std::function<int(int)> query = [&](int k) {
-        if (k == unionSet[k]) { return k; }
-        int result = query(unionSet[k]);
-        if (dfn[semi[minNode[unionSet[k]]]] < dfn[semi[minNode[k]]]) {
-            minNode[k] = minNode[unionSet[k]];
-        }
-        unionSet[k] = result;
-        return result;
-    };
-
-    //! compute deep-first order
-    tarjan(0);
-
-    //! initialize
-    for (int i = 0; i < n; ++i) {
-        semi[i]     = i;
-        unionSet[i] = i;
-        minNode[i]  = i;
-    }
-
-    //! process in reverse dfn order
-    for (int i = nodeAt.size() - 1; i > 0; --i) {
-        //! compute semi-dom
-        int t = nodeAt[i];
-        for (int i = graphInv[t]; i != -1; i = edges[i].nextEdge) {
-            auto succ = edges[i].succ;
-            if (dfn[succ] == -1) { continue; }
-            query(succ);
-            if (dfn[semi[minNode[succ]]] < dfn[semi[t]]) {
-                semi[t] = semi[minNode[succ]];
+        } break;
+        case InstructionID::FAdd:
+        case InstructionID::FSub:
+        case InstructionID::FMul:
+        case InstructionID::FDiv:
+        case InstructionID::FRem:
+        case InstructionID::FCmp: {
+            auto lhs = static_cast<ConstantFloat *>(inst->lhs().value())->value;
+            auto rhs = static_cast<ConstantFloat *>(inst->rhs().value())->value;
+            switch (self->id()) {
+                case InstructionID::FAdd: {
+                    value = ConstantFloat::create(lhs + rhs);
+                } break;
+                case InstructionID::FSub: {
+                    value = ConstantFloat::create(lhs - rhs);
+                } break;
+                case InstructionID::FMul: {
+                    value = ConstantFloat::create(lhs * rhs);
+                } break;
+                case InstructionID::FDiv: {
+                    value = ConstantFloat::create(lhs / rhs);
+                } break;
+                case InstructionID::FRem: {
+                    //! FIXME: fmod may have precision issues
+                    value = ConstantFloat::create(fmod(lhs, rhs));
+                } break;
+                case InstructionID::FCmp: {
+                    switch (self->asFCmp()->predicate()) {
+                        case ComparePredicationType::FALSE: {
+                            value = ConstantData::getBoolean(false);
+                        } break;
+                        case ComparePredicationType::OEQ: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs) && lhs == rhs);
+                        } break;
+                        case ComparePredicationType::OGT: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs) && lhs > rhs);
+                        } break;
+                        case ComparePredicationType::OGE: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs) && lhs >= rhs);
+                        } break;
+                        case ComparePredicationType::OLT: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs) && lhs < rhs);
+                        } break;
+                        case ComparePredicationType::OLE: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs) && lhs <= rhs);
+                        } break;
+                        case ComparePredicationType::ONE: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs) && lhs != rhs);
+                        } break;
+                        case ComparePredicationType::ORD: {
+                            value = ConstantData::getBoolean(
+                                !isnan(lhs) && !isnan(rhs));
+                        } break;
+                        case ComparePredicationType::UEQ: {
+                            value = ConstantData::getBoolean(
+                                isnan(lhs) || isnan(rhs) || lhs == rhs);
+                        } break;
+                        case ComparePredicationType::UNE: {
+                            value = ConstantData::getBoolean(
+                                isnan(lhs) || isnan(rhs) || lhs != rhs);
+                        } break;
+                        case ComparePredicationType::UNO: {
+                            value = ConstantData::getBoolean(
+                                isnan(lhs) || isnan(rhs));
+                        } break;
+                        case ComparePredicationType::TRUE: {
+                            value = ConstantData::getBoolean(true);
+                        }
+                        default: {
+                        } break;
+                    }
+                }
+                default: {
+                } break;
             }
-        }
-        unionSet[t] = father[t];
-
-        //! update semi tree
-        edges.push_back({t, semiTree[semi[t]]});
-        semiTree[semi[t]] = edges.size() - 1;
-
-        //! compute idom
-        t = father[t];
-        for (int i = semiTree[t]; i != -1; i = edges[i].nextEdge) {
-            auto succ = edges[i].succ;
-            query(succ);
-            idom_[succ] = t == semi[minNode[succ]] ? t : minNode[succ];
-        }
-
-        //! reset semi tree
-        semiTree[t] = -1;
+        } break;
+        default: {
+        } break;
     }
-
-    //! post process to finalize idom
-    for (int i = 1; i < nodeAt.size(); ++i) {
-        auto t = nodeAt[i];
-        if (idom_[t] != semi[t]) { idom_[t] = idom_[idom_[t]]; }
+    if (value != nullptr) {
+        std::vector<Use *> uses(inst->uses().begin(), inst->uses().end());
+        for (auto use : uses) { use->reset(value); }
+        auto ok = self->removeFromBlock(true);
+        assert(ok);
     }
+}
 
-    //! compute dom frontier by idom
-    idom.clear();
-    for (auto block : target->basicBlocks()) {
-        idom[block] = revIndex[idom_[index[block]]];
-    }
-
-    domfr.clear();
-    for (auto block : target->basicBlocks()) { domfr[block].clear(); }
-
-    for (auto block : target->basicBlocks()) {
-        if (block->inBlocks().size() <= 1) { continue; }
-        for (auto pred : block->inBlocks()) {
-            auto runner = pred;
-            while (runner != idom[block]) {
-                domfr[runner].insert(block);
-                runner = idom[runner];
+void PeekholePass::binUserPeekholeOptimize(User<2> *inst) {
+    auto       self         = inst->asInstruction();
+    const auto op           = self->id();
+    bool       shouldRemove = false;
+    Value     *value        = nullptr;
+    switch (op) {
+        case InstructionID::Mul: {
+            auto imm = static_cast<ConstantInt *>(inst->rhs().value())->value;
+            if (int32_t exp = floor(log2(imm)); (1ull << exp) == imm) {
+                value = ShlInst::create(inst->lhs(), ConstantInt::create(exp));
+                value->asInstruction()->insertBefore(self);
+                shouldRemove = true;
             }
-        }
-    }
+        } break;
+        case InstructionID::UDiv:
+        case InstructionID::SDiv: {
+            auto imm = static_cast<ConstantInt *>(inst->rhs().value())->value;
+            if (imm != 0) {
+                if (int32_t exp = floor(log2(imm)); (1ull << exp) == imm) {
+                    value =
+                        AShrInst::create(inst->lhs(), ConstantInt::create(exp));
+                    value->asInstruction()->insertBefore(self);
+                    shouldRemove = true;
+                    break;
+                }
 
-    std::vector<BasicBlock *> deleteLater;
-    for (auto [succ, dominator] : idom) {
-        if (succ == dominator) { deleteLater.push_back(succ); }
+                //! WARNING: to perform the algorithm, result of mul-inst must
+                //! be 64-bit
+                break;
+                //! barrett reduction
+                //! floor(N / M) = floor(N * X / 2^(b + s))
+                //! where: s = floor(log2(M - 1)), X = ceil(2^(b + s) / M),
+                //! NOTE: b is word size (32 here)
+                int32_t b = 32;
+                int32_t s = floor(log2(imm - 1));
+                int32_t X = ceil((1ull << (b + s)) / imm);
+                auto    inst1 =
+                    MulInst::create(inst->lhs(), ConstantInt::create(X));
+                inst1->insertBefore(self);
+                auto inst2 =
+                    AShrInst::create(inst1, ConstantInt::create(b + s));
+                inst2->insertAfter(inst1);
+                value        = inst2->unwrap();
+                shouldRemove = true;
+            }
+        } break;
+        case InstructionID::URem:
+        case InstructionID::SRem: {
+            auto imm = static_cast<ConstantInt *>(inst->rhs().value())->value;
+            bool shouldReset = false;
+            if (imm == 0) { break; }
+            if (imm == 1) {
+                value        = ConstantInt::create(0);
+                shouldRemove = true;
+            } else if (int32_t exp = floor(log2(imm)); (1ull << exp) == imm) {
+                value =
+                    AndInst::create(inst->lhs(), ConstantInt::create(imm - 1));
+                value->asInstruction()->insertBefore(self);
+                shouldRemove = true;
+            }
+        } break;
+        case InstructionID::FDiv: {
+            auto imm = static_cast<ConstantFloat *>(inst->rhs().value())->value;
+            if (imm != 0.f) {
+                imm = 1. / imm;
+                value =
+                    FMulInst::create(inst->lhs(), ConstantFloat::create(imm))
+                        ->unwrap();
+                value->asInstruction()->insertBefore(self);
+                shouldRemove = true;
+            }
+        } break;
+        case InstructionID::FCmp: {
+            if (self->asFCmp()->predicate() == ComparePredicationType::TRUE) {
+                value        = ConstantData::getBoolean(true);
+                shouldRemove = true;
+            } else if (
+                self->asFCmp()->predicate() == ComparePredicationType::FALSE) {
+                value        = ConstantData::getBoolean(false);
+                shouldRemove = true;
+            }
+        } break;
+        default: {
+        } break;
     }
-    for (auto block : deleteLater) { idom.erase(block); }
+    if (shouldRemove) {
+        auto it = inst->uses().begin();
+        while (it != inst->uses().end()) { (*it++)->reset(value); }
+        auto ok = self->removeFromBlock(true);
+        assert(ok);
+    }
 }
 
 } // namespace slime::pass

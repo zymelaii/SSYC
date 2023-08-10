@@ -1,159 +1,172 @@
 #include "72.h"
 
-#include "49.h"
+#include "47.h"
 
 namespace slime::pass {
 
 using namespace ir;
 
-void CopyPropagationPass::runOnFunction(Function *target) {
-    for (auto block : target->basicBlocks()) {
-        std::map<Value *, StoreInst *> def;
-        std::set<Instruction *>        deleteLater;
-        auto                           it = block->instructions().begin();
-        while (it != block->instructions().end()) {
-            auto inst = *it++;
-            if (inst->id() == InstructionID::Store) {
-                auto  store     = inst->asStore();
-                auto &lastStore = def[store->lhs()];
-                if (lastStore != nullptr) { deleteLater.insert(lastStore); }
-                lastStore = store;
-                continue;
-            }
-            if (inst->id() == InstructionID::Load) {
-                auto load  = inst->asLoad();
-                auto store = def[load->operand()];
-                if (store != nullptr) {
-                    std::vector<Use *> uses(
-                        load->uses().begin(), load->uses().end());
-                    for (auto use : uses) { use->reset(store->rhs()); }
-                    deleteLater.insert(load);
-                }
-                continue;
-            }
+void DeadCodeEliminationPass::run(Module *module) {
+    for (auto fn : module->globalObjects()) {
+        if (fn->isFunction()) {
+            useList.clear();
+            defList.clear();
+            runOnFunction(fn->asFunction());
         }
-        for (auto inst : deleteLater) {
-            auto ok = inst->removeFromBlock();
+    }
+}
+
+void DeadCodeEliminationPass::runOnFunction(Function *target) {
+    auto blockIter = target->basicBlocks().begin();
+    if (blockIter == target->basicBlocks().end()) { return; }
+
+    std::set<StoreInst *> storeSet;
+
+    auto entry = *blockIter;
+    while (blockIter != target->basicBlocks().end()) {
+        auto block = *blockIter++;
+        if (block->uses().size() == 0 && block != entry) {
+            block->remove();
+            continue;
+        } else if (block->isIncomplete()) {
+            auto ok = block->tryMarkAsTerminal();
             assert(ok);
         }
-        //! FIXME: kill variable used by a call
-    }
-
-    return;
-    for (auto block : target->basicBlocks()) {
-        auto it = block->begin();
-        while (it != block->end()) {
-            auto inst = *it++;
-            switch (inst->id()) {
-                case InstructionID::Alloca: {
-                    if (inst->unwrap()->uses().size() == 0) {
-                        inst->removeFromBlock();
-                    } else {
-                        createUseDefRecord(inst->unwrap());
-                    }
-                    continue;
-                } break;
-                case InstructionID::Load: {
-                    auto load = inst->asLoad();
-                    auto ptr  = load->operand();
-                    //! ptr may from a global object
-                    if (ptr->isGlobal()) assert(ptr != nullptr);
-                    auto &[value, store, used] = useDef_[ptr];
-                    if (value == nullptr) {
-                        //! WANRING: load before store
-                        value = load->unwrap();
-                        assert(store == nullptr);
-                        used = false;
-                    } else {
-                        auto &uses = load->unwrap()->uses();
-                        auto  it   = uses.begin();
-                        while (it != uses.end()) {
-                            auto use = *it++;
-                            use->reset(value);
+        std::list<ir::AllocaInst *> allocas;
+        auto                        instIter = block->instructions().begin();
+        while (instIter != block->instructions().end()) {
+            auto inst = *instIter++;
+            if (inst->id() == ir::InstructionID::Store) {
+                auto store = inst->asStore();
+                if (auto &lastStore = defList[store->lhs()]) {
+                    if (lastStore != nullptr) {
+                        auto lastLoad = useList[lastStore];
+                        if (!lastLoad
+                            && lastLoad->parent() == lastStore->parent()
+                            && lastStore->parent() == store->parent()
+                            && lastLoad->uses().size() == 0) {
+                            auto ok = lastStore->removeFromBlock();
+                            assert(ok);
+                            storeSet.erase(lastStore);
                         }
-                        used = true;
                     }
-                } break;
-                case InstructionID::Store: {
-                    updateUseDef(inst->asStore());
+                    lastStore = store;
+                }
+                storeSet.insert(store);
+            }
+            if (inst->id() == ir::InstructionID::Load) {
+                auto load = inst->asLoad();
+                if (load->uses().size() == 0) {
+                    load->removeFromBlock();
                     continue;
-                } break;
-                case InstructionID::GetElementPtr: {
-                } break;
-                default: {
-                } break;
+                }
+                auto address = load->operand();
+                if (defList.count(address) != 0) {
+                    auto  store    = defList[address];
+                    auto &lastLoad = useList[store];
+                    if (lastLoad) { lastLoad->removeFromBlock(); }
+                    lastLoad = load;
+                }
+            }
+            if (inst->id() == ir::InstructionID::Br) {
+                auto br = inst->asBr();
+                if (block->isBranched() && br->op<0>()->isImmediate()) {
+                    auto imm =
+                        static_cast<ir::ConstantInt *>(br->op<0>().value());
+                    auto branchToSecond = !imm->value;
+                    if (branchToSecond) {
+                        block->reset(block->branchElse());
+                    } else {
+                        block->reset(block->branch());
+                    }
+                }
+                break;
+            }
+            if (inst->id() == ir::InstructionID::Alloca) {
+                allocas.push_front(inst->asAlloca());
+                continue;
+            }
+        }
+        auto instRIter = block->instructions().rbegin();
+        while (instRIter != block->instructions().rend()) {
+            auto inst = *instRIter++;
+            if (inst->unwrap()->type()->isVoid()) { continue; }
+            if (inst->id() == InstructionID::Call) { continue; }
+            if (inst->unwrap()->uses().size() == 0) {
+                auto ok = inst->removeFromBlock();
+                assert(ok);
+            }
+        }
+        for (auto alloca : allocas) {
+            if (alloca->uses().size() == 0) {
+                alloca->removeFromBlock();
+            } else {
+                alloca->insertToHead(entry);
             }
         }
     }
 
-    for (auto &[ptr, e] : useDef_) {
-        auto &[value, store, used] = e;
-
-        if (!used && store != nullptr) {
-            store->removeFromBlock();
-            store->lhs().reset();
-            store->rhs().reset();
-        }
-        if (value && value->isInstruction()) {
-            auto inst = value->asInstruction();
-            if (value->uses().size() == 0) { inst->removeFromBlock(); }
-        }
-        //! FIXME: some bugs enables ptr to be nullptr, unexpectedly
-        if (ptr && ptr->isInstruction()) {
-            auto inst = ptr->asInstruction();
-            if (ptr->uses().size() == 0) { inst->removeFromBlock(); }
+    //! remove no-effect store
+    for (auto store : storeSet) {
+        auto address = store->lhs();
+        //! alloca is only used by store itself
+        if (address->uses().size() == 1) {
+            if (address->isInstruction()
+                && address->asInstruction()->id() == InstructionID::Alloca) {
+                auto alloca = address->asInstruction()->asAlloca();
+                auto ok     = store->removeFromBlock();
+                assert(ok);
+                assert(alloca->uses().size() == 0);
+                ok = alloca->removeFromBlock();
+                assert(ok);
+            }
         }
     }
-    useDef_.clear();
-}
 
-void CopyPropagationPass::createUseDefRecord(Value *ptr) {
-    assert(useDef_.count(ptr) == 0);
-    assert(ptr != nullptr);
-    auto &e = useDef_[ptr];
-    e.value = nullptr;
-    e.store = nullptr;
-    e.used  = false;
-}
-
-void CopyPropagationPass::updateUseDef(ir::StoreInst *store) {
-    auto ptr = store->lhs();
-    if (useDef_.count(ptr) == 0) { return; }
-    auto &[value, lastStore, used] = useDef_.at(ptr);
-    assert(store != lastStore);
-    removeLastStoreIfUnused(ptr);
-    value     = store->rhs();
-    used      = false;
-    lastStore = store;
-}
-
-Value *CopyPropagationPass::lookupValueDef(Value *ptr) {
-    assert(useDef_.count(ptr) == 1);
-    auto &[value, store, used] = useDef_.at(ptr);
-    if (!value) { return nullptr; }
-    used = true;
-    return value;
-}
-
-StoreInst *CopyPropagationPass::lookupLastStoreInst(Value *ptr) {
-    assert(useDef_.count(ptr) == 1);
-    auto &[value, store, used] = useDef_.at(ptr);
-    return store;
-}
-
-bool CopyPropagationPass::removeLastStoreIfUnused(ir::Value *ptr) {
-    assert(useDef_.count(ptr) == 1);
-    auto &[value, store, used] = useDef_.at(ptr);
-    //! value might from a before-store load inst
-    if (!store) { return false; }
-    if (!value) { return false; }
-    if (!used || value->uses().size() == 0) {
-        if (value->isInstruction()) {
-            value->asInstruction()->removeFromBlock();
+    //! FIXME: this block combination cannot solve empty loop issues
+    //! completely
+    blockIter = target->basicBlocks().begin();
+    while (blockIter != target->basicBlocks().end()) {
+        const auto MAX_COMBO = 5;
+        int        combo     = 0;
+        auto       block     = *blockIter++;
+        while (block->isLinear() && !block->isTerminal()) {
+            if (combo++ < MAX_COMBO) { break; }
+            auto follow = block->branch();
+            if (follow->inBlocks().size() == 1) {
+                if (blockIter != target->basicBlocks().end()
+                    && *blockIter == follow) {
+                    ++blockIter;
+                }
+                block->reset();
+                auto instIter = follow->instructions().begin();
+                while (instIter != follow->instructions().end()) {
+                    (*instIter++)->insertToTail(block);
+                }
+                block->syncFlowWithInstUnsafe();
+                follow->remove();
+                break;
+            }
+            if (!follow->isLinear() || follow->size() != 1) { break; }
+            if (follow->isTerminal()) {
+                auto ret = follow->instructions().tail()->value()->asRet();
+                block->reset();
+                bool ok = block->tryMarkAsTerminal(ret->operand());
+                assert(ok);
+            } else {
+                block->reset(follow->branch());
+            }
         }
-        store->removeFromBlock();
     }
-    return used == 0;
+
+    blockIter = target->basicBlocks().begin();
+    assert(blockIter != target->basicBlocks().end());
+    ++blockIter;
+    while (blockIter != target->basicBlocks().end()) {
+        if (auto block = *blockIter++; block->uses().size() == 0) {
+            block->remove();
+        }
+    }
 }
 
 } // namespace slime::pass

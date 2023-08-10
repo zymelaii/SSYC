@@ -1,166 +1,126 @@
-#include "46.h"
-#include "55.h"
-#include "49.h"
+#include "47.h"
 
-#include <assert.h>
+#include <array>
 
 namespace slime::ir {
 
-namespace detail {
-static const CFGNode TERMINAL;
-} // namespace detail
-
-void CFGNode::reset() {
-    checkAndSolveOutdated();
-    auto self = static_cast<BasicBlock*>(this);
-    if (!isIncomplete()) {
-        if (isBranched()) { branchElse_->unlinkFrom(self); }
-        branch_->unlinkFrom(self);
-        //! strip branch instruction
-        assert(self->instructions().size() > 0);
-        auto br = self->instructions().tail()->value();
-        assert(br->id() == InstructionID::Br || br->id() == InstructionID::Ret);
-        if (br->id() == InstructionID::Br) {
-            auto inst = br->asBr();
-            inst->op<0>().reset();
-            inst->op<1>().reset();
-            inst->op<2>().reset();
-        } else {
-            br->asRet()->operand().reset();
-        }
-        br->removeFromBlock();
-    }
-    control_    = nullptr;
-    branch_     = nullptr;
-    branchElse_ = nullptr;
+std::string_view getPredicateName(ComparePredicationType predicate) {
+    constexpr size_t N = static_cast<size_t>(ComparePredicationType::TRUE) + 1;
+    static constexpr auto LOOKUP = std::array<std::string_view, N>{
+        "eq",  "ne",  "ugt",   "uge", "ult", "ule",  "sgt", "sge",
+        "slt", "sle", "false", "oeq", "ogt", "oge",  "olt", "ole",
+        "one", "ord", "ueq",   "une", "uno", "true",
+    };
+    return LOOKUP[static_cast<int>(predicate)];
 }
 
-void CFGNode::reset(BasicBlock* branch) {
-    reset();
-    auto self = static_cast<BasicBlock*>(this);
-    if (branch != terminal()) {
-        Instruction::createBr(branch)->insertToTail(self);
-        branch_ = branch;
-        branch_->addIncoming(self);
-    } else if (!isTerminal()) {
-        auto type = self->parent()->type()->asFunctionType()->returnType();
-        assert(type->isVoid());
-        Instruction::createRet()->insertToTail(self);
-        branch_ = terminal();
-    }
+std::string_view getInstructionName(InstructionID id) {
+    static constexpr auto INST_LOOKUP = std::array<
+        std::string_view,
+        static_cast<size_t>(InstructionID::LAST_INST) + 1>{
+        "alloca", "load", "store", "ret",  "br",     "getelementptr", "add",
+        "sub",    "mul",  "udiv",  "sdiv", "urem",   "srem",          "fneg",
+        "fadd",   "fsub", "fmul",  "fdiv", "frem",   "shl",           "lshr",
+        "ashr",   "and",  "or",    "xor",  "fptoui", "fptosi",        "uitofp",
+        "sitofp", "zext", "icmp",  "fcmp", "phi",    "call",
+    };
+    return INST_LOOKUP[static_cast<int>(id)];
 }
 
-void CFGNode::reset(
-    Value* control, BasicBlock* branch, BasicBlock* branchElse) {
-    assert(control->type()->isBoolean());
-    reset();
-    auto self = static_cast<BasicBlock*>(this);
-    Instruction::createBr(control, branch, branchElse)->insertToTail(self);
-    control_    = control;
-    branch_     = branch;
-    branchElse_ = branchElse;
-    branch_->addIncoming(self);
-    branchElse_->addIncoming(self);
+bool Instruction::insertToHead(BasicBlock* block) {
+    //! FIXME: instruction is not always movable
+    assert(block != nullptr);
+    if (parent_ != nullptr) { removeFromBlock(false); }
+    parent_ = block;
+    self_   = parent_->insertToHead(this);
+    return true;
 }
 
-bool CFGNode::tryMarkAsTerminal(Value* hint) {
-    auto self = static_cast<BasicBlock*>(this);
-    if (isIncomplete()) {
-        auto type = self->parent()->type()->asFunctionType()->returnType();
-        Instruction* ret = nullptr;
-        if (type->isVoid()) {
-            ret = Instruction::createRet();
-        } else if (hint != nullptr && hint->type()->equals(type)) {
-            ret = Instruction::createRet(hint);
-        }
-        if (!ret) { return false; }
-        reset();
-        ret->insertToTail(self);
-        auto ptr = const_cast<CFGNode*>(&detail::TERMINAL);
-        branch_  = static_cast<BasicBlock*>(ptr);
-        assert(isTerminal());
-        return true;
-    }
-    return false;
+bool Instruction::insertToTail(BasicBlock* block) {
+    //! FIXME: instruction is not always movable
+    assert(block != nullptr);
+    if (parent_ != nullptr) { removeFromBlock(false); }
+    parent_ = block;
+    self_   = parent_->insertToTail(this);
+    return true;
 }
 
-void CFGNode::syncFlowWithInstUnsafe() {
-    auto self = static_cast<BasicBlock*>(this);
-    if (self->size() == 0) { return; }
-    auto inst = self->instructions().tail()->value();
-    if (inst->id() == InstructionID::Br) {
-        auto br = inst->asBr();
-        if (branch_ != nullptr) { branch_->unlinkFrom(self); }
-        if (branchElse_ != nullptr) { branchElse_->unlinkFrom(self); }
-        if (br->op<0>()->isLabel()) {
-            control_    = nullptr;
-            branch_     = static_cast<BasicBlock*>(br->op<0>().value());
-            branchElse_ = nullptr;
-            branch_->addIncoming(self);
-        } else {
-            control_    = br->op<0>();
-            branch_     = static_cast<BasicBlock*>(br->op<1>().value());
-            branchElse_ = static_cast<BasicBlock*>(br->op<2>().value());
-            branch_->addIncoming(self);
-            branchElse_->addIncoming(self);
-        }
-    } else if (inst->id() == InstructionID::Ret) {
-        auto ret = inst->asRet();
-        if (branch_ != nullptr) { branch_->unlinkFrom(self); }
-        if (branchElse_ != nullptr) { branchElse_->unlinkFrom(self); }
-        control_    = nullptr;
-        branch_     = terminal();
-        branchElse_ = nullptr;
-    }
+bool Instruction::insertBefore(Instruction* inst) {
+    //! FIXME: instruction is not always movable
+    assert(inst != nullptr);
+    if (parent_ != nullptr) { removeFromBlock(false); }
+    if (!inst->parent_) { return false; }
+    parent_ = inst->parent_;
+    self_   = parent_->insertToTail(this);
+    self_->insertBefore(inst->self_);
+    return true;
 }
 
-BasicBlock* CFGNode::terminal() {
-    auto ptr = const_cast<CFGNode*>(&detail::TERMINAL);
-    return static_cast<BasicBlock*>(ptr);
+bool Instruction::insertAfter(Instruction* inst) {
+    //! FIXME: instruction is not always movable
+    assert(inst != nullptr);
+    if (parent_ != nullptr) { removeFromBlock(false); }
+    if (!inst->parent_) { return false; }
+    parent_ = inst->parent_;
+    self_   = parent_->insertToTail(this);
+    self_->insertAfter(inst->self_);
+    return true;
 }
 
-void CFGNode::checkAndSolveOutdated() {
-    if (isIncomplete()) { return; }
-    auto self        = static_cast<BasicBlock*>(this);
-    bool shouldReset = self->size() == 0;
-    if (!shouldReset) {
-        auto brInst = self->instructions().tail()->value();
-        if (brInst->id() == InstructionID::Br) {
-            auto br     = brInst->asBr();
-            shouldReset = !(br->op<0>()->isLabel() ? isLinear() : isBranched());
-        } else if (brInst->id() == InstructionID::Ret) {
-            shouldReset = !isTerminal();
-        } else {
-            shouldReset = true;
-        }
-    }
-    if (shouldReset) {
-        control_ = nullptr;
-        if (branchElse_ != nullptr) { branchElse_->unlinkFrom(self); }
-        if (isTerminal()) {
-            branch_ = nullptr;
-        } else {
-            branch_->unlinkFrom(self);
-        }
-        control_    = nullptr;
-        branch_     = nullptr;
-        branchElse_ = nullptr;
-    }
+bool Instruction::moveToPrev() {
+    //! FIXME: instruction is not always movable
+    if (!parent_ || !self_) { return false; }
+    if (self_ == parent_->head()) { return false; }
+    self_->moveToPrev();
+    return true;
 }
 
-void CFGNode::addIncoming(BasicBlock* inBlock) {
-    if (this != terminal()) {
-        if (maybeFrom(inBlock)) { return; }
-        inBlocks_.insert(inBlock);
-    }
+bool Instruction::moveToNext() {
+    //! FIXME: instruction is not always movable
+    if (!parent_ || !self_) { return false; }
+    if (self_ == parent_->tail()) { return false; }
+    self_->moveToNext();
+    return true;
 }
 
-void CFGNode::unlinkFrom(BasicBlock* inBlock) {
-    //! WANRING: never call it at 'this' context
-    if (this != terminal()) {
-        assert(maybeFrom(inBlock));
-        inBlocks_.erase(inBlock);
+bool Instruction::removeFromBlock(bool reset) {
+    if (reset && unwrap()->uses().size() > 0) { return false; }
+    if (!parent_ || !self_) { return false; }
+    if (reset) {
+        for (int i = 0; i < totalOperands(); ++i) { useAt(i).reset(); }
     }
+    self_->removeFromList();
+    self_   = nullptr;
+    parent_ = nullptr;
+    return true;
+}
+
+bool PhiInst::addIncomingValue(Value* value, BasicBlock* block) {
+    if (!value->type()->equals(type())) { return false; }
+    const int n = totalUse();
+    for (int i = 1; i < n; i += 2) {
+        if (op()[i] == block) { return false; }
+    }
+    resize(n + 2);
+    op()[n]     = value;
+    op()[n + 1] = block;
+    return true;
+}
+
+bool PhiInst::removeValueFrom(BasicBlock* block) {
+    const int n = totalUse();
+    int       i = 1;
+    while (i < n) {
+        if (op()[i] == block) { break; }
+        i += 2;
+    }
+    if (i < n) {
+        op()[i - 1].reset();
+        op()[i].reset();
+        op()[i - 1] = op()[n - 2];
+        op()[i]     = op()[n - 1];
+    }
+    return true;
 }
 
 } // namespace slime::ir
