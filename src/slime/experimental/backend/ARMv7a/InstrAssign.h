@@ -12,6 +12,7 @@
 #include <string>
 #include <type_traits>
 #include <initializer_list>
+#include <algorithm>
 
 namespace slime::experimental::backend::ARMv7a {
 
