@@ -1,4 +1,7 @@
+#pragma once
+
 #include "RegFile.h"
+#include "InstrSet.h"
 
 #include <slime/ir/instruction.h>
 #include <slime/experimental/Utility.h>
@@ -14,60 +17,9 @@
 #include <initializer_list>
 #include <algorithm>
 
-namespace slime::experimental::backend::ARMv7a {
+namespace slime::experimental::backend::ARMv7A {
 
 class Variable;
-
-enum class InstrKind : uint32_t {
-    MOV = 0,      //<! mov
-    MOVEQ,        //<! moveq
-    MOVNE,        //<! movne
-    MOVLE,        //<! movle
-    MOVLT,        //<! movlt
-    MOVGE,        //<! movge
-    MOVGT,        //<! movgt
-    ADD,          //<! add
-    AND,          //<! and
-    ASR,          //<! asr
-    B,            //<! b
-    BEQ,          //<! beq
-    BGE,          //<! bge
-    BGT,          //<! bgt
-    BHI,          //<! bhi
-    BL,           //<! bl
-    BLE,          //<! ble
-    BLT,          //<! blt
-    BNE,          //<! bne
-    BPL,          //<! bpl
-    BVS,          //<! bvs
-    BX,           //<! bx
-    CMP,          //<! cmp
-    LDR,          //<! ldr
-    LSL,          //<! lsl
-    MUL,          //<! mul
-    POP,          //<! pop
-    PUSH,         //<! push
-    STR,          //<! str
-    SUB,          //<! sub
-    RSB,          //<! rsb
-    TST,          //<! tst
-    VADD_F32,     //<! vadd.f32
-    VCMP_F32,     //<! vcmp.f32
-    VCVT_F32_S32, //<! vcvt.f32.s32
-    VCVT_F32_U32, //<! vcvt.f32.u32
-    VCVT_S32_F32, //<! vcvt.s32.f32
-    VCVT_U32_F32, //<! vcvt.u32.f32
-    VDIV_F32,     //<! vdiv.f32
-    VLDR,         //<! vldr
-    VMOV,         //<! vmov
-    VMUL_F32,     //<! vmul.f32
-    VNEG_F32,     //<! vneg.f32
-    VPOP,         //<! vpop
-    VPUSH,        //<! vpush
-    VSTR,         //<! vstr
-    VSUB_F32,     //<! vsub.f32
-    LAST_INSTR = VSUB_F32,
-};
 
 enum class InstrType : uint8_t {
     Reg,              //<! instr reg
@@ -314,9 +266,9 @@ private:
     std::vector<InstrState> instrs_;
 };
 
-} // namespace slime::experimental::backend::ARMv7a
+} // namespace slime::experimental::backend::ARMv7A
 
-namespace slime::experimental::backend::ARMv7a {
+namespace slime::experimental::backend::ARMv7A {
 
 inline std::string_view InstrOp::toString(InstrKind instr) {
     using value_type     = std::underlying_type_t<InstrType>;
@@ -538,4 +490,4 @@ inline auto InstrOp::createLabel(InstrKind kind, std::string_view label)
     return instr;
 }
 
-} // namespace slime::experimental::backend::ARMv7a
+} // namespace slime::experimental::backend::ARMv7A

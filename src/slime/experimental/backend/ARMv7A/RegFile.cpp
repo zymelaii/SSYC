@@ -2,7 +2,7 @@
 
 #include <array>
 
-namespace slime::experimental::backend::ARMv7a {
+namespace slime::experimental::backend::ARMv7A {
 
 uint8_t Register::id() const {
     if (!isValid()) {
@@ -42,4 +42,4 @@ std::string_view Register::toString() const {
     return REG_NAME_TABLE[uniqueId()];
 }
 
-} // namespace slime::experimental::backend::ARMv7a
+} // namespace slime::experimental::backend::ARMv7A

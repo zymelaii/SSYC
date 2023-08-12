@@ -3,7 +3,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace slime::experimental::backend::ARMv7a {
+namespace slime::experimental::backend::ARMv7A {
 
 std::string InstrOp::InstrState::dump() const {
     constexpr auto opcodeWidth     = 5;
@@ -579,4 +579,4 @@ void InstrOp::dumpAll(std::ostream &os) const {
     for (auto instr : instrs()) { os << instr.dump() << std::endl; }
 }
 
-} // namespace slime::experimental::backend::ARMv7a
+} // namespace slime::experimental::backend::ARMv7A

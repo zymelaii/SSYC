@@ -1,3 +1,5 @@
+#pragma once
+
 #include <slime/experimental/Utility.h>
 #include <stdint.h>
 #include <assert.h>
@@ -5,7 +7,7 @@
 #include <string_view>
 #include <variant>
 
-namespace slime::experimental::backend::ARMv7a {
+namespace slime::experimental::backend::ARMv7A {
 
 enum class GeneralRegister : uint8_t;
 enum class FPRegister : uint8_t;
@@ -140,9 +142,9 @@ enum class FPRegister : uint8_t {
     LAST = S31,
 };
 
-} // namespace slime::experimental::backend::ARMv7a
+} // namespace slime::experimental::backend::ARMv7A
 
-namespace slime::experimental::backend::ARMv7a {
+namespace slime::experimental::backend::ARMv7A {
 
 template <typename R>
 inline Register::Register(R reg) {
@@ -299,4 +301,4 @@ static inline std::string_view toString(const Register& reg) {
     return reg.toString();
 }
 
-} // namespace slime::experimental::backend::ARMv7a
+} // namespace slime::experimental::backend::ARMv7A
