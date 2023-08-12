@@ -12,7 +12,7 @@ std::string InstrOp::InstrState::dump() const {
     constexpr auto space           = 2;
 
     constexpr auto N     = 64;
-    auto           instr = InstrOp::toString(kind);
+    auto           instr = toString(kind);
     char           buffer[N]{}, *p = buffer;
 
     int written = sprintf(
