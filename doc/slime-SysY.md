@@ -30,6 +30,8 @@
 - [ ] [raw string literal support](#raw-string-literal-support)
 - [ ] [formattable string literal support](#formattable-string-literal-support)
 
+- [ ] [high-precision arithmetic constexpr evaluation](#high-precision-arithmetic-constexpr-evaluation)
+
 - [ ] [strong-typed literal](#strong-typed-literal)
 - [ ] [variable-length array](#variable-length-array)
 - [ ] [string literals splice](#string-literals-splice)
@@ -183,6 +185,20 @@ $"{s} World{'!'}";              //<! "Hello World!"
 $"{s} World{'!'} --> {b + c}";  //<! "Hello World! --> -119.8"
 $"\{{c}\{\}";                   //<! "{-123{}"
 ```
+
+## High-precision Arithmetic `constexpr` Evaluation
+
+添加 `s` 用以标记算术字面量为高精度值，`s` 后缀必须位于所有后缀的最末尾。
+
+被标记为高精度值的编译期常量参与编译期算术运算时将以真值进行计算。
+
+在非编译期算术运算时，以转换后对应的类型值参与计算。
+
+高精度值标记具有传递性。
+
+显式类型转换将消除高精度值标记。
+
+编译期函数调用执行高精度计算当且仅当 `constexpr` 具备 `force` 属性且相关计算存在高精度值标记。
 
 ## Strong-typed Literal
 
