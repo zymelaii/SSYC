@@ -4,7 +4,12 @@
 
 - [x] [builtin preprocessor](#builtin-preprocessor)
 
+- [ ] [keyword decltype](#keyword-decltype)
+- [ ] [keyword typeof](#keyword-typeof)
+- [ ] [keyword sizeof](#keyword-sizeof)
+
 - [x] [builtin type char](#builtin-type-char)
+- [ ] [builtin type byte](#builtin-type-byte)
 - [ ] [builtin type short](#builtin-type-short)
 - [x] [builtin type int](#builtin-type-int)
 - [ ] [builtin type long](#builtin-type-long)
@@ -12,6 +17,10 @@
 - [x] [builtin type float](#builtin-type-float)
 - [ ] [builtin type double](#builtin-type-double)
 - [ ] [builtin type long double](#builtin-type-long-double)
+
+- [ ] [struct type](#struct-type)
+- [ ] [enum type](#enum-type)
+- [ ] [enum class type](#enum-class-type)
 
 - [x] [declarator const](#declarator-const)
 - [x] [declarator extern](#declarator-extern)
@@ -47,7 +56,29 @@
 
 支持预定义宏的替换。
 
+## Keyword `decltype`
+
+关键字 `decltype` 用于定义类型别名与类型计算
+
+类型别名格式：`decltype <alias-type> = <compound-type>;`
+
+类型计算格式：`decltype(<type-expression>);`
+
+## Keyword `typeof`
+
+关键字 `typeof` 用于获取值的类型
+
+格式：`typeof(<expression>)`
+
+## Keyword `sizeof`
+
+关键字 `sizeof` 用于获取目标类型的内存大小（单位为字节）
+
+格式：`sizeof(<type-or-expression>)`
+
 ## Builtin Type `char`
+
+## Builtin Type `byte`
 
 ## Builtin Type `short`
 
@@ -62,6 +93,57 @@
 ## Builtin Type `double`
 
 ## Builtin Type `long double`
+
+## `struct` Type
+
+使用关键字 `struct` 定义结构体类型
+
+结构体类型是类型的顺序组合
+
+## `enum` Type
+
+使用关键字 `enum` 定义枚举类型
+
+枚举类型必须指定底层值类型（整型）
+
+可以手动指定枚举项的值，未指定时，枚举项的值将递增
+
+当存在值相同的枚举项时，给出警告
+
+枚举类型可以隐式转换为指定的底层值类型
+
+参与显式转换时，枚举类型将按底层值类型参与转换
+
+无法从任意类型转换到枚举类型，也即枚举值是安全的
+
+示例：
+
+```plain
+enum Color : int {
+    Red = 0,
+    Blue,
+    Green,
+    Pink = 114,
+    Gray,
+    Orange,
+};
+```
+
+## `enum class` Type
+
+使用关键字 `enum class` 定义枚举类类型
+
+枚举类支持枚举项的自定义类型
+
+示例：
+
+```plain
+enum class User {
+    Guest,
+    Default(char*),
+    Admin { access: int, name: char* },
+};
+```
 
 ## Declarator `const`
 
