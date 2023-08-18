@@ -1,9 +1,0 @@
-static inline const int foo() {
-    return 3;
-}
-
-extern int bar();
-
-int main() {
-    return 0;
-}

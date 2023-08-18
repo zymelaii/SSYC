@@ -1,6 +1,0 @@
-void f(char []) {}
-
-int main() {
-    f("Hello World!");
-    return 0;
-}

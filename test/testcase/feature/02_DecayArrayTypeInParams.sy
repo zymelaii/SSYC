@@ -1,5 +1,0 @@
-void f(int a[3][2]) {}
-
-int main() {
-    return 0;
-}
