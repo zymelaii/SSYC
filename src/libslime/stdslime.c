@@ -1,4 +1,4 @@
-#include "stdslime.h"
+#include <libslime/stdslime.h>
 
 #include <stdio.h>
 #include <stdlib.h>
