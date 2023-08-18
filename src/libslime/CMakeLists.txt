@@ -3,10 +3,13 @@ project(libslime)
 file(GLOB_RECURSE SOURCE_FILES *.c)
 
 add_library(${PROJECT_NAME} STATIC ${SOURCE_FILES})
-target_compile_options(${PROJECT_NAME} PRIVATE -m32)
 
-target_include_directories(${PROJECT_NAME} INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
-target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
+target_include_directories(
+    ${PROJECT_NAME}
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 
 if(CMAKE_BUILD_TYPE STREQUAL Release)
     target_compile_definitions(${PROJECT_NAME} PRIVATE NDEBUG)
