@@ -1,3 +1,365 @@
+# Advanced SysY (aka slime-SysY)
+
+`slime-SysY` 语言是[编译系统设计赛](https://os.educg.net/#/index?TYPE=CO_S)的目标实现语言 `SysY` 的超集。
+
+`slime-SysY` 程序的源码具有指定的后缀名 `syp`。
+
+其具体言语特性在 [Features](#Features) 中定义。
+
+# Language grammar summary
+
+## Lexical grammar
+
+### Lexical elements
+
+```plain
+token := keyword
+    | identifier
+    | attribute-identifier
+    | constant
+    | string-literal
+    | punctuator
+    | comment
+```
+
+### Keywords
+
+```plain
+keyword := 'void'
+    | 'auto'    | 'bool'    | 'byte'    | 'u8'
+    | 'i8'      | 'i16'     | 'u16'     | 'i32'
+    | 'u32'     | 'i64'     | 'u64'     | 'f16'
+    | 'f32'     | 'f64'     | 'f128'    | 'f256'
+    | 'char8'   | 'char16'  | 'char32'  | 'char'
+    | 'short'   | 'int'     | 'long'    | 'float'
+    | 'double'  | 'const'   | 'signed'  | 'unsigned'
+    | 'static'  | 'inline'  | 'extern'  | 'constexpr'
+    | 'if'      | 'else'    | 'switch'  | 'case'
+    | 'default' | 'loop'    | 'while'   | 'do'
+    | 'for'     | 'return'  | 'break'   | 'continue'
+    | 'typeof'  | 'sizeof'  | 'alignof' | 'decltype'
+    | 'enum'    | 'struct'  | 'class'   | 'nullptr'
+    | 'true'    | 'false'
+```
+
+### Identifiers
+
+```plain
+non-zero-digit = '1'
+    | '2' | '3' | '4' | '5'
+    | '6' | '7' | '8' | '9'
+
+digit := '0'
+    | non-zero-digit
+
+lower-letter := 'a'
+    | 'b' | 'c' | 'd' | 'e'
+    | 'f' | 'g' | 'h' | 'i'
+    | 'j' | 'k' | 'l' | 'm'
+    | 'n' | 'o' | 'p' | 'q'
+    | 'r' | 's' | 't' | 'u'
+    | 'v' | 'w' | 'x' | 'y'
+    | 'z'
+
+upper-letter := 'A'
+    | 'B' | 'C' | 'D' | 'E'
+    | 'F' | 'G' | 'H' | 'I'
+    | 'J' | 'K' | 'L' | 'M'
+    | 'N' | 'O' | 'P' | 'Q'
+    | 'R' | 'S' | 'T' | 'U'
+    | 'V' | 'W' | 'X' | 'Y'
+    | 'Z'
+
+letter := lower-letter
+    | upper-letter
+
+universal-character := %x4e00-9fa5
+
+non-digit := '_'
+    | letter
+    | universal-character
+
+identifier := non-digit
+    | identifier non-digit
+    | identifier digit
+
+attribute-identifier := lower-letter
+    | attribute-identifier lower-letter
+    | attribute-identifier '-' attribute-identifier
+```
+
+### Constants
+
+```plain
+constant := pointer-constant
+    | boolean-constant
+    | integer-constant
+    | floating-point-constant
+    | character-constant
+    | enumeration-constant
+    | contextual-constant
+
+pointer-constant := 'nullptr'
+
+boolean-constant := 'true'
+    | 'false'
+
+integer-constant := integer-constant-body [ integer-suffix ]
+
+integer-constant-body := decimal-constant
+    | binary-constant
+    | octal-constant
+    | hexadecimal-constant
+
+decimal-constant := non-zero-digit
+    | decimal-constant digit
+
+binary-constant-prefix := '0b'
+
+binary-digit := '0'
+    | '1'
+
+binary-digit-sequence := binary-digit
+    | binary-digit-sequence binary-digit
+
+binary-constant := binary-constant-prefix binary-digit-sequence
+    | binary-constant '_' binary-digit-sequence
+
+octal-constant-prefix := '0'
+
+octal-digit :=  '0'
+    | '1' | '2' | '3' | '4'
+    | '5' | '6' | '7'
+
+octal-digit-sequence := octal-digit
+    | octal-digit-sequence octal-digit
+
+octal-constant := octal-constant-prefix octal-digit-sequence
+    | octal-constant '_' octal-digit-sequence
+
+hexadecimal-constant-prefix := '0x'
+    | '0X'
+
+hexadecimal-digit :=  '0'
+    | '1' | '2' | '3' | '4'
+    | '5' | '6' | '7' | '8'
+    | '9' | 'a' | 'b' | 'c'
+    | 'd' | 'e' | 'f' | 'A'
+    | 'B' | 'C' | 'D' | 'E'
+    | 'F'
+
+hexadecimal-digit-sequence := hexadecimal-digit
+    | hexadecimal-digit-sequence hexadecimal-digit
+
+hexadecimal-constant := hexadecimal-constant-prefix hexadecimal-digit-sequence
+    | hexadecimal-constant '_' hexadecimal-digit-sequence
+
+integer-suffix := unsigned-suffix [ long-suffix ]
+    | unsigned-suffix long-long-suffix
+    | long-suffix [ unsigned-suffix ]
+    | long-long-suffix [ unsigned-suffix ]
+
+unsigned-suffix := 'u'
+    | 'U'
+
+long-suffix := 'l'
+    | 'L'
+
+long-long-suffix := 'll'
+    | 'LL'
+
+floating-point-constant := floating-point-constant-body [ floating-point-suffix ]
+
+floating-point-constant-body := decimal-floating-point-constant
+    | hexadecimal-floating-point-constant
+
+decimal-floating-point-constant := digit-sequence exponent-part
+    | fractional-constant exponent-part
+
+digit-sequence := digit
+    | digit-sequence digit
+
+fractional-constant := digit-sequence '.'
+    | [ digit-sequence ] '.' digit-sequence
+
+sign := '+'
+    | '-'
+
+exponent-sign := 'e'
+    | 'E'
+
+exponent-part := exponent-sign [ sign ] digit-sequence
+
+hexadecimal-floating-point-constant := hexadecimal-constant-prefix hexadecimal-fractional-constant binary-exponent-part
+    | hexadecimal-constant-prefix hexadecimal-digit-sequence binary-exponent-part
+
+hexadecimal-fractional-constant := hexadecimal-digit-sequence '.'
+    | [ hexadecimal-digit-sequence ] '.' hexadecimal-digit-sequence
+
+binary-exponent-sign := 'p'
+    | 'P'
+
+binary-exponent-part := binary-exponent-sign [ sign ] digit-sequence
+
+floating-point-16bit-suffix := 'hf'
+    | 'HF'
+
+floating-point-32bit-suffix := 'f'
+    | 'F'
+
+floating-point-64bit-suffix := 'l'
+    | 'L'
+
+floating-point-128bit-suffix := 'll'
+    | 'LL'
+
+floating-point-256bit-suffix := 'qf'
+    | 'QF'
+
+floating-point-suffix := floating-point-16bit-suffix
+    | floating-point-32bit-suffix
+    | floating-point-64bit-suffix
+    | floating-point-128bit-suffix
+    | floating-point-256bit-suffix
+
+character-constant := [ character-prefix ] '\'' character-sequence '\''
+
+character-prefix := 'u8'
+    | 'u'
+    | 'U'
+
+character-sequence := character
+    | character-sequence character
+
+non-escape-ascii-character := %x20-26
+    | %x28-5b
+    | %x5d-7e
+
+non-escape-universal-character := %x80-10ffff
+
+non-escape-character := non-escape-ascii-character
+    | non-escape-universal-character
+
+escape-character := simple-escape-character
+    | octal-escape-character
+    | hexadecimal-escape-character
+    | universal-escape-character
+
+simple-escape-character := '\\\''
+    | '\\"' | '\\?' | '\\\' | '\\a'
+    | '\\b' | '\\f' | '\\n' | '\\r'
+    | '\\t' | '\\v'
+
+octal-escape-character := '\\' octal-digit
+    | '\\' octal-digit octal-digit
+    | '\\' octal-digit octal-digit octal-digit
+
+hexadecimal-escape-character := '\\x' hexadecimal-digit-sequence
+
+four-hexadecimal-digit := hexadecimal-digit hexadecimal-digit hexadecimal-digit hexadecimal-digit
+
+universal-escape-character := '\\u' four-hexadecimal-digit
+    | '\\U' four-hexadecimal-digit four-hexadecimal-digit
+
+character := non-escape-character
+    | escape-character
+
+enumeration-constant := identifier '::' identifier
+
+letter-sequence := letter
+    | letter-sequence letter
+
+contextual-constant := '$' letter-sequence
+```
+
+### String literals
+
+```plain
+string-literal := classical-string-literal
+    | raw-string-literal
+    | formattable-string-literal
+
+classical-string-literal := '"' character-sequence '"'
+
+raw-character := character
+    | '\\' | '\'' | '\t' | '\r'
+    | '\n'
+
+raw-character-sequence := raw-character
+    | raw-character-sequence raw-character
+
+raw-string-literal := 'R' '"' '(' raw-character-sequence ')' '"'
+
+non-escape-or-left-brace-ascii-character := %x20-26
+    | %x28-5b
+    | %x5d-7a
+    | %x7c-7e
+
+non-left-brace-character := non-escape-or-left-brace-ascii-character
+    | non-escape-universal-character
+    | simple-escape-character
+    | '\\{'
+    | octal-escape-character
+    | hexadecimal-escape-character
+    | universal-escape-character
+
+formattable-string-element := non-left-brace-character
+    | '{' expr '}'
+
+formattable-string-literal := '$' '"' { formattable-string-element } '"'
+```
+
+### Punctuators
+
+```plain
+punctuator := '='
+    | '+'   | '-'  | '*'  | '/'
+    | '%'   | '<'  | '>'  | '|'
+    | '&'   | '^'  | '~'  | '!'
+    | '('   | ')'  | '['  | ']'
+    | '{'   | '}'  | ','  | '?'
+    | ':'   | ';'  | '#'  | '::'
+    | '.'   | '==' | '!=' | '<='
+    | '>='  | '||' | '&&' | '<<'
+    | '>>'  | '++' | '--' | '+='
+    | '-='  | '*=' | '/=' | '%='
+    | '|='  | '&=' | '^=' | '<<='
+    | '>>='
+```
+
+### Comment
+
+```plain
+comment := inline-comment
+    | multi-line-comment
+
+non-newline-character := %x20-7e
+    | non-escape-universal-character
+    | '\t'
+
+inline-comment := '//' { non-newline-character }
+
+non-star-character := %x20-29
+    | %x2b-7e
+    | '\t'
+    | '\n'
+    | '\r'
+    | non-escape-universal-character
+
+non-slash-character := %x20-2e
+    | %x30-7e
+    | '\t'
+    | '\n'
+    | '\r'
+    | non-escape-universal-character
+
+multi-line-comment-character-sequence := non-star-character
+    | multi-line-comment-character-sequence non-star-character
+    | multi-line-comment-character-sequence '*' non-slash-character
+
+multi-line-comment := '/*' multi-line-comment-character-sequence '*/'
+```
+
 # Features
 
 - [ ] [unified ABI](#unified-abi)
@@ -60,7 +422,7 @@
 
 关键字 `decltype` 用于定义类型别名与类型计算
 
-类型别名格式：`decltype <alias-type> = <compound-type>;`
+类型别名格式：`decltype <alias-type> := <compound-type>;`
 
 类型计算格式：`decltype(<type-expression>);`
 
@@ -120,10 +482,10 @@
 
 ```plain
 enum Color : int {
-    Red = 0,
+    Red := 0,
     Blue,
     Green,
-    Pink = 114,
+    Pink := 114,
     Gray,
     Orange,
 };
@@ -206,7 +568,7 @@ constexpr int g(int x) { return x + 3; }
 constexpr(inline) g(int x) { return x + 2; }
 
 int main() {
-    int a = 3;
+    int a := 3;
 
     f(3);              //<! 6
     constexpr f(3);    //<! 4
@@ -259,9 +621,9 @@ int main() {
 示例：
 
 ```plain
-constexpr char* a = "Hello";
-constexpr float b = 3.2;
-constexpr int   c = -123;
+constexpr char* a := "Hello";
+constexpr float b := 3.2;
+constexpr int   c := -123;
 $"Hello World!";                //<! "Hello World!"
 $"{s} World{'!'}";              //<! "Hello World!"
 $"{s} World{'!'} --> {b + c}";  //<! "Hello World! --> -119.8"
